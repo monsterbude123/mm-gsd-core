@@ -437,6 +437,12 @@ const CMD = {
     const pkg = readJSON(pkgPath, {});
     const bump = args.includes("--patch") ? "patch" : args.includes("--minor") ? "minor" : args.includes("--major") ? "major" : null;
     const explicit = args.find((a) => /^\d+\.\d+\.\d+/.test(a));
+    // 认不出来的参数必须当场说。`release --bump patch` 曾被静默忽略,
+    // 拿旧版本号去发布 —— 用户以为在升版本,实际发布的是上一次的版本(T-09 同族)。
+    const known = new Set(["--patch", "--minor", "--major"]);
+    const junk = args.filter((a) => !known.has(a) && !/^\d+\.\d+\.\d+/.test(a));
+    if (junk.length) { bad("不认识的参数:" + junk.join(" ") + "\n      合法:--patch / --minor / --major / 显式版本号"); return 1; }
+    if (!bump && !explicit) { bad("没说升哪个版本 —— 加 --patch / --minor / --major,或直接给版本号"); return 1; }
 
     // 1) 门禁必须全绿 —— 不绿就不许发
     log("  1/6 跑门禁");
