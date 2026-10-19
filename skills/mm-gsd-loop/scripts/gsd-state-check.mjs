@@ -440,6 +440,44 @@ if (process.argv.includes("--stats")) {
   process.exit(0);
 }
 
+// ---- --templates:模板自检 + 实例结构契约(规则表按需加载,不进本文件)----
+if (process.argv.includes("--templates")) {
+  const { validateTemplate } = await import("../references/template-gates.mjs");
+  // SKILL_DIR = skills/mm-gsd-loop,往上一级才是 skills/。别再用 URL 字符串拼路径,Windows 上会解析不出目录。
+  const tmplRoot = join(SKILL_DIR, "..");
+
+  console.log("\n=== mm-gsd 模板门禁 ===");
+  let bad = 0, checked = 0;
+  for (const tdir of [join(tmplRoot, "mm-gsd-exec", "templates"), join(tmplRoot, "mm-gsd-plan", "templates"),
+                      join(tmplRoot, "mm-gsd-verify", "templates"), join(tmplRoot, "mm-gsd-loop", "templates")]) {
+    if (!existsSync(tdir)) continue;
+    for (const f of readdirSync(tdir).filter((x) => x.endsWith(".md"))) {
+      checked++;
+      const txt = readFileSync(join(tdir, f), "utf8");
+      const m = txt.match(/```markdown\n([\s\S]*?)\n```/);
+      if (!m) { console.log("  ✗ " + f + ": 找不到 ```markdown 块 —— agent 不知道该抄哪一段"); bad++; continue; }
+      const issues = validateTemplate(f, m[1]);
+      if (issues.length) {
+        bad++;
+        console.log("\n  ✗ " + f);
+        for (const i of issues) { console.log("      " + i.message); console.log("        → " + i.fix); }
+      } else console.log("  ✓ " + f);
+    }
+  }
+  console.log("");
+  if (!checked) {
+    console.log("  ✗ 一份模板都没找到 —— 目录解析坏了,这等于没检查(tmplRoot = " + tmplRoot + ")");
+    process.exit(1);
+  }
+  if (bad) {
+    console.log("  " + bad + "/" + checked + " 份模板过不了自己的契约 —— 照抄即报错,agent 会卡在门禁上。");
+    console.log("  每条上面都给了正确写法,照着改完重跑即可。");
+    process.exit(1);
+  }
+  console.log("  ✓ " + checked + " 份模板结构合规");
+  process.exit(0);
+}
+
 // ---- --init:冷启动。门禁要求 STATE,但建 STATE 的职责不在当前步骤里 —— 那就是死锁 ----
 // 之前 agent 卡在这里:门禁说"转绿才准继续",可转绿要的东西它这一步造不出来,只能停。
 // --init 把造 STATE 变成一条命令,任何步骤都能自救。
@@ -550,6 +588,12 @@ const artifactInfo = { context: null, plans: [], summaries: [], verification: nu
   artifactInfo.verification = files.find((f) => f.endsWith("-VERIFICATION.md")) ?? null;
   artifactInfo.shipment = files.find((f) => f.endsWith("-SHIP.md")) ?? null;
   const J = (f) => join(base, f);
+
+  // CONTEXT 之前没有任何实例门禁:缺四个标签也照样把状态机推进到 planning
+  if (artifactInfo.context) {
+    const { validateInstance } = await import("../references/template-gates.mjs");
+    for (const i of validateInstance("context", artifactInfo.context, readFileSync(J(artifactInfo.context), "utf8"), null)) err(i.message, i.fix);
+  }
 
   const has = (a) => Boolean(a);
   if (!has(artifactInfo.context)) derived = "discussing";

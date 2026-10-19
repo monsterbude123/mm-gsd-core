@@ -2,10 +2,14 @@
 
 ```markdown
 ---
-status: passed | gaps_found | human_needed   # 封闭三态;人工项非空时禁止 passed
+status: passed
 phase: 01
-score: 4/6                                   # VERIFIED truths 数 / 总数(含 override)
+score: 4/6
 ---
+
+<!-- status 封闭三态,一次只写一个:passed / gaps_found / human_needed。
+     写成 "passed | gaps_found | human_needed" 是错的 —— 那是选项说明,不是值,照抄即被判非法。
+     人工项非空时禁止 passed;score 是 VERIFIED truths 数 / 总数(含 override)。 -->
 
 ## Observable Truths
 

@@ -169,6 +169,7 @@ mm-gsd-core/
 │                         + scripts/{gsd-state-check,mm-gsd-install}.mjs
 │                         + hooks/{guard-dangerous-git.mjs,pre-commit}
 │                         + templates/{state,ship}.md
+│                         + references/template-gates.mjs   工件契约表(按需加载,不占主脚本)
 └── workflows/
     └── mm-gsd-phase.dwf.ts    ZCode 动态工作流(7 阶段 + 模型路由)
 ```
@@ -246,3 +247,6 @@ node tools/mmc.mjs health     # 每次提交必跑,CI 也会跑
 5. **ZCode workflow 未与检查器深度集成**，目前是独立的 7 阶段流水线，没有复用这里的门禁模式。
 
 前三条是我知道该做还没做的，后两条需要更多真实数据才能判断是否值得做。
+
+> 第 4 条(`check-templates-self-validate` 覆盖不全)**已于 2026-10-19 解决**:新增 `--templates` 模式与
+> `references/template-gates.mjs`,6 份模板全有结构门禁,CONTEXT 补上了实例门禁。

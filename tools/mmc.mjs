@@ -164,33 +164,19 @@ const CHECKS = {
     return pass;
   },
 
-  // R-05:模板必须通过自己的门禁
+  // R-05:模板必须通过自己的门禁 —— 委托给检查器的 --templates,不在这里重复实现一遍
   "check-templates-self-validate"(report) {
-    const gated = { "plan.md": "--plan", "ship.md": null };
-    const sandbox = join(tmpdir(), "mmc-tpl");
-    let pass = true, checked = 0;
-    const unchecked = [];
-    for (const f of walk(R("skills")).filter((p) => p.includes("templates") && p.endsWith(".md"))) {
-      const base = rel(f).split("/").pop();
-      if (!(base in gated)) { unchecked.push(base); continue; }
-      const txt = readFileSync(f, "utf8");
-      const m = txt.match(/```markdown\n([\s\S]*?)\n```/);
-      if (!m) { report.fail(`${base}: 模板里找不到 \`\`\`markdown 块 —— agent 不知道该抄哪一段`); pass = false; continue; }
-      const dir = join(sandbox, ".planning");
-      mkdirSync(dir, { recursive: true });
-      writeFileSync(join(dir, "02-01-" + (base === "plan.md" ? "PLAN" : "SHIP") + ".md"), m[1]);
-      if (base === "plan.md") writeFileSync(join(dir, "STATE.md"), "---\nstatus: planning\nactive_phase: 02\n---\n");
-      else writeFileSync(join(dir, "STATE.md"), "---\nstatus: shipped\nactive_phase: 02\n---\n");
-      let out = "", code = 0;
-      try { out = execFileSync(process.execPath, [CHECKER, "--plan", join(dir, "02-01-" + (base === "plan.md" ? "PLAN" : "SHIP") + ".md")], { cwd: sandbox, encoding: "utf8", stdio: "pipe" }); }
-      catch (e) { code = e.status ?? 1; out = String(e.stdout || "") + String(e.stderr || ""); }
-      if (base === "plan.md" && code !== 0) { report.fail(`模板 ${base} 过不了自己的门禁 —— 照抄就报错:\n${out.split("\n").filter((l) => l.includes("✗")).slice(0, 3).join("\n")}`); pass = false; }
-      if (base === "ship.md" && /还是模板占位符/.test(out)) { report.fail(`模板 ${base} 的 delivered 是占位符,门禁会拦下照抄的人`); pass = false; }
-      checked++;
+    let out = "", code = 0;
+    try {
+      out = execFileSync(process.execPath, [CHECKER, "--templates"], { cwd: ROOT, encoding: "utf8", stdio: "pipe" });
+    } catch (e) { code = e.status ?? 1; out = String(e.stdout || "") + String(e.stderr || ""); }
+    const lines = out.split(/\r?\n/).filter((l) => /[✓✗]|→/.test(l));
+    if (code !== 0) {
+      for (const l of lines) report.fail(l.replace(/^\s+/, "  "));
+      return false;
     }
-    if (pass) report.pass(`${checked} 个有门禁的模板照抄即用`);
-    if (unchecked.length) report.info(`${unchecked.length} 个模板还没有对应门禁,自检覆盖不到: ${unchecked.join(", ")}`);
-    return pass;
+    report.pass(lines.filter((l) => l.includes("✓")).pop()?.trim() ?? "全部模板结构合规");
+    return true;
   },
 
   // R-06:零依赖
