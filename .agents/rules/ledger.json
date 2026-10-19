@@ -116,6 +116,13 @@
       "claim": "计划/exec/verify/ship 四个环节各自需要一条「真实项目首跑检查清单」。",
       "status": "candidate",
       "why-not-active": "这四条环节至今没有真实项目验证过,现在写检查清单等于把猜测固化成规范。等真跑过再写。"
+    },
+    {
+      "id": "C-04",
+      "claim": "任何声称「验证了外部系统真实状态」的步骤,必须读回外部系统的状态来核对,不能靠本地副本的返回值推断。",
+      "status": "candidate",
+      "why-not-active": "要机器化得先有「外部系统读回接口」的抽象。本仓库只有 npm 一处真实消费(发布),为单一实现提前抽接口会先胖起来。等第二个消费点出现再提为 R。",
+      "evidence": "docs/lessons/2026-10-19-release-false-green.md"
     }
   ]
 }

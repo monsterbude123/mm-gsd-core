@@ -64,7 +64,7 @@ else {
 const fakeHome = mkdtempSync(join(tmpdir(), "mmgsd-home-"));
 try {
   execFileSync(process.execPath, [join(ROOT, "bin", "mm-gsd.mjs"), "install", "--dir", join(fakeHome, "skills")], { stdio: "pipe" });
-  const installed = readdirSync(join(fakeHome, "skills"));
+  const installed = readdirSync(join(fakeHome, "skills")).filter((n) => !n.startsWith("."));
   for (const s of skillNames) if (!installed.includes(s)) bad(`install 后缺 ${s}`);
   const instChecker = join(fakeHome, "skills", "mm-gsd-loop", "scripts", "gsd-state-check.mjs");
   if (!existsSync(instChecker)) bad("install 后找不到检查器");

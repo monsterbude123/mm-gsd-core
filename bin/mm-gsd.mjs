@@ -32,7 +32,12 @@ const HOME = has("--home") ? resolve(val("--home")) : homedir();
 const MANIFEST = ".mm-gsd-install.json";
 const PKG = readFileSync(join(PKG_ROOT, "package.json"), "utf8");
 const VERSION = JSON.parse(PKG).version ?? "0.0.0";
-const SOURCE = has("--from-repo") ? `repo:${PKG_ROOT}` : `npm:${JSON.parse(PKG).name}@${VERSION}`;
+const NAME = JSON.parse(PKG).name ?? "mm-gsd-core";
+// 仓库里跑 ≠ 来自 npm。只有 npx 装出来的副本才算 npm 来源 —— 判据是
+// 旁边没有 node_modules(仓库自带的副本靠 --from-repo 显式声明)。
+// 分错会让"装回本机"验不出自己装的是哪一份,版本追溯就成了摆设(T-07)。
+const FROM_NPM = !has("--from-repo") && !existsSync(join(PKG_ROOT, "node_modules")) && !existsSync(join(PKG_ROOT, "tools", "mmc.mjs"));
+const SOURCE = FROM_NPM ? `npm:${NAME}@${VERSION}` : `repo:${PKG_ROOT}`;
 
 /** 目录内容的指纹 —— 用来判断"装的和现在仓库里的是不是同一份" */
 function digest(dir) {

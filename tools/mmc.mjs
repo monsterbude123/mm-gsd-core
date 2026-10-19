@@ -18,6 +18,8 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const R = (...s) => join(ROOT, ...s);
+const HOME_SKILLS = join(homedir(), ".agents", "skills");
+const MANIFEST_NAME = ".mm-gsd-install.json";
 const CHECKER = R("skills", "mm-gsd-loop", "scripts", "gsd-state-check.mjs");
 const TELEMETRY = join(homedir(), ".agents", "mm-gsd-runs.jsonl");
 const ISSUES = R(".planning", "issues");
@@ -484,15 +486,28 @@ const CMD = {
       ok("已推送 main 与标签");
     } catch (e) { bad("git push 失败:" + String(e.stderr || e.message).split("\n")[0]); return 1; }
 
-    // 6) 从 npm 装回来 —— 用的是刚发出去的那一份,不是仓库里那份
+    // 6) 从 npm 装回来 —— 必须是 registry 上那一份,不是仓库里那份
+    //    npm publish 返回 ≠ 版本已可装:npm 有传播延迟,而且 staged publish 会留占位。
+    //    拿仓库副本装回来并写上 npm 来源,是这条注释曾经描述、代码却没做的假绿(T-07)。
     log("  6/6 从 npm 装回本机");
+    const spec = pkg.name + "@" + version;
+    let live = "";
+    try { live = execFileSync("npm.cmd", ["view", spec, "version"], { encoding: "utf8", shell: true, stdio: "pipe" }).trim(); }
+    catch { /* 版本不存在时 npm 直接非零退出,不是返回空串 */ }
+    if (live !== version) { bad(`registry 上 ${spec} 查不到 —— 发出去的还没生效,别信 publish 那行 "+name@version"`); return 1; }
+    const sb = join(tmpdir(), "mmc-release-inst");
+    rmSync(sb, { recursive: true, force: true });
     try {
-      execFileSync("npm", ["pack", "--silent"], { cwd: ROOT, encoding: "utf8", stdio: "pipe", shell: process.platform === "win32" });
-      execFileSync(process.execPath, [R("bin", "mm-gsd.mjs"), "install"], { encoding: "utf8", stdio: "pipe" });
-      ok("本机 ~/.agents/skills/ 已更新到 " + version);
+      execFileSync("npm.cmd", ["install", "--prefix", sb, "--no-audit", "--no-fund", spec], { encoding: "utf8", shell: true, stdio: "pipe", timeout: 180000 });
+      execFileSync(process.execPath, [join(sb, "node_modules", pkg.name, "bin", "mm-gsd.mjs"), "install"], { encoding: "utf8", stdio: "pipe" });
+      const mf = JSON.parse(readFileSync(join(HOME_SKILLS, MANIFEST_NAME), "utf8"));
+      if (mf.source !== "npm:" + spec) { bad(`装回来的来源是 ${mf.source},不是 npm —— 装错了东西`); return 1; }
+      ok(`本机 ~/.agents/skills/ 已更新到 ${version}(来源已核对:${mf.source})`);
     } catch (e) {
-      warn("装回本机失败(不影响已发布):" + String(e.stderr || e.message).split("\n")[0]);
-    }
+      bad("装回本机失败:" + String(e.stdout || "") + String(e.stderr || e.message).split("\n")[0]);
+      log("      npm 上已经有了,本机没更新 —— 下次 mmc sync 会补上");
+      return 1;
+    } finally { rmSync(sb, { recursive: true, force: true }); }
 
     log("");
     ok("v" + version + " 发布完成");
