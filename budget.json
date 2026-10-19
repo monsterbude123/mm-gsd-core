@@ -10,8 +10,11 @@
     "docs/**",
     "*.md"
   ],
-  "totalLines": 3000,
-  "_totalRationale": "skills(检查器 670 + references 139 + SKILL/模板约 420) + tools 约 390 + bin 约 200 ≈ 2450。3000 留约 18% 余量。",
+  "totalLines": 3015,
+  "_totalRationale": "skills(检查器 698 + references 186 + SKILL/模板约 420) + tools 约 660 + bin 约 250 ≈ 3000。3015 只留 15 行余量 —— 逼近上限是有意的:余量一大就没人记得预算这回事。",
+  "_totalRationaleHistory": [
+    "3000 → 3015(2026-10-19):11 行换 15 条自测用例 + R-15 让自测进 health + splitDeps 修「无」被当依赖 + derived 读 SHIP status 修 held 被推成 shipped。依据 docs/theory.md T-11:判据是「新增换的是新能力,还是已有能力的重复表述」。"
+  ],
   "fileCaps": [
     {
       "pattern": "skills/**/SKILL.md",

@@ -36,22 +36,22 @@ node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --init "<一句话
 agent 在 discuss 结束时跑门禁 → 报"未初始化" → 按"转绿才准继续"卡住 → 而它站在这一步造不出 STATE。
 **门禁要的东西,执行方做不到,那它就不是门禁,是死锁。** 所以任何门禁都必须自带解法。
 
-- **新项目**:问用户一句项目目标(一句话即可)→ 建 `.planning/STATE.md`(模板见 templates/state.md:一句话目标 + `## Phases` 清单粗拆 2-4 个)+ `.planning/REQUIREMENTS.md`(把目标拆成 REQ-N 编号的最小清单——REQ 是 verify 逐条对 verdict 的对象,没有它闭环断裂)→ **第一个 phase 定为 walking skeleton**:最薄可运行骨架——框架/数据层/部署/核心布局各做一个选择,跑通一条真实路径;技术选型决策集中在这个 phase 的 CONTEXT 里定(D-NN),不散落各处。
-- **现存项目**:先读 README / AGENTS.md / CLAUDE.md / package.json + 扫目录结构,再建 STATE(Project Reference 从现有代码提炼:一句话它是什么、当前 focus 是什么;不装作绿地)。从 issue tracker / TODO / README 的功能清单倒推出 REQ-N 清单。第一个 phase 挑小而有价值的改动,**不上来大重构**。项目已有约定(AGENTS.md / CLAUDE.md / lint 规则)优先于本技能的默认——冲突时遵守项目约定,调整记为偏差。
-- 冷启动后回到正常循环。**冷启动是本技能(loop)的职责**——discuss 只产 CONTEXT,不管建 STATE;职责唯一,免得两个入口抢着建。
+- **新项目**:一句话目标 → 建 STATE + `REQUIREMENTS.md`(REQ-N 是 verify 逐条对 verdict 的对象,没有它闭环断裂)→ 第一个 phase 定为 walking skeleton:最薄可运行骨架,选型集中在这个 phase 的 CONTEXT 里定(D-NN)。
+- **现存项目**:先读 README / AGENTS.md / CLAUDE.md / package.json 再建 STATE(Project Reference 从现有代码提炼,**不装作绿地**),从 issue tracker 倒推 REQ。第一个 phase 挑小而有价值的改动,不上大重构;项目已有约定优先于本技能默认,冲突记为偏差。
+- 冷启动是 loop 的职责 —— discuss 只产 CONTEXT。职责唯一,免得两个入口抢着建。
 
 ## 工件归属边界(先分清两类产出,再决定放哪)
 
 | 类 | 位置 | 入库? | 内容 |
 |---|---|---|---|
-| **流程记忆** | `.planning/` | **否** | STATE / CONTEXT / PLAN / SUMMARY / VERIFICATION / HANDOFF——agent 本地工作流状态 |
-| **业务产出** | 项目既有票面目录(如 `.scratch/<主题>-<日期>/`) | **是** | 缺陷票 / 设计稿票 / DAG / 票面 README——要入库共享给团队 |
+| **流程记忆** | `.planning/` | **否** | STATE / CONTEXT / PLAN / SUMMARY / VERIFICATION / HANDOFF |
+| **业务产出** | 项目既有票面目录(如 `.scratch/<主题>-<日期>/`) | **是** | 缺陷票 / 设计稿票 / DAG / 票面 README |
 
-- **`.planning/*` 是本地工件,不 commit、不 push 远程。** 它是「我和用户之间的记忆」,不是项目历史。
-- 业务产出**不写进 `.planning/`**;反过来流程记忆**不塞进业务票面目录**——混在一起会让下一棒分不清哪些是共享契约、哪些是临时状态。
-- 项目若已把 `.planning/` 加进 `.gitignore` / `.git/info/exclude`(双排除),那是**与本节一致的既定决定,不是待修的漂移**——直接落盘,别去改排除规则、别 `git add -f` 硬推。
-- 业务票面目录常被 exclude(如 `.scratch/`),入库需 `git add -f`;该动作**只用于业务产出**。
-- 代码 / 测试 / 配置的提交照常进 git,与本节无关。
+两类混放会让下一棒分不清哪些是共享契约、哪些是临时状态。三个要点:
+
+- `.planning/` 若已被 gitignore / exclude 双排除,那是**既定决定不是漂移** —— 直接落盘,别改排除规则、别 `git add -f`。
+- 业务票面目录常被 exclude,入库确需 `git add -f`;该动作**只用于业务产出**。
+- 代码 / 测试 / 配置照常进 git。
 
 ## 分级路由(动手前先判断)
 

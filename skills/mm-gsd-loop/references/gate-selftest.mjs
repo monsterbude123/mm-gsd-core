@@ -12,12 +12,17 @@
 // 而"会红"只能靠这些用例证明。
 
 /** 跑一遍自测,返回失败条数 */
-export function runSelfTest(VAGUE_FILE, DEP_RE) {
+export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   let bad = 0;
   const eq = (re, s, want, why) => {
     const got = re.test(s), good = got === want;
     if (!good) bad++;
     console.log(`  ${good ? "✓" : "✗"} ${why}: ${JSON.stringify(s)} → ${got}`);
+  };
+  const eqArr = (got, want, why) => {
+    const good = JSON.stringify(got) === JSON.stringify(want);
+    if (!good) bad++;
+    console.log(`  ${good ? "✓" : "✗"} ${why}: ${JSON.stringify(got)} → ${good ? "" : JSON.stringify(want)}`);
   };
   console.log("\n=== mm-gsd 门禁自测 ===");
   // N\/A 要左右断言:\b 挡不住 admin/auth —— n 是词字符、/ 不是,边界本就存在
@@ -32,6 +37,11 @@ export function runSelfTest(VAGUE_FILE, DEP_RE) {
   eq(DEP_RE, "02 — 面板 （depends_on: 01）", true, "全角括号依赖");
   eq(DEP_RE, "02 — 面板（depends_on：01, 03）", true, "全角括号 + 全角冒号 + 多依赖");
   eq(DEP_RE, "02 — 面板", false, "无依赖不该误匹配");
+  // 「无」是"没有依赖",不是依赖了一个叫"无"的 phase —— #7 修完后连带暴露的
+  eqArr(splitDeps("无"), [], "depends_on: 无 应解析为空依赖");
+  eqArr(splitDeps("无依赖"), [], "depends_on: 无依赖 应解析为空依赖");
+  eqArr(splitDeps("none"), [], "depends_on: none 应解析为空依赖");
+  eqArr(splitDeps("01, 03"), ["01", "03"], "多依赖应拆分");
   console.log(bad ? `\n${bad} 项自测不过 —— 门禁本身是坏的,先修门禁` : "\n✓ 门禁自测全过");
   return bad;
 }

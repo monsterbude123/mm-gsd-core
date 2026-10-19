@@ -78,6 +78,10 @@ function frontmatter(path) {
 const VAGUE_FILE = /相关|若干|全部|所有|等等|若干文件|…|\.\.\.|etc\b|TBD|待定|(?<![A-Za-z0-9])N\/A(?![A-Za-z0-9])/i;
 // 解析与剔除共用一个常量 —— 两处各写一遍必然会走偏
 const DEP_RE = /[（(]\s*depends_on\s*[:：]\s*([^）)]*)[）)]/i;
+// 「无 / none」是"没有依赖"的写法,中文 STATE.md 实际都这么写。
+// 不过滤就会报「phase 01 依赖了不存在的 phase 无」。
+const splitDeps = (raw) => raw.split(/[,\s]+/).map(unquote)
+  .filter((d) => d && !/^(无|无依赖|none|n\/a|-)$/i.test(d));
 // 缩水措辞(skill「缩水禁令」);v1 只警告——"v1 API" 是合法命名,误杀成本更高
 const SHRINK_STRONG = /simplified|placeholder|basic version|minimal implementation|skip for now|will be wired later|简化版|暂时先|先不做|后面再接/i;
 const SHRINK_WEAK = /\bv1\b/i;
@@ -341,7 +345,7 @@ if (process.argv.includes("--phases")) {
     phases.push({
       id: unquote(m[2]), title: m[3].replace(DEP_RE, "").trim(),
       done: m[1].toLowerCase() === "x",
-      deps: depM ? depM[1].split(/[,\s]+/).map(unquote).filter(Boolean) : [],
+      deps: depM ? splitDeps(depM[1]) : [],
     });
   }
   if (!phases.length) {
@@ -450,7 +454,7 @@ if (process.argv.includes("--stats")) {
 // 必须有用例证明它会红)。放独立文件是为主脚本省行数,不是怕麻烦。
 if (process.argv.includes("--selfcheck")) {
   const { runSelfTest } = await import("../references/gate-selftest.mjs");
-  process.exit(runSelfTest(VAGUE_FILE, DEP_RE) ? 1 : 0);
+  process.exit(runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) ? 1 : 0);
 }
 
 // ---- --templates:模板自检 + 实例结构契约(规则表按需加载,不进本文件)----
