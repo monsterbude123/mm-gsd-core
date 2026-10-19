@@ -11,7 +11,7 @@
 //
 // 零依赖,跨平台。
 
-import { readFileSync, readdirSync, existsSync, cpSync, mkdirSync, rmSync, lstatSync, statSync, readFileSync as rf } from "node:fs";
+import { readFileSync, readdirSync, existsSync, cpSync, mkdirSync, rmSync, lstatSync, writeFileSync, readFileSync as rf } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
@@ -27,6 +27,31 @@ const val = (f, d) => { const i = argv.indexOf(f); return i >= 0 && argv[i + 1] 
 // --home:测试用。Windows 上 os.homedir() 读 USERPROFILE 而不读 HOME,
 // 设 HOME=... 拦不住它,会把东西装进真家目录。
 const HOME = has("--home") ? resolve(val("--home")) : homedir();
+
+// 版本清单:装出来的技能要能追溯到具体版本与来源
+const MANIFEST = ".mm-gsd-install.json";
+const PKG = readFileSync(join(PKG_ROOT, "package.json"), "utf8");
+const VERSION = JSON.parse(PKG).version ?? "0.0.0";
+const SOURCE = has("--from-repo") ? `repo:${PKG_ROOT}` : `npm:${JSON.parse(PKG).name}@${VERSION}`;
+
+/** 目录内容的指纹 —— 用来判断"装的和现在仓库里的是不是同一份" */
+function digest(dir) {
+  const walk = (d, base = "") => {
+    const out = [];
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      const p = join(d, e.name);
+      const rel = base ? base + "/" + e.name : e.name;
+      if (e.isDirectory()) out.push(...walk(p, rel));
+      else out.push(rel);
+    }
+    return out.sort();
+  };
+  try {
+    const h = createHash("sha1");
+    for (const rel of walk(dir)) h.update(rel).update(rf(join(dir, rel)));
+    return h.digest("hex").slice(0, 12);
+  } catch { return "?"; }
+}
 
 const C = { r: "\x1b[31m", g: "\x1b[32m", y: "\x1b[33m", d: "\x1b[90m", b: "\x1b[1m", x: "\x1b[0m" };
 const log = (s = "") => console.log(s);
@@ -89,6 +114,7 @@ function install() {
 
   mkdirSync(target, { recursive: true });
   let done = 0, skipped = 0;
+  const manifest = { version: VERSION, source: SOURCE, installedAt: new Date().toISOString(), skills: {} };
   for (const n of names) {
     const dst = join(target, n);
     if (uninstall) {
@@ -99,18 +125,31 @@ function install() {
     // 已有同名目录且不是符号链接 → 不覆盖,那是用户自己改过的
     if (existsSync(dst) && !lstatSync(dst).isSymbolicLink()) {
       const same = sameContent(dst, join(SKILLS_SRC, n));
-      if (same) { log(`  ${C.d}=${C.x} ${n}(已存在且完整,跳过)`); skipped++; continue; }
+      if (same) {
+        log(`  ${C.d}=${C.x} ${n}(已存在且完整,跳过)`);
+        manifest.skills[n] = digest(join(SKILLS_SRC, n));
+        skipped++;
+        continue;
+      }
       warn(`${n}: 目标已存在且内容不同 —— 不覆盖。备份到 ${n}.bak-mmgsd`);
       try { rmSync(dst + ".bak-mmgsd", { recursive: true, force: true }); cpSync(dst, dst + ".bak-mmgsd", { recursive: true }); } catch {}
     }
     rmSync(dst, { recursive: true, force: true });
     cpSync(join(SKILLS_SRC, n), dst, { recursive: true });
+    manifest.skills[n] = digest(join(SKILLS_SRC, n));
     log(`  ${C.g}+${C.x} ${n}`);
     done++;
   }
   ok(uninstall ? `已移除 ${done} 个技能` : `已安装 ${done} 个技能` + (skipped ? `(${skipped} 个跳过)` : ""));
 
-  if (uninstall) return 0;
+  if (uninstall) {
+    try { rmSync(join(target, MANIFEST)); } catch {}
+    return 0;
+  }
+
+  // 版本清单 —— 装出来的东西必须能被追溯到某个版本,否则"我装的是哪一版"永远说不清
+  writeFileSync(join(target, MANIFEST), JSON.stringify(manifest, null, 2) + "\n");
+  log(`  ${C.d}版本清单:${target}/${MANIFEST}(version ${VERSION} · ${SOURCE})${C.x}`);
 
   if (has("--hooks")) {
     const inst = join(target, "mm-gsd-loop", "scripts", "mm-gsd-install.mjs");
@@ -139,6 +178,27 @@ function doctor() {
   log(`  包内技能:${names.length} 个(${names.join(", ")})`);
 
   const global = join(HOME, ".agents", "skills");
+
+  // 版本清单:装的是哪一版、来自哪、跟现在这份包差多少
+  const mfPath = join(global, MANIFEST);
+  if (existsSync(mfPath)) {
+    let mf = {};
+    try { mf = JSON.parse(readFileSync(mfPath, "utf8")); } catch {}
+    head("已装版本");
+    log(`  版本:   ${C.b}${mf.version ?? "?"}${C.x}`);
+    log(`  来源:   ${mf.source ?? "?"}`);
+    log(`  装于:   ${mf.installedAt ?? "?"}`);
+    const drift = names.filter((n) => mf.skills?.[n] && mf.skills[n] !== digest(join(SKILLS_SRC, n)));
+    if (drift.length) {
+      warn(`${drift.join(", ")} 与当前包内容不同 —— 装的是旧版,跑一次 install 更新`);
+    } else {
+      ok("已装内容与当前包一致");
+    }
+  } else {
+    warn(`没有版本清单(${MANIFEST})—— 这份是手工拷进去的,版本不可追溯`);
+  }
+
+  head("技能安装状态");
   for (const n of names) {
     const p = join(global, n);
     log(`  ${existsSync(p) ? C.g + "已装" + C.x : C.y + "未装" + C.x}  ${global}/${n}`);

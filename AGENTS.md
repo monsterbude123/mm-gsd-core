@@ -36,6 +36,23 @@ observe ──→ issue ──→ fix ──→ distill ──→ health ──�
 
 ---
 
+## 发布部署(改完 mm-gsd 之后)
+
+```bash
+node tools/mmc.mjs sync            # 开发期:仓库 → ~/.agents/skills/
+node tools/mmc.mjs release --patch  # 发布:门禁 → 版本 → 提交/标签 → npm → 推 GitHub → 装回本机
+node tools/mmc.mjs doctor          # 看装的是哪一版、有没有漂移
+```
+
+**`~/.agents/skills/` 只能通过这条流程更新,不许手工 cp。** 手工拷的东西没有版本清单,
+出了问题说不清是哪一版。安装会写 `~/.agents/skills/.mm-gsd-install.json`
+(版本 / 来源 / 时间 / 每个技能的指纹),doctor 拿它和当前包比对,漂移会报出来。
+
+`release` 的最后一步是**从 npm 装回本机**,不是从仓库装 —— 这样装回来的就是别人会拿到的那一份,
+不会出现「本地改了没发出去」的错觉。
+
+---
+
 ## 造门禁的判据(照着做,别自己发明)
 
 > **任何新门禁上线时,必须先造一个违规输入,证明它真的会红。**

@@ -21,6 +21,7 @@ GSD Core 的设计我很喜欢——五步成环、fresh-context 子代理、规
 - [遥测](#遥测)
 - [仓库结构](#仓库结构)
 - [设计上的几个硬决定](#设计上的几个硬决定)
+- [发布部署](#发布部署)
 - [自我维护:它自己怎么变好](#自我维护它自己怎么变好)
 - [已知局限](#已知局限)
 
@@ -215,6 +216,60 @@ mm-gsd-core/
 `--init` 就是为此存在的：任何步骤都能一条命令把 STATE 建起来，不会卡死。
 
 **工件链的最后一环不能省。** 省掉 SHIP，循环就在"验证过了"这个半成品状态上宣布结束。
+
+---
+
+## 发布部署
+
+仓库是真理源,`~/.agents/skills/` 是派生产物。**两者之间只走发布部署,不再手工 cp。**
+
+```bash
+node tools/mmc.mjs release --patch    # 完整流程
+```
+
+六步,顺序是有讲究的:
+
+| 步 | 做什么 | 为什么是这个顺序 |
+|---|---|---|
+| 1 | 跑 `mmc health` 全部门禁 | 门禁不绿就不该发出去 |
+| 2 | 递增版本号(改 `package.json`) | 版本是发布的标识 |
+| 3 | 提交 + 打 `vX.Y.Z` 标签 | 代码与版本一一对应,可回溯 |
+| 4 | `npm publish` | 发出去了就收不回来 |
+| 5 | `git push main --follow-tags` | GitHub 上有对应的 tag 与 release |
+| 6 | **从 npm 装回本机** | 装回的是"发出去的那一份",不是仓库里那份 |
+
+第 6 步是这个流程的关键:如果最后一步是从仓库直接装,就会出现"本地改了没发出去"的错觉。
+从 npm 装回来,装的就是别人会拿到的那一份。
+
+**开发期用 `mmc sync`**:从仓库装到本机,走的是和 npm 包完全相同的安装路径,
+同样写版本清单(`source` 标成 `repo:...` 以示区别)。区别只是发布没走 npm。
+
+## 版本可追溯
+
+装一次就写一份清单,记下版本、来源、时间、每个技能的指纹:
+
+```
+~/.agents/skills/.mm-gsd-install.json
+```
+
+`mmc doctor`(或 `npx mm-gsd-core doctor`)会拿它和当前包比对,
+不一致就报「装的是旧版,跑一次 install 更新」。
+
+手工 cp 装的东西没有这份清单 —— doctor 会直接说
+「没有版本清单 —— 这份是手工拷进去的,版本不可追溯」。
+
+## npm 账号的前置条件
+
+npm 现在要求发布必须带 **2FA 绕过**,两条路:
+
+- **开 2FA**(验证器 App),发布时带一次性验证码:`npm publish --otp=123456`
+- **细粒度 token**,在 <https://www.npmjs.com/settings/access-tokens/create> 创建,
+  勾上 **Bypass 2FA** + **Packages 选 Read & write**,
+  然后 `npm config set //registry.npmjs.org/:_authToken <token>`
+
+没配好会报 `403 Forbidden - Two-factor authentication or granular access
+token with bypass 2fa enabled is required to publish packages`。
+
 
 ---
 

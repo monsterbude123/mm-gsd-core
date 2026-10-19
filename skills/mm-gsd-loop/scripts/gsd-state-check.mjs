@@ -545,7 +545,7 @@ if (!existsSync(P("STATE.md"))) {
     console.log(JSON.stringify({ state: null, derived: null, errors: [{ message: ".planning/STATE.md 不存在", fix: "跑 gsd-state-check.mjs --init 一条命令建好,别手搓" }], warnings: [] }));
   } else {
     console.log("mm-gsd 状态机:未初始化(无 .planning/STATE.md)。");
-    console.log("  → 跑 `node <本脚本> --init \"<项目目标>\"` 即可建好,不必手搓模板。");
+  console.log("  → 跑 `node <本脚本> --init \"<项目目标>\"` 即可建好,不必手搓模板。");
     console.log("    (建 STATE 不是门禁的执行方该干的活 —— 门禁要的东西做不到,门禁就是死锁而不是门禁。)");
   }
   process.exit(1);

@@ -91,6 +91,14 @@
       "status": "active",
       "since": "2026-10-19",
       "_note": "打包漏文件是 npm 包最难查的故障 —— 用户 npx 装完才发现某脚本不在,报错还指向包内路径。所以检查必须模拟一次真实安装,而不是只看 files 字段。"
+    },
+    {
+      "id": "R-12",
+      "statement": "~/.agents/skills/ 只能通过发布部署流程更新,不允许手工 cp。安装必须写版本清单,doctor 必须能查出已装版本与当前包的漂移。",
+      "check": "check-install-traceable",
+      "status": "active",
+      "since": "2026-10-19",
+      "_note": "手工 cp 装的东西没有版本清单,doctor 只能报「未装」或「已装」,说不出是哪一版 —— 出了问题无从追溯。清单记版本、来源、时间与每个技能的指纹。"
     }
   ],
   "candidates": [

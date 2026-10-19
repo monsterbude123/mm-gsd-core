@@ -10,7 +10,7 @@
 //
 // 零依赖,跨平台(Windows)。用法:mmc.mjs <命令> [参数]
 
-import { readFileSync, readdirSync, existsSync, statSync, writeFileSync, mkdirSync, appendFileSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync, statSync, writeFileSync, mkdirSync, appendFileSync, rmSync, cpSync } from "node:fs";
 import { join, dirname, relative, resolve, sep } from "node:path";
 import { execFileSync } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
@@ -189,6 +189,29 @@ const CHECKS = {
     for (const l of out.split(String.fromCharCode(10)).filter((x) => x.includes(String.fromCharCode(10003)) || x.includes(String.fromCharCode(10007)))) report.info(l.trim());
     if (code !== 0) { report.fail("打包完整性检查未通过"); return false; }
     report.pass("打包完整性检查通过(模拟了一次真实安装)");
+    return true;
+  },
+
+  // R-12:安装必须可追溯 —— 装一次写一份清单,doctor 能查漂移
+  "check-install-traceable"(report) {
+    const inst = R("bin", "mm-gsd.mjs");
+    if (!existsSync(inst)) { report.fail("缺少 bin/mm-gsd.mjs"); return false; }
+    const sb = join(tmpdir(), "mmc-trace");
+    rmSync(sb, { recursive: true, force: true });
+    try {
+      execFileSync(process.execPath, [inst, "install", "--home", sb], { stdio: "pipe", timeout: 30000 });
+      const mf = join(sb, ".agents", "skills", ".mm-gsd-install.json");
+      if (!existsSync(mf)) { report.fail("安装后没有版本清单 —— 装出来的东西版本不可追溯"); return false; }
+      const m = JSON.parse(readFileSync(mf, "utf8"));
+      if (!m.version || !m.source || !m.installedAt) { report.fail("版本清单缺 version/source/installedAt"); return false; }
+      if (Object.keys(m.skills ?? {}).length === 0) { report.fail("版本清单没记技能指纹 —— 查不出漂移"); return false; }
+      report.pass(`安装写版本清单(version ${m.version} · ${m.source},${Object.keys(m.skills).length} 个技能指纹)`);
+    } catch (e) {
+      report.fail("安装流程失败:" + String(e.stderr || e.message).split(String.fromCharCode(10))[0]);
+      return false;
+    } finally {
+      rmSync(sb, { recursive: true, force: true });
+    }
     return true;
   },
 
