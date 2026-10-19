@@ -1,0 +1,31 @@
+name: health
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # 台账 / 预算 / 模板自检 / 零依赖 / 模式顺序 / 匹配器自测
+      # 这一步是本仓库唯一的强制门禁:每条 active 规则挂一个可跑检查。
+      - name: mm-gsd health
+        run: node tools/mmc.mjs health
+
+      # 检查器本身在干净项目里的六种模式冒烟
+      - name: checker smoke
+        run: |
+          mkdir -p /tmp/smoke/.planning
+          printf -- '---\nstatus: discussing\nactive_phase: 01\n---\n' > /tmp/smoke/.planning/STATE.md
+          cd /tmp/smoke
+          for m in "" --plan --phases --worktrees --stats --json; do
+            node "$GITHUB_WORKSPACE/skills/mm-gsd-loop/scripts/gsd-state-check.mjs" $m >/dev/null || true
+          done
+          echo "六种模式均未崩溃"

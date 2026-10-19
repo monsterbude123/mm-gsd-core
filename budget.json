@@ -1,0 +1,25 @@
+{
+  "_why": "轻量不是价值观,是硬约束。这份文件是防肥胖的基线:任何让系统变大且没有等量删除的改动,都会在这里被拦下。",
+  "_amend": "改预算必须走一次 distill:在 docs/theory.md 里写清楚为什么这个上限可以放宽,以及放宽换来了什么可度量的收益。只写'需要更多空间'不算理由。",
+
+  "systemGlobs": ["skills/**", "tools/**"],
+  "docGlobs": ["docs/**", "*.md"],
+
+  "totalLines": 2600,
+  "_totalRationale": "当前 skills 1820 + tools 约 400 = 约 2220。2600 留约 17% 余量。余量用完必须删东西,不许直接抬上限。",
+
+  "fileCaps": [
+    { "pattern": "skills/**/SKILL.md", "max": 320,
+      "_why": "散文是脂肪最容易堆的地方。loop 已 272 行,接近上限——想加内容先想删哪条。" },
+    { "pattern": "skills/**/*.mjs", "max": 700,
+      "_why": "检查器 626 行。这个文件已经很大了;下次加模式前先考虑拆成两个文件。" },
+    { "pattern": "skills/**/templates/*.md", "max": 80,
+      "_why": "模板超 80 行会让人不愿照抄,等于没写。" },
+    { "pattern": "skills/**/hooks/*", "max": 120, "_why": "钩子要短,长了就该拆。" },
+    { "pattern": "tools/*.mjs", "max": 700,
+      "_why": "维护工具自身也不能胖——这是最容易自我腐化的地方。" }
+  ],
+
+  "maxTotalFiles": 40,
+  "_maxFilesRationale": "16 个 skill/工具文件 + 文档已经不少。超过 40 个说明该合并而不是新增。"
+}

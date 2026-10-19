@@ -1,0 +1,99 @@
+{
+  "_why": "规则台账。每条活跃规则必须挂一个可执行的检查(mmc health 会逐条跑)。挂不上检查的规则不许进 active —— 这是本仓库唯一的防肥胖结构性保证:不能被门禁化的经验只能进候选区,不能变成散文。",
+  "_statusValues": {
+    "active": "已生效,且有可跑的门禁",
+    "candidate": "候选,还没有门禁 —— 还没生效,不许被引用为「规则」",
+    "retired": "已被别的规则取代或经证明无效,保留记录但不再执行"
+  },
+
+  "rules": [
+    {
+      "id": "R-01",
+      "statement": "任何进 main 的行为改变,都必须能追溯到一个 issue。issue 必须带证据(遥测行、复现命令或真实报错原文)。",
+      "check": "check-issue-evidence",
+      "status": "active",
+      "since": "2026-10-19"
+    },
+    {
+      "id": "R-02",
+      "statement": "一条规则想进 active,必须挂一个能跑的检查。挂不上就留在 candidate。",
+      "check": "check-ledger-integrity",
+      "status": "active",
+      "since": "2026-10-19",
+      "_note": "本条自身由 check-ledger-integrity 执行。它是台账的元规则。"
+    },
+    {
+      "id": "R-03",
+      "statement": "系统总行数不得超过 budget.json 的 totalLines;单文件不得超过 fileCaps。变胖必须有等量删除。",
+      "check": "check-budget",
+      "status": "active",
+      "since": "2026-10-19"
+    },
+    {
+      "id": "R-04",
+      "statement": "所有 .mjs 必须语法正确,且六种检查器模式都能跑起来不崩。",
+      "check": "check-syntax-and-modes",
+      "status": "active",
+      "since": "2026-10-19",
+      "_note": "node --check 查不出缺失 import 这类运行时错误,必须真跑一次。"
+    },
+    {
+      "id": "R-05",
+      "statement": "模板必须能通过它自己对应的门禁。照抄模板不该报错。",
+      "check": "check-templates-self-validate",
+      "status": "active",
+      "since": "2026-10-19",
+      "_note": "这条来自真实事故:SUMMARY 模板写了非法 status、PLAN 模板用 ... 占位、SHIP 模板 delivered 是占位符,三个模板都过不了自己的检查器。照抄即报错 = 模板没写。"
+    },
+    {
+      "id": "R-06",
+      "statement": "零运行时依赖。只允许 node: 内置模块,不引入 package.json 依赖。",
+      "check": "check-zero-dep",
+      "status": "active",
+      "since": "2026-10-19",
+      "_note": "跨 ZCode/Claude Code/Codex 安装,任何依赖都是安装摩擦。"
+    },
+    {
+      "id": "R-07",
+      "statement": "模式块必须放在 STATE 早退之前。每个模式都要能在未初始化项目里给出自己的信息,不能被别的模式的早退挡住。",
+      "check": "check-mode-ordering",
+      "status": "active",
+      "since": "2026-10-19",
+      "_note": "这条来自真实事故:--worktrees 和 --stats 都排在 STATE 早退之后,未初始化项目里永远跑不到。"
+    },
+    {
+      "id": "R-08",
+      "statement": "检查器任何模式下不得静默失败:要么输出可操作的诊断,要么 exit 非零。静默的空输出等于没跑。",
+      "check": "check-no-silent-noop",
+      "status": "active",
+      "since": "2026-10-19",
+      "_note": "来自真实事故:正则用了 Python 的 \\Z,在 JS 里匹配字面量 Z,导致波次段抓空却看不出错。"
+    },
+    {
+      "id": "R-09",
+      "statement": "门禁必须先证明门禁本身是好的:匹配器/解析器这类基础设施要带自测用例,自测不过时门禁必须自己报错,而不是退回「永远通过」。",
+      "check": "check-budget",
+      "status": "active",
+      "since": "2026-10-19",
+      "_note": "这条来自真实事故,而且是本仓库最险的一次:glob 匹配器坏掉时不抛异常,只是永远不匹配,于是单文件上限检查一路显示绿色对勾、静默空过。比没有门禁更坏 —— 没有门禁你知道没检查,假绿门禁你以为有。判据:任何门禁上线时,都必须先造一个违规输入证明它真的会红。"
+    }
+  ],
+
+  "candidates": [
+    {
+      "claim": "新增规则必须给出「本条替代了哪条旧规则的哪句话」,否则不许新增。",
+      "status": "candidate",
+      "why-not-active": "强到会劝退写入:多数新规则确实是新增知识,不是替代。降级为 distill 时的提醒。"
+    },
+    {
+      "claim": "每个 SKILL.md 应保留一份「已退役规则」小节,把被推翻的纪律留档而不是删掉。",
+      "status": "candidate",
+      "why-not-active": "留档会直接违反 R-03 的单文件上限,与防肥胖目标冲突。需要先找到不占体积的留档方式(比如只留一行指向 git)。"
+    },
+    {
+      "claim": "计划/exec/verify/ship 四个环节各自需要一条「真实项目首跑检查清单」。",
+      "status": "candidate",
+      "why-not-active": "这四条环节至今没有真实项目验证过,现在写检查清单等于把猜测固化成规范。等真跑过再写。"
+    }
+  ]
+}
