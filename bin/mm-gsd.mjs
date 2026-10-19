@@ -15,7 +15,7 @@ import { readFileSync, readdirSync, existsSync, cpSync, mkdirSync, rmSync, lstat
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { homedir } from "node:os";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 
 const PKG_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -236,6 +236,17 @@ const cmd = argv[0];
 if (!cmd || cmd === "install") process.exit(install());
 if (cmd === "doctor" || cmd === "--check" && argv.length === 1) process.exit(doctor());
 if (cmd === "check") process.exit(check());
+if (cmd === "report") {
+  // 转发给随包分发的报修脚本。使用方手上只有 skills/,没有 tools/,
+  // 所以逻辑必须住在 skills/mm-gsd-loop/scripts/ 里(规则 R-13)。
+  const rp = join(PKG_ROOT, "skills", "mm-gsd-loop", "scripts", "mm-gsd-report.mjs");
+  if (!existsSync(rp)) { bad("包里缺少 mm-gsd-report.mjs —— 打包不完整"); process.exit(1); }
+  // 用 spawnSync 不用 execFileSync:后者在子进程非零退出时抛异常,
+  // 会把「报修入口正确地拒绝了」变成一段调用栈(cwd: 253 踩过同类的坑)。
+  const r = spawnSync(process.execPath, [rp, ...argv.slice(1)], { stdio: "inherit" });
+  if (r.error) { bad("报修入口跑不起来:" + r.error.message); process.exit(1); }
+  process.exit(r.status ?? 1);
+}
 if (cmd === "--help" || cmd === "-h" || cmd === "help") { usage(); process.exit(0); }
 bad(`未知命令 ${cmd}`);
 usage();

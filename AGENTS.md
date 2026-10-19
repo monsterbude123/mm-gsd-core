@@ -14,10 +14,28 @@ observe ──→ issue ──→ fix ──→ distill ──→ health ──�
 | 步 | 命令 | 干什么 |
 |---|---|---|
 | observe | `node tools/mmc.mjs observe` | 读遥测找重复失败 |
+| inbox | `node tools/mmc.mjs inbox` | 把使用方报修拉成本地 issue（接进同一条修复流）|
 | issue | `node tools/mmc.mjs issue "<标题>" --evidence "<证据>" [--push]` | 带证据转 issue（**没证据不给建**）|
 | fix | `node tools/mmc.mjs fix <id>` | 标记解决并跑全部门禁 |
+| close | `node tools/mmc.mjs close <id>` | 关掉已修的 GitHub issue |
 | distill | `node tools/mmc.mjs distill` | 复盘 → 规则 / 理论条目 |
 | health | `node tools/mmc.mjs health` | **每次提交前必跑** |
+
+### 闭环两端
+
+**使用方报修**（随包分发，agent 在任何项目里都能跑）：
+
+```bash
+npx mm-gsd-core report "<标题>" --evidence "<复现命令或报错>"
+```
+
+多个 `--evidence` 合成一条 issue —— 同类问题一次报清楚，别拆成三条让维护方做三次上下文切换。
+
+**维护方闭环**：`inbox` → `fix` → `release` → `close`。
+
+`close` 只作用于已 `fixed` 且带 `github:` 行的 issue。本地 fixed 而 GitHub 没关，
+`inbox` 会再拉一遍，`close` 会明确说"别当成已闭环"。两边状态不同步是常态，
+所以门禁不假设它同步，而是每次都去 GitHub 读回真实状态。
 
 ---
 

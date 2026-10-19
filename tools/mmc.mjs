@@ -15,6 +15,7 @@ import { join, dirname, relative, resolve, sep } from "node:path";
 import { execFileSync } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { makeInboxClose } from "./gh-issues.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const R = (...s) => join(ROOT, ...s);
@@ -23,6 +24,7 @@ const MANIFEST_NAME = ".mm-gsd-install.json";
 const CHECKER = R("skills", "mm-gsd-loop", "scripts", "gsd-state-check.mjs");
 const TELEMETRY = join(homedir(), ".agents", "mm-gsd-runs.jsonl");
 const ISSUES = R(".planning", "issues");
+const GH_BIN = process.platform === "win32" ? "gh.exe" : "gh";
 
 const C = { r: "\x1b[31m", g: "\x1b[32m", y: "\x1b[33m", d: "\x1b[90m", b: "\x1b[1m", x: "\x1b[0m" };
 const log = (s = "") => console.log(s);
@@ -81,8 +83,13 @@ const CHECKS = {
     let pass = true;
     for (const f of readdirSync(dir).filter((x) => x.endsWith(".md"))) {
       const t = readFileSync(join(dir, f), "utf8");
-      const hasEvidence = /##\s*证据/.test(t) && /(mm-gsd-runs\.jsonl|复现|报错|\$ |> )/.test(t);
-      if (!hasEvidence) { report.fail(`${f}: 缺「## 证据」节或证据为空 —— issue 没有证据就不可复现、不可追溯`); pass = false; }
+      // 判据:「## 证据」节存在且里面确有实质内容(至少一行非空正文)。
+      // 不要退回关键词黑名单 —— 那是上一版的做法,结果使用方 agent 提交的
+      // 真实复现步骤被判"没有证据",而门禁只会在维护方这边红,
+      // 使用方永远不知道自己踩的坑没被接住(误报的门禁等于没有门禁)。
+      const sec = t.match(/##\s*证据\s*\n([\s\S]*?)(?=\n##\s|$)/);
+      const body = sec ? sec[1].replace(/```[a-z]*\n?|\n?```/g, "").trim() : "";
+      if (!body) { report.fail(`${f}: 缺「## 证据」节或证据为空 —— issue 没有证据就不可复现、不可追溯`); pass = false; }
     }
     if (pass) report.pass("issue 证据完整");
     return pass;
@@ -218,17 +225,91 @@ const CHECKS = {
   },
 
   // R-06:零依赖
+  // "零依赖"指零第三方依赖,不是零 import。相对路径引同仓库的兄弟模块是
+  // 本仓库自己的代码,换台机器照样在 —— 但它必须真的存在,否则才是安装摩擦。
+  // 判据:node: 内置 或 . 开头(相对同仓库,且单独校验可达)。
+  // 静态 import 写错路径 Node 加载时就崩(红得很响);动态 import() 藏在函数里
+  // 加载期不崩、运行到才炸,所以两种都得扫 —— 只扫静态的等于漏一半。
   "check-zero-dep"(report) {
     let pass = true;
     for (const f of walk(R("skills")).concat(walk(R("tools"))).filter((p) => p.endsWith(".mjs"))) {
-      for (const m of readFileSync(f, "utf8").matchAll(/^\s*import\s+.*?from\s+["']([^"']+)["']/gm)) {
-        if (!m[1].startsWith("node:")) { report.fail(`${rel(f)}: 引入了非内置模块 "${m[1]}" —— 跨宿主安装,任何依赖都是安装摩擦`); pass = false; }
+      const src = readFileSync(f, "utf8");
+      const specs = [
+        ...[...src.matchAll(/^\s*import\s+.*?from\s+["']([^"']+)["']/gm)].map((m) => m[1]),
+        ...[...src.matchAll(/\bimport\s*\(\s*["']([^"']+)["']\s*\)/g)].map((m) => m[1]),
+      ];
+      for (const spec of specs) {
+        if (spec.startsWith("node:")) continue;
+        if (spec.startsWith(".")) {
+          if (!existsSync(resolve(dirname(f), spec))) { report.fail(`${rel(f)}: 引了不存在的同仓库模块 "${spec}"`); pass = false; }
+          continue;
+        }
+        report.fail(`${rel(f)}: 引入了非内置模块 "${spec}" —— 跨宿主安装,任何依赖都是安装摩擦`);
+        pass = false;
       }
     }
     if (existsSync(R("package.json")) && readJSON(R("package.json"), {}).dependencies) {
       report.fail("存在 package.json dependencies —— 违反零依赖"); pass = false;
     }
     if (pass) report.pass("零运行时依赖(只允许 node: 内置)");
+    return pass;
+  },
+
+  // R-13:报修入口必须随包分发。放 tools/ 就等于不存在 ——
+  // 使用方手上只有 npx 装出来的 skills/,拿不到仓库里的任何东西。
+  "check-report-reachable"(report) {
+    const files = readJSON(R("package.json"), {}).files ?? [];
+    let pass = true;
+    // 1) bin 必须认识 report
+    const binSrc = readFileSync(R("bin", "mm-gsd.mjs"), "utf8");
+    if (!/cmd === "report"/.test(binSrc)) { report.fail("bin/mm-gsd.mjs 不认识 report —— npx mm-gsd-core report 跑不起来"); pass = false; }
+    // 2) 它转发到的脚本必须在会分发的目录里
+    //    路径用 join(PKG_ROOT, 段...) 拼,段数不固定 —— 从源码里把段全抓出来,
+    //    不假设层数(上一版假设恰好两段,对三段路径误报)。
+    const m = binSrc.match(/const rp = join\(PKG_ROOT,\s*((?:"[^"]+",?\s*)+)\)/);
+    const segs = m ? [...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]) : null;
+    if (!segs) { report.fail("bin 里找不到 report 的脚本路径 —— 转发目标不可核对"); pass = false; }
+    else {
+      const rel = segs.join("/");
+      if (!existsSync(R(...segs))) { report.fail(`report 转发目标不存在:${rel}`); pass = false; }
+      else if (!files.some((f) => segs[0] === f || segs[0].startsWith(String(f).replace(/\/$/, "")))) {
+        report.fail(`report 脚本在 ${rel},但 package.json files 没包含它 —— 使用方装不到`); pass = false;
+      }
+    }
+    // 3) 报修入口不能反过来依赖只在仓库里有的东西。
+    //    只看 import/require —— 帮助文案里提到 mmc.mjs 不算依赖,
+    //    把文案当依赖会让这条门禁天天误报,误报的门禁等于没有门禁。
+    const rpFile = R("skills", "mm-gsd-loop", "scripts", "mm-gsd-report.mjs");
+    if (existsSync(rpFile)) {
+      const src = readFileSync(rpFile, "utf8");
+      const badDep = [...src.matchAll(/^\s*(?:import\s[^;]*?from\s*|require\(\s*)["']([^"']+)["']/gm)]
+        .map((x) => x[1])
+        .filter((s) => !s.startsWith("node:") && !s.startsWith("."));
+      if (badDep.length) { report.fail(`报修脚本引入了不可用的模块:${badDep.join(", ")} —— 使用方装不到`); pass = false; }
+      if (/join\([^)]*"\.\."[^)]*"tools"|join\([^)]*"tools"/.test(src)) { report.fail("报修脚本读仓库专属目录 tools/ —— 换台机器就断"); pass = false; }
+    }
+    if (pass) report.pass("报修入口随包可达(bin → skills/,且 files 包含)");
+    return pass;
+  },
+
+  // R-14:报修失败不许假绿。没 gh / 没证据 / gh 报错,都必须非零退出。
+  // 退出 0 会让 agent 以为"已经报上去了",而维护方永远看不到这条。
+  "check-report-fails-loud"(report) {
+    const rp = R("skills", "mm-gsd-loop", "scripts", "mm-gsd-report.mjs");
+    if (!existsSync(rp)) { report.fail("报修脚本不存在,没法验它会不会假绿"); return false; }
+    let pass = true;
+    for (const [what, argv] of [
+      ["无参数(无标题)", []],
+      ["有标题无证据", ["某标题"]],
+      ["证据文件不存在", ["某标题", "--evidence-file", join(tmpdir(), "definitely-missing.md")]],
+    ]) {
+      let code = 0;
+      try { execFileSync(process.execPath, [rp, ...argv], { stdio: "pipe", timeout: 30000 }); }
+      catch (e) { code = e.status ?? 1; }
+      if (code === 0) { report.fail(`${what} 时报修退出 0 —— 会让 agent 以为报上去了,实际没有`); pass = false; }
+      else report.pass(`${what} → 退出 ${code}`);
+    }
+    if (pass) report.pass("报修的三种失败都非零退出(不假绿)");
     return pass;
   },
 
@@ -272,6 +353,9 @@ const pathBase = (p) => p.split("/").pop();
 
 // ---- 命令 ----
 const CMD = {
+  // GitHub 往返在 tools/gh-issues.mjs(拆分理由见那个文件头),挂进来当普通命令
+  ...makeInboxClose({ ISSUES, GH_BIN, log, ok, bad, warn, head, C }),
+
   // 1. 观察:读遥测找重复失败
   observe() {
     head("① observe —— 读遥测找重复失败");
@@ -533,7 +617,9 @@ ${C.b}mmc${C.x} — mm-gsd-core 自我维护 CLI
 
   ${C.b}observe${C.x}   读遥测找重复失败 → 输出候选问题
   ${C.b}issue${C.x}     带证据转 issue      mmc issue "<标题>" --evidence "<证据>" [--push]
+  ${C.b}inbox${C.x}     拉使用方报修到本地   mmc inbox
   ${C.b}fix${C.x}       标记解决并跑全部门禁  mmc fix <id>
+  ${C.b}close${C.x}     关掉已修的 GitHub issue  mmc close <id> | --all
   ${C.b}distill${C.x}   复盘 → 规则/理论沉淀(挂不上门禁的规则不许 active)
   ${C.b}health${C.x}    体检:台账/预算/模板自检/零依赖/模式顺序   ${C.d}每次提交都要跑${C.x}
   ${C.b}budget${C.x}    只看体积预算

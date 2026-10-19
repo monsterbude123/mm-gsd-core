@@ -99,6 +99,22 @@
       "status": "active",
       "since": "2026-10-19",
       "_note": "手工 cp 装的东西没有版本清单,doctor 只能报「未装」或「已装」,说不出是哪一版 —— 出了问题无从追溯。清单记版本、来源、时间与每个技能的指纹。"
+    },
+    {
+      "id": "R-13",
+      "status": "active",
+      "statement": "报修入口必须随包可达:bin 认识 report,转发目标在 package.json files 覆盖的目录里,且不反向依赖仓库专属文件。",
+      "check": "check-report-reachable",
+      "since": "0.2.0",
+      "_note": "使用方手上只有 npx 装出来的 skills/,没有仓库。把 report 放 tools/ 会让闭环从第一步就断,而断得很安静。"
+    },
+    {
+      "id": "R-14",
+      "status": "active",
+      "statement": "报修失败必须非零退出:无标题、无证据、证据文件不存在,三种情况都不许 exit 0。",
+      "check": "check-report-fails-loud",
+      "since": "0.2.0",
+      "_note": "退出 0 等于对 agent 谎称「已经报上去了」,而维护方永远看不到这条。见 T-03。"
     }
   ],
   "candidates": [
