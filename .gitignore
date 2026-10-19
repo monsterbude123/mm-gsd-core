@@ -6,3 +6,6 @@ mm-gsd-runs.jsonl
 # OS
 .DS_Store
 Thumbs.db
+
+# 临时补丁脚本(我改源码时的中间产物,不是仓库资产)
+tools/_patch.mjs
