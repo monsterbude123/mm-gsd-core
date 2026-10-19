@@ -129,8 +129,12 @@ const CHECKS = {
     const counts = {};
     for (const f of files) { const n = lines(f); total += n; counts[rel(f)] = n; }
     let pass = true;
-    if (total > b.totalLines) { report.fail(`系统总行数 ${total} 超预算 ${b.totalLines}(超 ${total - b.totalLines} 行) —— 变胖必须有等量删除,先删再写`); pass = false; }
-    else report.pass(`总行数 ${total} / 预算 ${b.totalLines}(余 ${b.totalLines - total})`);
+    // 全局总量只是参考线,不拦人。2026-10-19 起从硬顶改为参考 —— 理由见 docs/theory.md T-12:
+    // 硬顶会逼出「为了凑行数而合并/删减」的等价交换,那是收过路费,不是防肥胖。
+    // 真正防住膨胀的是下面两条硬门禁:单文件上限、文件数上限。
+    const over = total - b.totalLines;
+    if (over > 0) report.info(`总行数 ${total},高于参考线 ${b.totalLines}(超 ${over})—— 参考线不拦人;膨胀由单文件/文件数上限拦`);
+    else report.pass(`总行数 ${total} / 参考线 ${b.totalLines}(余 ${b.totalLines - total})`);
     if (files.length > b.maxTotalFiles) { report.fail(`文件数 ${files.length} 超上限 ${b.maxTotalFiles} —— 该合并,不是新增`); pass = false; }
     for (const cap of b.fileCaps ?? []) {
       const match = globToMatcher(cap.pattern);
