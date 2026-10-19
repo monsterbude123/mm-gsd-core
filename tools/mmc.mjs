@@ -409,6 +409,99 @@ const CMD = {
   },
 
   budget() { const rep = { pass: ok, fail: bad, info: (s) => log(`  ${C.d}· ${s}${C.x}`) }; return CHECKS["check-budget"](rep) ? 0 : 1; },
+  // sync:把仓库里的技能装到 ~/.agents/skills/ —— 走和 npm 包完全相同的那条安装路径,
+  // 不再手工 cp。手工 cp 是「装了但不知道是哪一版」的根源。
+  sync(args) {
+    head("sync —— 仓库 → ~/.agents/skills/");
+    const inst = R("bin", "mm-gsd.mjs");
+    if (!existsSync(inst)) { bad("缺少 bin/mm-gsd.mjs"); return 1; }
+    const argv2 = [inst, "install", "--from-repo"];
+    const hi = args.indexOf("--home");
+    if (hi >= 0 && args[hi + 1]) argv2.push("--home", args[hi + 1]);
+    try {
+      log(execFileSync(process.execPath, argv2, { encoding: "utf8", stdio: "pipe" }));
+    } catch (e) {
+      bad("sync 失败:\n" + String(e.stdout || "") + String(e.stderr || e.message));
+      return 1;
+    }
+    return 0;
+  },
+
+  // release:发布部署流程。顺序有讲究 —— 先发 npm,再从 npm 装回来,
+  // 这样「装出去的那份」和「发出去的那份」是同一份,不会出现本地改了没发的情况。
+  release(args) {
+    head("release —— 发布部署");
+    const pkgPath = R("package.json");
+    const pkg = readJSON(pkgPath, {});
+    const bump = args.includes("--patch") ? "patch" : args.includes("--minor") ? "minor" : args.includes("--major") ? "major" : null;
+    const explicit = args.find((a) => /^\d+\.\d+\.\d+/.test(a));
+
+    // 1) 门禁必须全绿 —— 不绿就不许发
+    log("  1/6 跑门禁");
+    if (CMD.health() !== 0) { bad("门禁没过,不发"); return 1; }
+
+    // 2) 版本
+    let version = pkg.version;
+    if (explicit) version = explicit.replace(/^v/, "");
+    else if (bump) {
+      const [ma, mi, pa] = version.split(".").map(Number);
+      version = bump === "major" ? ma + 1 + ".0.0" : bump === "minor" ? ma + "." + (mi + 1) + ".0" : ma + "." + mi + "." + (pa + 1);
+    }
+    if (version !== pkg.version) {
+      pkg.version = version;
+      writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
+      log("  2/6 版本 " + pkg.version + " → " + version);
+    } else log("  2/6 版本 " + version + "(未变)");
+
+    // 3) 提交 + 打标签
+    log("  3/6 提交与打标签");
+    const dirty = execFileSync("git", ["status", "--porcelain"], { cwd: ROOT, encoding: "utf8" }).trim();
+    if (dirty) {
+      try {
+        execFileSync("git", ["add", "-A"], { cwd: ROOT, stdio: "pipe" });
+        execFileSync("git", ["commit", "-m", "release: v" + version], { cwd: ROOT, stdio: "pipe" });
+        log("      已提交改动");
+      } catch (e) { bad("提交失败:" + String(e.stderr || e.message).split("\n")[0]); return 1; }
+    } else log("      工作区干净");
+    try { execFileSync("git", ["tag", "-f", "v" + version], { cwd: ROOT, stdio: "pipe" }); log("      已打标签 v" + version); }
+    catch { log("      标签 v" + version + " 已存在"); }
+
+    // 4) 发 npm
+    log("  4/6 发布到 npm");
+    try {
+      const out = execFileSync("npm", ["publish", "--access", "public"], { cwd: ROOT, encoding: "utf8", stdio: "pipe", shell: process.platform === "win32" });
+      log("      " + out.split("\n").filter((l) => l.includes("+")).join(" ").trim());
+    } catch (e) {
+      bad("npm publish 失败:\n" + String(e.stdout || "") + String(e.stderr || e.message));
+      log("      常见原因:账号未开 2FA 且 token 没有 bypass 2FA 权限(见 README「发布」)");
+      return 1;
+    }
+
+    // 5) 推 git
+    log("  5/6 推送 GitHub");
+    try {
+      execFileSync("git", ["push", "origin", "main", "--follow-tags"], { cwd: ROOT, stdio: "pipe" });
+      ok("已推送 main 与标签");
+    } catch (e) { bad("git push 失败:" + String(e.stderr || e.message).split("\n")[0]); return 1; }
+
+    // 6) 从 npm 装回来 —— 用的是刚发出去的那一份,不是仓库里那份
+    log("  6/6 从 npm 装回本机");
+    try {
+      execFileSync("npm", ["pack", "--silent"], { cwd: ROOT, encoding: "utf8", stdio: "pipe", shell: process.platform === "win32" });
+      execFileSync(process.execPath, [R("bin", "mm-gsd.mjs"), "install"], { encoding: "utf8", stdio: "pipe" });
+      ok("本机 ~/.agents/skills/ 已更新到 " + version);
+    } catch (e) {
+      warn("装回本机失败(不影响已发布):" + String(e.stderr || e.message).split("\n")[0]);
+    }
+
+    log("");
+    ok("v" + version + " 发布完成");
+    log("  npm:      npx mm-gsd-core@" + version);
+    log("  GitHub:   https://github.com/monsterbude123/mm-gsd-core/releases/tag/v" + version);
+    log("");
+    return 0;
+  },
+
 };
 
 const args = process.argv.slice(2);
