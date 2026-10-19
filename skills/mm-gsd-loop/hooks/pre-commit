@@ -1,0 +1,46 @@
+#!/bin/sh
+# mm-gsd 可选 pre-commit 门禁 —— 把最常失守的纪律变成机器门禁(宿主无关,只需 git)
+#
+# 安装(每个用 mm-gsd 的项目跑一次):
+#   mkdir -p .githooks && cp ~/.agents/skills/mm-gsd-loop/hooks/pre-commit .githooks/pre-commit
+#   chmod +x .githooks/pre-commit && git config core.hooksPath .githooks
+# 项目已有 hooks 目录?把文件拷进去即可,别覆盖已有钩子。
+# 明确知道为何跳过时:git commit --no-verify(想清楚再跳)。
+#
+# 职责(刻意保持小):
+#   阻断:SUMMARY.md 缺 status(complete|halted) 或 commits 非纯数字;
+#         VERIFICATION.md status 不是 passed|gaps_found|human_needed
+#   警告(不阻断,可能是合法描述):.planning 工件出现占位文本
+
+fail() { echo "mm-gsd pre-commit: $1" >&2; exit 1; }
+
+# 只检查本次 staged 的 .planning 工件
+files=$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null | grep '^\.planning/' | grep -E '(SUMMARY|VERIFICATION|PLAN)\.md$')
+[ -z "$files" ] && exit 0
+
+# frontmatter 内容(首个 --- 块,去首尾定界线)
+fm() { git show ":$1" | sed -n '2,/^---$/p' | sed '$d'; }
+
+for f in $files; do
+  git show ":$f" >/dev/null 2>&1 || continue
+
+  case "$f" in
+    *SUMMARY*)
+      fm "$f" | grep -qE '^status: *(complete|halted) *$' \
+        || fail "$f: frontmatter 缺 status: complete|halted(halted 也要如实写)"
+      fm "$f" | grep -qE '^commits: *[0-9]+ *$' \
+        || fail "$f: commits 必须是纯数字,来自 git rev-list --count 实测,禁手填"
+      ;;
+    *VERIFICATION*)
+      fm "$f" | grep -qE '^status: *(passed|gaps_found|human_needed) *$' \
+        || fail "$f: status 必须是 passed|gaps_found|human_needed(人工区非空禁 passed)"
+      ;;
+  esac
+
+  # 占位文本:警告不阻断(Known Stubs 节可能合法提到)
+  if git show ":$f" | grep -nE 'To be filled|待补|PLACEHOLDER' >/dev/null 2>&1; then
+    echo "mm-gsd pre-commit 警告: $f 含占位文本 —— 确认它不是假完成(Known Stubs 里的合法描述可忽略)" >&2
+  fi
+done
+
+exit 0

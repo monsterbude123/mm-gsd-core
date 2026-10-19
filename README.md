@@ -1,0 +1,214 @@
+# mm-gsd-core
+
+> 从 GSD 蒸馏出的极简核心：**把"散文约定"换成"机器门禁"**。
+
+GSD Core 的设计我很喜欢——五步成环、fresh-context 子代理、规划期预授权、验证独立于执行。
+但它太重了：单是规划环节的提示词就有上万字，主上下文很快被吃掉，执行一轮 phase 要 17–25 分钟。
+
+这个仓库是把它**砍到只剩骨架、再给每条纪律配一个能跑的检查器**的结果。
+
+核心信条一句话：**每步收尾的动作是"跑检查器转绿"，不是"更新 STATE"。**
+后者是散文约定——模型自觉的时候有用，不自觉的时候等于没有。门禁不是。
+
+---
+
+## 目录
+
+- [它是什么 / 不是什么](#它是什么--不是什么)
+- [安装](#安装)
+- [五步成环](#五步成环)
+- [检查器](#检查器)
+- [遥测](#遥测)
+- [仓库结构](#仓库结构)
+- [设计上的几个硬决定](#设计上的几个硬决定)
+- [已知局限](#已知局限)
+
+---
+
+## 它是什么 / 不是什么
+
+| | GSD Core | mm-gsd-core |
+|---|---|---|
+| 定位 | 全流程 spec 驱动开发系统 | 极简核心，五步循环不变，配套全砍 |
+| 纪律的表达方式 | 提示词散文 | 散文 + **机器门禁**（检查器） |
+| 上下文成本 | 高（规划提示词上万字） | 低（每个 skill 几十行） |
+| 并发 | worktree / orchestrator 能力协商 | `files_modified` + `--phases` 波次校验 |
+| 依赖 | npm 包 + Node | 零依赖（只有一个 node 脚本） |
+
+**没保留的**：多源研究审计（RESEARCH 工件）、上下文工程分档、模型路由与降级、完整 CLI 工具链、ship 归档体系。
+这些不是不好，是**在提示词里写它们会让每一步都变慢**，而收益要用很多轮才能兑现。
+
+**保留并强化的**：五步成环、拍板权五类白名单、规划期预授权、任务四件套 + fails_when 契约、
+决策保真 D-NN、缩水禁令、多 worktree 并发契约，以及一条 GSD 没有的**终态门禁**（见下）。
+
+---
+
+## 安装
+
+技能装到 `~/.agents/skills/`（ZCode 直接读；其他宿主用安装器建链接）：
+
+```bash
+git clone <this-repo>
+cp -r skills/mm-gsd-* ~/.agents/skills/
+
+# 危险 git 拦截(host hook,环境级,agent 无法绕过)
+node ~/.agents/skills/mm-gsd-loop/scripts/mm-gsd-install.mjs --check   # 只体检
+node ~/.agents/skills/mm-gsd-loop/scripts/mm-gsd-install.mjs           # 装
+```
+
+安装器覆盖 ZCode / Claude Code / Codex / Trae / Cursor，按各家格式写入；
+hooks 机制没验证过的宿主只装技能、不装 hook（fail-closed，宁可不装也不写坏配置）。
+
+**这个仓库是真理源，`~/.agents/skills/` 是派生产物。** 改了逻辑先改这里，再同步过去。
+
+---
+
+## 五步成环
+
+```
+discuss ──→ plan ──→ execute ──→ verify ──→ ship
+                                                 ↑__________|
+                                          (修不好就回 execute,预算 2 轮)
+```
+
+| 环节 | 做什么 | 落盘物 | 关键纪律 |
+|---|---|---|---|
+| **discuss** | 捕获灰区决策，锁 D-NN | `<NN>-CONTEXT.md` | 思考伙伴不是访谈员；没有灰区也要写最小 CONTEXT |
+| **plan** | 拆票、目标倒推、tracer-first | `<NN-MM>-PLAN.md` | 任务四件套 + fails_when + files_modified + D-NN 全引用 |
+| **execute** | 逐任务施工、原子提交 | `<NN-MM>-SUMMARY.md` | 偏差规则 R1–R4；技术决策自己定，只记 `[AUTO]` |
+| **verify** | 独立验证，证据驱动 | `<NN>-VERIFICATION.md` | 假设"任务完成了但目标落空"，逐条推翻 |
+| **ship** | 交付物**被消费** | `<NN-MM>-SHIP.md` | 写 `delivered` 前先核对 PR/合并/发布是真的 |
+
+**最后一环是本仓库相对 GSD 的一个增量**：GSD 的工件链止于 VERIFICATION，
+验证一通过就等于宣布 phase 完成，而合并/发布/文档同步没有任何工件管它。
+这里 VERIFICATION 通过只推出 `completed`，**只有 SHIP 落盘才推出 `shipped`**。
+
+---
+
+## 检查器
+
+整个仓库只有一个可执行文件，六个模式。它是"门禁"的实现。
+
+```bash
+CK=~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs
+
+node $CK --init "<项目目标>"   # 冷启动:建 .planning/STATE.md
+node $CK                      # 每步收尾:工件契约 + 状态推导 + 交付缺口
+node $CK --plan               # PLAN 落盘后:四件套/失败方向/文件清单/任务预算
+node $CK --phases             # 规划前:算波次 + 同波次零重叠 + 环依赖
+node $CK --worktrees          # 并行前:跨 worktree 文件与 REQ 冲突
+node $CK --stats              # 诊断:读遥测,不用手工记
+```
+
+退出码 `0` = 转绿，`1` = 有违规。可以直接接 CI 或 host hook。
+
+### 检查器拦什么
+
+**默认模式**
+
+- 从工件存在性推导真实状态，与 STATE 声明比对——**STATE 不能说谎**
+- 工件字段契约：SUMMARY 的 `status`/`commits`（必须 `git rev-list` 实测）、
+  VERIFICATION 的三值 status、SHIP 的 `status` + `delivered` 证据
+- 交付缺口：验证过了却没有 SHIP → 警告"停在验证没走到交付"
+- 假完成信号：占位文本、`STATE.md` 超 100 行、paused 却没有 HANDOFF
+
+**`--plan`**
+
+- 五件套（`files`/`read_first`/`action`/`verify`/`done`）缺一不可
+- `verify` 必须带 `fails_when` 失败方向——**没有失败方向的验证是假验证**
+- `files_modified` 不许出现模糊措辞（会让并行保护整个失效）
+- `verify` 里不许 `|| true` 之类的"永远为真"写法
+- 任务数 ≤3、单任务文件 ≤5，超了是拆票不是缩内容
+- CONTEXT 里每条 D-NN 必须被至少一个任务引用（决策保真）
+
+**`--phases`**
+
+- `depends_on` 成环 → 直接报错（没有合法执行顺序）
+- 同一波次内各 phase 的 `files_modified` 必须零重叠
+
+**`--worktrees`**
+
+- 跨 worktree 的 `files_modified` 交集 → 冲突
+- REQ 编号只有**共用同一份 `REQUIREMENTS.md`** 时才谈得上冲突；
+  否则只是各自局部编号撞车，降级为提示不阻塞
+
+---
+
+## 遥测
+
+检查器每跑一次自动往 `~/.agents/mm-gsd-runs.jsonl` 追加一行（ts / 项目 / 模式 /
+推导状态 / 报错 / 警告 / 退出码），**不需要任何人记得写**。
+
+```bash
+node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --stats        # 当前项目
+node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --stats --all  # 全部项目
+```
+
+`--stats` 报三样最有用的东西：**门禁失败率**、**同一项目反复失败次数**（≥3 次 = 死锁嫌疑，
+不是内容质量差）、**高频报错类型排行**。
+
+不想被记录：`GSD_TELEMETRY=0`。遥测写失败也绝不阻断流程。
+
+> 这套机制第一版是"agent 每个 phase 手工追加一行 JSONL"，跑完一个真实项目后一个文件都没有。
+> **需要自觉的探子等于没有探子。** 检查器是每步必跑的机器门禁，它手里已经有全部字段。
+
+---
+
+## 仓库结构
+
+```
+mm-gsd-core/
+├── README.md
+├── skills/
+│   ├── mm-gsd-discuss/   SKILL.md
+│   ├── mm-gsd-plan/      SKILL.md + templates/{context,plan}.md
+│   ├── mm-gsd-exec/      SKILL.md + templates/summary.md
+│   ├── mm-gsd-verify/    SKILL.md + templates/verification.md
+│   └── mm-gsd-loop/      SKILL.md
+│                         + scripts/{gsd-state-check,mm-gsd-install}.mjs
+│                         + hooks/{guard-dangerous-git.mjs,pre-commit}
+│                         + templates/{state,ship}.md
+└── workflows/
+    └── mm-gsd-phase.dwf.ts    ZCode 动态工作流(7 阶段 + 模型路由)
+```
+
+**三层门禁各管一段，互不替代：**
+
+| 层 | 时点 | 强度 |
+|---|---|---|
+| 宿主 hook（PreToolUse/Bash） | 命令执行前 | 环境级，agent 无法绕过——真正不可替代的是这层 |
+| 检查器 | 工件写完 | 流程级 |
+| git pre-commit | 提交那一刻 | 可选，与项目现有 hooks 体系冲突时不要装 |
+
+---
+
+## 设计上的几个硬决定
+
+**拍板权只有五类要问用户。** 产品取舍 / 不可逆破坏性 / 花钱或外部副作用 / 法律合规 /
+只有用户知道的输入。其余（选库、文件组织、命名、测试写法、重构边界）一律自己定、标 `[AUTO]` + 依据。
+拿不准就去查项目事实，查不到就选一个合理默认并标明——**不要因为"拿不准"而上浮**。
+
+**提问成本从执行期挪到规划期。** PLAN 里单列 `<auto_decisions>` 节，把执行期可能要问的点
+在规划时就查清并定夺。这不是"预先替用户做主"，是把它挪到信息最全的时候决定。
+
+**门禁必须自带解法。** 门禁要的东西如果执行方这一步做不到，它就不是门禁是墙。
+`--init` 就是为此存在的：任何步骤都能一条命令把 STATE 建起来，不会卡死。
+
+**工件链的最后一环不能省。** 省掉 SHIP，循环就在"验证过了"这个半成品状态上宣布结束。
+
+---
+
+## 已知局限
+
+写得很直白，因为这个仓库还年轻：
+
+1. **真实项目只跑过一轮**。五个 skill 里 discuss 在真项目上产出过一份 252 行、
+   带行号级代码引用的 CONTEXT（质量已验证）；plan/exec/verify/ship 的真实使用**尚未验证**。
+   检查器在合成夹具上全模式通过，但那不等于在真实循环里能转绿。
+2. **还没接上 GSD 的研究成果沉淀**。原版有 `.learnings/`、intake 扫描、跨 phase 的学习回路，
+   这里没有。
+3. **没有多源覆盖审计**。CONTEXT/REQ/GOAL 的四源对照只在 plan skill 里留了一条纪律，没有程序化检查。
+4. **`--stats` 的死锁检测目前是启发式的**（同项目失败 ≥3 次），没有区分"内容不合格"和"门禁要的东西做不到"。
+5. **ZCode workflow 未与检查器深度集成**，目前是独立的 7 阶段流水线，没有复用这里的门禁模式。
+
+前三条是我知道该做还没做的，后两条需要更多真实数据才能判断是否值得做。
