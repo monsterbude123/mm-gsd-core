@@ -3,14 +3,15 @@
   "_amend": "改预算必须走一次 distill:在 docs/theory.md 里写清楚为什么这个上限可以放宽,以及放宽换来了什么可度量的收益。只写'需要更多空间'不算理由。",
   "systemGlobs": [
     "skills/**",
-    "tools/**"
+    "tools/**",
+    "bin/**"
   ],
   "docGlobs": [
     "docs/**",
     "*.md"
   ],
-  "totalLines": 2800,
-  "_totalRationale": "skills(检查器 660 + references 140 + SKILL/模板约 420) + tools 约 390 ≈ 2290。2800 留约 18% 余量,余量用完必须删东西。",
+  "totalLines": 3000,
+  "_totalRationale": "skills(检查器 670 + references 139 + SKILL/模板约 420) + tools 约 390 + bin 约 200 ≈ 2450。3000 留约 18% 余量。",
   "fileCaps": [
     {
       "pattern": "skills/**/SKILL.md",
@@ -41,6 +42,11 @@
       "pattern": "tools/*.mjs",
       "max": 700,
       "_why": "维护工具自身也不能胖——这是最容易自我腐化的地方。"
+    },
+    {
+      "pattern": "bin/*.mjs",
+      "max": 250,
+      "_why": "安装器是要分发给用户的入口,不该无限长"
     }
   ],
   "maxTotalFiles": 40,

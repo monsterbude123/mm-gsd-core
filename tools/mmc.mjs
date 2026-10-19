@@ -179,6 +179,19 @@ const CHECKS = {
     return true;
   },
 
+  // R-11:打包完整性 —— 发布前必跑
+  "check-package-verifiable"(report) {
+    const script = R("scripts", "verify-package.mjs");
+    if (!existsSync(script)) { report.fail("缺少 scripts/verify-package.mjs —— 打包检查无从谈起"); return false; }
+    let out = "", code = 0;
+    try { out = execFileSync(process.execPath, [script], { cwd: ROOT, encoding: "utf8", stdio: "pipe" }); }
+    catch (e) { code = e.status ?? 1; out = String(e.stdout || "") + String(e.stderr || ""); }
+    for (const l of out.split(String.fromCharCode(10)).filter((x) => x.includes(String.fromCharCode(10003)) || x.includes(String.fromCharCode(10007)))) report.info(l.trim());
+    if (code !== 0) { report.fail("打包完整性检查未通过"); return false; }
+    report.pass("打包完整性检查通过(模拟了一次真实安装)");
+    return true;
+  },
+
   // R-06:零依赖
   "check-zero-dep"(report) {
     let pass = true;

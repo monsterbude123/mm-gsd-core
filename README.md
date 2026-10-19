@@ -46,7 +46,23 @@ GSD Core 的设计我很喜欢——五步成环、fresh-context 子代理、规
 
 ## 安装
 
-技能装到 `~/.agents/skills/`（ZCode 直接读；其他宿主用安装器建链接）：
+### 一条命令(npm / npx)
+
+```bash
+npx mm-gsd-core                 # 装到 ~/.agents/skills/
+npx mm-gsd-core install --local # 装到当前项目的 ./.agents/skills/
+npx mm-gsd-core install --hooks # 顺带装宿主 hook(危险 git 拦截)
+npx mm-gsd-core doctor          # 体检宿主环境与已装状态(只读)
+npx mm-gsd-core check --plan    # 直接跑状态检查器
+```
+
+零依赖，Node ≥ 18，跨 Windows / macOS / Linux。装完 5 个技能就位：
+`mm-gsd-discuss` / `mm-gsd-plan` / `mm-gsd-exec` / `mm-gsd-verify` / `mm-gsd-loop`。
+
+**npx 只需要一个 bin** —— 多个 bin 时 npx 会报 `could not determine executable to run`，
+所以本包只暴露 `mm-gsd` 一个入口，检查器通过 `mm-gsd check` 转发。
+
+### 手动安装
 
 ```bash
 git clone <this-repo>
@@ -61,6 +77,8 @@ node ~/.agents/skills/mm-gsd-loop/scripts/mm-gsd-install.mjs           # 装
 hooks 机制没验证过的宿主只装技能、不装 hook（fail-closed，宁可不装也不写坏配置）。
 
 **这个仓库是真理源，`~/.agents/skills/` 是派生产物。** 改了逻辑先改这里，再同步过去。
+npm 包同样是从这里打的：`npm run pack:check` 会模拟一次真实安装，
+确认包里该有的文件一个不少、检查器七种模式在包内路径真能跑。
 
 ---
 

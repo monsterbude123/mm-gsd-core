@@ -14,10 +14,14 @@ jobs:
         with:
           node-version: '22'
 
-      # 台账 / 预算 / 模板自检 / 零依赖 / 模式顺序 / 匹配器自测
+      # 台账 / 预算 / 模板自检 / 零依赖 / 模式顺序 / 匹配器自测 / 打包完整性
       # 这一步是本仓库唯一的强制门禁:每条 active 规则挂一个可跑检查。
       - name: mm-gsd health
         run: node tools/mmc.mjs health
+
+      # 打包完整性:模拟一次真实安装(装到临时 HOME,跑检查器,核对 npm pack 清单)
+      - name: package integrity
+        run: node scripts/verify-package.mjs
 
       # 检查器本身在干净项目里的六种模式冒烟
       - name: checker smoke
