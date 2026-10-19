@@ -13,7 +13,7 @@
 import { readFileSync, readdirSync, existsSync, statSync, writeFileSync, mkdirSync, appendFileSync } from "node:fs";
 import { join, dirname, relative, resolve, sep } from "node:path";
 import { execFileSync } from "node:child_process";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -145,7 +145,7 @@ const CHECKS = {
     if (!pass) return false;
     report.pass("所有 .mjs 语法正确");
     // node --check 查不出缺失 import —— 必须真跑
-    const sandbox = join(homedir(), "AppData", "Local", "Temp", "mmc-smoke");
+    const sandbox = join(tmpdir(), "mmc-smoke");
     mkdirSync(join(sandbox, ".planning"), { recursive: true });
     writeFileSync(join(sandbox, ".planning", "STATE.md"), "---\nstatus: discussing\nactive_phase: 01\n---\n");
     const modes = ["", "--plan", "--phases", "--worktrees", "--stats", "--json"];
@@ -167,7 +167,7 @@ const CHECKS = {
   // R-05:模板必须通过自己的门禁
   "check-templates-self-validate"(report) {
     const gated = { "plan.md": "--plan", "ship.md": null };
-    const sandbox = join(homedir(), "AppData", "Local", "Temp", "mmc-tpl");
+    const sandbox = join(tmpdir(), "mmc-tpl");
     let pass = true, checked = 0;
     const unchecked = [];
     for (const f of walk(R("skills")).filter((p) => p.includes("templates") && p.endsWith(".md"))) {
@@ -182,7 +182,7 @@ const CHECKS = {
       if (base === "plan.md") writeFileSync(join(dir, "STATE.md"), "---\nstatus: planning\nactive_phase: 02\n---\n");
       else writeFileSync(join(dir, "STATE.md"), "---\nstatus: shipped\nactive_phase: 02\n---\n");
       let out = "", code = 0;
-      try { out = execFileSync(process.execPath, [CHECKER, "--plan", rel(join(dir, "02-01-" + (base === "plan.md" ? "PLAN" : "SHIP") + ".md"))], { cwd: sandbox, encoding: "utf8", stdio: "pipe" }); }
+      try { out = execFileSync(process.execPath, [CHECKER, "--plan", join(dir, "02-01-" + (base === "plan.md" ? "PLAN" : "SHIP") + ".md")], { cwd: sandbox, encoding: "utf8", stdio: "pipe" }); }
       catch (e) { code = e.status ?? 1; out = String(e.stdout || "") + String(e.stderr || ""); }
       if (base === "plan.md" && code !== 0) { report.fail(`模板 ${base} 过不了自己的门禁 —— 照抄就报错:\n${out.split("\n").filter((l) => l.includes("✗")).slice(0, 3).join("\n")}`); pass = false; }
       if (base === "ship.md" && /还是模板占位符/.test(out)) { report.fail(`模板 ${base} 的 delivered 是占位符,门禁会拦下照抄的人`); pass = false; }
