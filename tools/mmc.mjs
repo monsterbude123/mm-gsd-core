@@ -331,18 +331,22 @@ const CHECKS = {
     const src = readFileSync(CHECKER, "utf8");
     const stateEarly = src.indexOf('// ---- STATE ----');
     if (stateEarly < 0) { report.fail("找不到 // ---- STATE ---- 标记"); return false; }
-    const modes = ["--worktrees", "--plan", "--phases", "--stats", "--init"];
+    // 模式列表从源码反推,不用硬编码数组。原版写死五个,新增 --templates/--selfcheck 后
+    // 它们既不受「排在 STATE 早退前」约束、也不受「必须有输出」约束 —— 漏检的那个
+    // --selfcheck 恰恰是本轮新增的门禁自测,检查器漏检自己的自测模式(GitHub #4)。
+    // 排除修饰符:--json/--quiet/--planning 只改已有模式的输出方式,没有自己的分块。
+    const MODIFIERS = new Set(["--json", "--quiet", "--planning", "--check", "--from-repo", "--local"]);
+    const modes = [...new Set([...src.matchAll(/process\.argv\.includes\("(--[a-z-]+)"\)/g)].map((m) => m[1]))]
+      .filter((m) => !MODIFIERS.has(m));
+    if (!modes.length) { report.fail("检查器里找不到任何模式入口 —— 模式列表反推失败"); return false; }
     let pass = true;
     for (const m of modes) {
       const i = src.indexOf(`process.argv.includes("${m}")`);
       if (i < 0) { report.fail(`检查器里找不到 ${m} 的入口`); pass = false; continue; }
       if (i > stateEarly) { report.fail(`${m} 的分块排在 STATE 早退之后 —— 未初始化项目里永远跑不到这个模式`); pass = false; }
-    }
-    // 每个模式的入口块里必须真的 console.log 些什么
-    for (const m of modes) {
-      const i = src.indexOf(`process.argv.includes("${m}")`);
+      // 每个模式的入口块里必须真的输出些什么(自测模式由 runSelfTest 负责输出)
       const chunk = src.slice(i, i + 3000);
-      if (!/console\.log/.test(chunk)) { report.fail(`${m} 的分块里没有任何 console.log —— 静默的空输出等于没跑`); pass = false; }
+      if (!/console\.log|runSelfTest/.test(chunk)) { report.fail(`${m} 的分块里没有任何输出 —— 静默的空输出等于没跑`); pass = false; }
     }
     if (pass) report.pass(`${modes.length} 个模式都在 STATE 早退之前,且各自有输出`);
     return pass;
