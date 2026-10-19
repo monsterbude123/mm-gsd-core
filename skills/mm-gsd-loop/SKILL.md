@@ -85,6 +85,7 @@ agent 在 discuss 结束时跑门禁 → 报"未初始化" → 按"转绿才准�
 | 开多 worktree 前 | `--worktrees` | 跨 worktree 文件与 REQ 无冲突 |
 | 改了模板 | `--templates` | 6 份模板结构合规;多值写法会被当场抓出 |
 | 排查 | `--stats` | 反复失败的同一个项目 = 死锁嫌疑 |
+| 改了检查器正则 | `--selfcheck` | 门禁对自己的用例仍全绿(防 admin 路径、全角括号那类判错) |
 
 **每步收尾的动作是"跑检查器转绿",不是"更新 STATE"**——后者是散文约定,前者是门禁。
 但**门禁必须自带解法**:转绿需要的东西如果这一步做不到,门禁就变成了挡住路的墙。
@@ -161,11 +162,7 @@ npx mm-gsd-core report "<一句话说清什么坏了>" --evidence "<你跑了什
 **报完记下 URL** —— 命令打印的 issue 地址才是闭环凭据。没装 `gh` 或没登录时它会**非零退出**
 让你手动贴,那是真的没发出去,别当成已经报了。
 
-展开用法(`--evidence-file`、批量多条、dry-run)跑 `--help`:
-
-```bash
-node ~/.agents/skills/mm-gsd-loop/scripts/mm-gsd-report.mjs --help
-```
+展开用法(`--evidence-file`、批量多条、dry-run)跑 `mm-gsd-report.mjs --help`。
 
 ## 编排层失效模式(你会怎么偷懒,逐条自查)
 
@@ -179,12 +176,7 @@ node ~/.agents/skills/mm-gsd-loop/scripts/mm-gsd-report.mjs --help
 
 ## 状态机 = 工件存在性(可查询,不是散文约定)
 
-状态不是记录,是**从工件推导**的:CONTEXT→PLAN→SUMMARY→VERIFICATION→SHIP。**每步收尾跑一次检查器**,它做四件模型自觉做不好的事:
-
-```bash
-node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs        # 人读
-node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --json # 机读(agent/工作流消费)
-```
+状态不是记录,是**从工件推导**的:CONTEXT→PLAN→SUMMARY→VERIFICATION→SHIP。**每步收尾跑一次检查器**(`node $CK`,加 `--json` 供 agent/工作流消费),它做四件模型自觉做不好的事:
 
 1. **推导真实状态并与 STATE 声明比对**——声明与事实不符就报错(STATE 不能说谎)。
 2. **工件字段契约**:SUMMARY 的 status∈{complete,halted}、commits 必须纯数字(实测);VERIFICATION 的 status∈{passed,gaps_found,human_needed};SHIP 的 status∈{shipped,held}、`delivered` 必须写得出可核对的位置。

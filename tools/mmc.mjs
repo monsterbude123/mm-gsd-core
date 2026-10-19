@@ -313,6 +313,19 @@ const CHECKS = {
     return pass;
   },
 
+  // R-15:门禁必须对自己的正则有自测。GitHub #6/#7/#8 三条都是
+  // 「门禁看起来在跑、实际判错」—— 不崩,只是安静地给错答案。
+  "check-gate-selftest"(report) {
+    let out = "", code = 0;
+    try { out = execFileSync(process.execPath, [CHECKER, "--selfcheck"], { cwd: ROOT, encoding: "utf8", stdio: "pipe" }); }
+    catch (e) { code = e.status ?? 1; out = String(e.stdout || "") + String(e.stderr || ""); }
+    const n = (out.match(/✓/g) ?? []).length;
+    if (code === 0) { report.pass(`门禁自测全过(${n} 条)`); return true; }
+    report.fail("门禁自测不过 —— 门禁本身是坏的,先修门禁再谈别的");
+    for (const l of out.split(/\r?\n/).filter((x) => x.includes("✗"))) report.info(l.trim());
+    return false;
+  },
+
   // R-07:模式块必须排在 STATE 早退之前
   "check-mode-ordering"(report) {
     const src = readFileSync(CHECKER, "utf8");

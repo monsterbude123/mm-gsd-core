@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 // gsd-state-check —— mm-gsd 隐式状态机的确定性检查器
 //
-// 状态不是散文约定,是工件存在性的推导:CONTEXT→PLAN→SUMMARY→VERIFICATION。
-// 本脚本读取 .planning/,推导"实际在哪一步",与 STATE.md 声明的 status 比对,
+// 状态不是散文约定,是工件存在性的推导:CONTEXT→PLAN→SUMMARY→VERIFICATION→SHIP。
+// 读取 .planning/,推导"实际在哪一步",与 STATE.md 声明的 status 比对,
 // 校验工件字段契约(fake-completed、commits 手填、假 status 都在此拦截)。
 //
-// 用法:
-//   node gsd-state-check.mjs           # 人读:状态行 + 违规清单,违规 exit 1
-//   node gsd-state-check.mjs --json    # 机读:{state, derived, errors, warnings}
-//   node gsd-state-check.mjs --quiet   # 只退出码(脚本/CI 门禁)
+// 无参数  = 状态行 + 违规清单,违规 exit 1
+//   --json    机读:{state, derived, errors, warnings}     --quiet  只退出码(CI)
+//   --init    建 STATE.md          --plan  校验 PLAN 文件          --phases 算波次
+//   --worktrees 跨 worktree 冲突  --templates 模板自检            --stats   遥测聚合
+//   --selfcheck  门禁对自己的正则自测(见 references/gate-selftest.mjs)
 //
 // 零依赖、跨平台(Windows/macOS/Linux)。GSD 原版等价物:verify.plan-structure +
 // verification.status;这是它的极简版。
@@ -71,8 +72,12 @@ function frontmatter(path) {
 }
 
 // ---- PLAN 解析(--plan / --phases / --worktrees 共用)----
-// 模糊措辞:机器无法据此判断并行冲突,--worktrees 与 --plan 都会因此失效
-const VAGUE_FILE = /相关|若干|全部|所有|等等|若干文件|…|\.\.\.|etc\b|TBD|待定|N\/A/i;
+// 模糊措辞让机器无法判断并行冲突。两条正则的坑与用例见 references/gate-selftest.mjs:
+// VAGUE_FILE 的 N\/A 需左右断言(\b 挡不住 admin/auth,#6)
+// DEP_RE 的括号要认全角 U+FF08/FF09,否则中文 STATE.md 依赖链解析为空(#7)
+const VAGUE_FILE = /相关|若干|全部|所有|等等|若干文件|…|\.\.\.|etc\b|TBD|待定|(?<![A-Za-z0-9])N\/A(?![A-Za-z0-9])/i;
+// 解析与剔除共用一个常量 —— 两处各写一遍必然会走偏
+const DEP_RE = /[（(]\s*depends_on\s*[:：]\s*([^）)]*)[）)]/i;
 // 缩水措辞(skill「缩水禁令」);v1 只警告——"v1 API" 是合法命名,误杀成本更高
 const SHRINK_STRONG = /simplified|placeholder|basic version|minimal implementation|skip for now|will be wired later|简化版|暂时先|先不做|后面再接/i;
 const SHRINK_WEAK = /\bv1\b/i;
@@ -332,9 +337,9 @@ if (process.argv.includes("--phases")) {
   for (const line of sec) {
     const m = line.match(/^-\s*\[( |x|X)\]\s*(\S+)\s*[—–-]?\s*(.*)$/);
     if (!m) continue;
-    const depM = m[3].match(/\(\s*depends_on\s*:\s*([^)]*)\)/i);
+    const depM = m[3].match(DEP_RE);
     phases.push({
-      id: unquote(m[2]), title: m[3].replace(/\(\s*depends_on\s*:[^)]*\)/i, "").trim(),
+      id: unquote(m[2]), title: m[3].replace(DEP_RE, "").trim(),
       done: m[1].toLowerCase() === "x",
       deps: depM ? depM[1].split(/[,\s]+/).map(unquote).filter(Boolean) : [],
     });
@@ -438,6 +443,14 @@ if (process.argv.includes("--stats")) {
   if (last) console.log("  最近一次:   " + new Date(last.ts).toLocaleString() + " · " + last.mode + " · exit=" + last.exit + (last.derived ? " · 推导=" + last.derived : ""));
   console.log("");
   process.exit(0);
+}
+
+// ---- --selfcheck:门禁自己的正则自测 ----
+// 用例与理由在 references/gate-selftest.mjs(GitHub #6/#7/#8 三条都是门禁判错而非崩溃,
+// 必须有用例证明它会红)。放独立文件是为主脚本省行数,不是怕麻烦。
+if (process.argv.includes("--selfcheck")) {
+  const { runSelfTest } = await import("../references/gate-selftest.mjs");
+  process.exit(runSelfTest(VAGUE_FILE, DEP_RE) ? 1 : 0);
 }
 
 // ---- --templates:模板自检 + 实例结构契约(规则表按需加载,不进本文件)----
@@ -582,11 +595,17 @@ const artifactInfo = { context: null, plans: [], summaries: [], verification: nu
   const files = inPhases.length > 0 ? inPhases : rootFiles;
   const base = inPhases.length > 0 ? P("phases", phasePath) : P(".");
   artifactInfo.layout = inPhases.length > 0 ? "phases" : "root";
-  artifactInfo.context = files.find((f) => f.endsWith("-CONTEXT.md")) ?? null;
+  // root 布局下 files 混着所有 phase,find() 取的是排序最靠前那份 ——
+  // active_phase=05 却读 01- 的工件,derived 就建立在别的 phase 上(GitHub #8)。
+  // 先按 active_phase 前缀找,找不到才退回全量。
+  const own = (f) => phaseDir && (f === phaseDir || f.startsWith(phaseDir + "-") || f.startsWith(phaseDir));
+  const pick = (suffix) => files.find((f) => own(f) && f.endsWith(suffix))
+    ?? files.find((f) => f.endsWith(suffix)) ?? null;
+  artifactInfo.context = pick("-CONTEXT.md");
   artifactInfo.plans = files.filter((f) => f.endsWith("-PLAN.md"));
   artifactInfo.summaries = files.filter((f) => f.endsWith("-SUMMARY.md"));
-  artifactInfo.verification = files.find((f) => f.endsWith("-VERIFICATION.md")) ?? null;
-  artifactInfo.shipment = files.find((f) => f.endsWith("-SHIP.md")) ?? null;
+  artifactInfo.verification = pick("-VERIFICATION.md");
+  artifactInfo.shipment = pick("-SHIP.md");
   const J = (f) => join(base, f);
 
   // CONTEXT 之前没有任何实例门禁:缺四个标签也照样把状态机推进到 planning
@@ -601,8 +620,13 @@ const artifactInfo = { context: null, plans: [], summaries: [], verification: nu
   else if (artifactInfo.summaries.length < artifactInfo.plans.length) derived = "executing";
   else {
     const vfm = artifactInfo.verification ? frontmatter(J(artifactInfo.verification)) : null;
-    // 验证通过 ≠ 交付。SHIP 工件是终态的唯一凭据:有它才叫 shipped。
-    derived = vfm?.status === "passed" ? (has(artifactInfo.shipment) ? "shipped" : "completed") : "verifying";
+    // 验证通过 ≠ 交付。SHIP 工件是终态的唯一凭据 —— 但「有它」不等于「它说 shipped」。
+    // 只判存在会把 status: held 的 SHIP 推成 shipped:同一份文件,校验段认 held、
+    // 推导段不认,两套口径(GitHub #8)。受阻就是受阻,不能因为工件在就宣布交付。
+    const shm = artifactInfo.shipment ? frontmatter(J(artifactInfo.shipment)) : null;
+    derived = vfm?.status === "passed"
+      ? (!artifactInfo.shipment ? "completed" : shm?.status === "shipped" ? "shipped" : "verifying")
+      : "verifying";
   }
 
   // ---- 工件字段契约(fake-completed / 手填 commits / 假 status)----

@@ -115,6 +115,14 @@
       "check": "check-report-fails-loud",
       "since": "0.2.0",
       "_note": "退出 0 等于对 agent 谎称「已经报上去了」,而维护方永远看不到这条。见 T-03。"
+    },
+    {
+      "id": "R-15",
+      "status": "active",
+      "statement": "检查器里判对错的正则必须有自测用例,且自测必须进 health —— 改完先证明门禁会红,再谈合进 main。",
+      "check": "check-gate-selftest",
+      "since": "0.3.1",
+      "_note": "GitHub #6/#7/#8:admin 路径被判模糊、全角括号依赖解析为空、held 的 SHIP 被推成 shipped。三条都不崩溃,只是安静地给错答案 —— 比崩溃难发现得多。"
     }
   ],
   "candidates": [
