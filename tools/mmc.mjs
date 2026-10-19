@@ -581,10 +581,19 @@ const CMD = {
     //    拿仓库副本装回来并写上 npm 来源,是这条注释曾经描述、代码却没做的假绿(T-07)。
     log("  6/6 从 npm 装回本机");
     const spec = pkg.name + "@" + version;
+    // npm 有传播延迟:实测 60-96 秒才可见。查一次就判失败,会让每次发布
+    // 都停在第 6 步,逼人手工补 —— 那等于把门禁写成了障碍。轮询到耗尽才判,
+    // 而耗尽之后还红,那才是真的没发出去。
     let live = "";
-    try { live = execFileSync("npm.cmd", ["view", spec, "version"], { encoding: "utf8", shell: true, stdio: "pipe" }).trim(); }
-    catch { /* 版本不存在时 npm 直接非零退出,不是返回空串 */ }
-    if (live !== version) { bad(`registry 上 ${spec} 查不到 —— 发出去的还没生效,别信 publish 那行 "+name@version"`); return 1; }
+    for (let i = 0; i < 12; i++) {
+      try { live = execFileSync("npm.cmd", ["view", spec, "version"], { encoding: "utf8", shell: true, stdio: "pipe" }).trim(); }
+      catch { live = ""; /* 版本不存在时 npm 直接非零退出,不是返回空串 */ }
+      if (live === version) break;
+      if (i) log(`      registry 还没同步(第 ${i} 次)…… 再等 30s`);
+      else log(`      registry 还没同步,等它生效(最长 6 分钟)`);
+      try { execFileSync(process.execPath, ["-e", "setTimeout(()=>{},30000)"], { stdio: "ignore" }); } catch {}
+    }
+    if (live !== version) { bad(`registry 上 ${spec} 查不到(轮询 6 分钟仍未见)—— 发出去的没生效,别信 publish 那行 "+name@version"`); return 1; }
     const sb = join(tmpdir(), "mmc-release-inst");
     rmSync(sb, { recursive: true, force: true });
     try {

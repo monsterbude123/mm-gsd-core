@@ -279,11 +279,22 @@ token with bypass 2fa enabled is required to publish packages`。
 
 ```bash
 node tools/mmc.mjs observe    # 读 ~/.agents/mm-gsd-runs.jsonl,找重复失败
+node tools/mmc.mjs inbox      # 把使用方报修拉成本地 issue
 node tools/mmc.mjs issue      # 带证据转 issue(没证据不给建)
 node tools/mmc.mjs fix        # 标记解决并跑全部门禁
+node tools/mmc.mjs close      # 关掉已修的 GitHub issue
 node tools/mmc.mjs distill    # 复盘 → 规则 / 理论条目
 node tools/mmc.mjs health     # 每次提交必跑,CI 也会跑
 ```
+
+闭环是 `inbox → fix → release → close`。使用方 agent 那边报修走随包分发的入口:
+
+```bash
+npx mm-gsd-core report "<标题>" --evidence "<复现命令或报错>"
+```
+
+`close` 只作用于已 `fixed` 且带 `github:` 行的 issue。两边状态不同步是常态,
+所以门禁不假设它同步,每次都去 GitHub 读回真实状态。
 
 `observe` 读的就是检查器自己写的遥测。跑起来的当场效果:
 它会把你真实项目里的重复失败聚成几类,并标出哪些值得转 issue。
@@ -297,12 +308,8 @@ node tools/mmc.mjs health     # 每次提交必跑,CI 也会跑
 
 **造门禁的判据:上线前必须先造一个违规输入,证明它真的会红。**
 
-这条是被现实教出来的。glob 匹配器坏掉时**不抛异常**,只是永远不匹配,
-于是单文件上限检查一路显示绿色对勾、静默空过——往 skill 里灌 300 行脂肪它都报"全部在上限内"。
-**假绿门禁比没有门禁更危险**:没有门禁你知道没检查,假绿门禁你以为有检查。
-
-所以现在门禁自己带自测(匹配器用例、台账完整性、模式可运行性),
-台账坏掉会硬失败而不是显示"全通过"。
+假绿门禁比没有门禁更危险:没有门禁你知道没检查,假绿门禁你以为有检查。
+所以门禁自己带自测(匹配器用例、台账完整性、模式可运行性),台账坏掉会硬失败而不是显示"全通过"。
 
 详见 `AGENTS.md`(开发规则)与 `docs/theory.md`(跨实现通用的规律沉淀)。
 

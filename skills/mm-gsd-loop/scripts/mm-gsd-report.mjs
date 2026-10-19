@@ -91,6 +91,23 @@ function ghOk() {
 }
 
 // ---- 主流程 ----
+if (has("--help") || has("-h")) {
+  log(`
+${C.b}report${C.x} —— 把 mm-gsd 自己的 bug 报回上游
+
+  npx mm-gsd-core report "<标题>" --evidence "<复现命令或报错>"
+
+  --evidence "<文本>"     证据(必填,可重复 —— 重复即批量,合成一条 issue)
+  --evidence-file <路径>  从文件读证据(日志、报错全文)
+  --repo <owner/name>     报给哪个仓库(默认 ${DEFAULT_REPO})
+  --dry-run               只打印正文不提交
+  --help                  本页
+
+${C.d}没装 gh 或没登录时:非零退出 + 打印正文供手动粘贴,不会假装提交成功。${C.x}
+`);
+  process.exit(0);
+}
+
 const title = argv.find((a, i) => !a.startsWith("--") && !allAfter("--evidence").includes(a)
   && a !== valAfter("--evidence") && a !== valAfter("--evidence-file") && a !== valAfter("--repo"));
 const repo = valAfter("--repo") || DEFAULT_REPO;
