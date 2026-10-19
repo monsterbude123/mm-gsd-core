@@ -39,13 +39,12 @@ description: "极简 GSD 执行:偏差规则 R1-R4、git 纪律(逐文件staging
 
 ## 执行者失效模式(你会怎么偷懒,逐条自查)
 
-1. **读一个文件改一步**——读不全就动手,后面全靠猜(analysis-paralysis 守卫)。
+1. **读一个文件改一步 / 遇到报错就换方案重试**——没读够就动手,后面全靠猜;换着试是随机漫步(analysis-paralysis 守卫)。
 2. **为了让测试变绿去改测试**,而不是修实现——改断言的红线;测试该红就让它红。
-3. **commits / 状态凭印象填**——必须 `git rev-list` 实测。
-4. 遇到第一个报错就换方案重试,不读错误信息(读错误 → 改根因;换着试是随机漫步)。
-5. 范围悄悄扩大:顺手重构、顺手格式化。偏离计划的一律记偏差。
-6. 已知问题/deferred/截断没做完的部分略过不提——SUMMARY 如实写。
-7. 认证/环境一失败就上浮,而不先试自己能不能绕过(先查项目里已有的凭据配置方式/测试替身)。
+3. **凭印象填 commits、凭感觉提交**——`commits` 必须 `git rev-list` 实测;提交前必须跑本任务 `<verify>` 且退出码 0。
+4. 范围悄悄扩大:顺手重构、顺手格式化。偏离计划的一律记偏差。
+5. 已知问题/deferred/截断没做完的部分略过不提——SUMMARY 如实写。
+6. 认证/环境一失败就上浮,而不先试自己能不能绕过(先查项目里已有的凭据配置方式/测试替身)。
 
 ## git 纪律
 
@@ -60,8 +59,9 @@ description: "极简 GSD 执行:偏差规则 R1-R4、git 纪律(逐文件staging
 
 ## SUMMARY 原子块(模板见 templates/summary.md)
 
-- **两类提交严格分开,别混**:**代码/测试/文档提交照常进 git**(逐文件 staging,格式 `type(phase-plan): 描述`);**SUMMARY 本体写进 `.planning/` 落盘即可,不 commit、不 push** —— 流程记忆属本地工件,与 git 历史无关。「写完立即提交」只指代码;SUMMARY 无需 commit。
-- **Write → commit 之间零叙述输出**(截断是已知失败模式);代码写完立即提交。
+- **两类提交严格分开**:代码/测试/文档照常进 git(逐文件 staging,`type(phase-plan): 描述`);**SUMMARY 写进 `.planning/` 不 commit、不 push** —— 流程记忆属本地工件。
+- **verify 转绿才准提交**:本任务 `<verify>` 跑一遍、退出码 0 才 commit。跳过它等于把未验证的东西写进历史,后续每一步都在替它背书 —— 这条压过「写完立即提交」。
+- Write → commit 之间零叙述输出(截断是已知失败模式)。
 - frontmatter:`status: complete | halted`(halted 会阻塞下游,如实写)+ `commits:`(用 `git rev-parse`/`rev-list` **实测**,不手填;有代码变更但 commits=0 = 非法)+ requirements 完成清单。
 - 一行摘要必须具体("JWT 认证含刷新轮换,用 jose 库"✓ / "认证已实现"✗)。
 - Deviations 按 `[Rule N - 类型]` 记录;无偏差也要写 "None — plan executed exactly as written"。
