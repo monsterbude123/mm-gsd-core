@@ -12,7 +12,10 @@
 // 而"会红"只能靠这些用例证明。
 
 import { validateVerification } from "./verification-gates.mjs";
-import { checkDecisions } from "./decision-gates.mjs";
+import { checkDecisions, locateContexts } from "./decision-gates.mjs";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 /** 跑一遍自测,返回失败条数 */
 export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
@@ -78,6 +81,20 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(dc("<decisions>\n### [D-01] 用 JWT,不用 session\n</decisions>", ["D-01"]), 1, "决策没标可逆性该判红");
   eqN(dc("<decisions>\n### [D-01] one-way — 改成新架构\n</decisions>", ["D-01"]), 1, "one-way 没举证该判红");
   eqN(dc("<decisions>\n### [D-01] reversible — 用 JWT\n### [D-02] costly — 引入 X,撤销需要 migration\n</decisions>", ["D-01", "D-02"]), 0, "标记齐全不该误伤");
+  // locateContexts 必须返回**全部** CONTEXT,不是第一个。早先用 .find(),
+  // 于是字母序靠后的 phase 的决策既不核销也不过可逆性门,而门禁看起来一切正常。
+  // 这两条锁死「只查一份」这个形状:少返回一份就红。
+  const ctxDir = mkdtempSync(join(tmpdir(), "mm-gsd-ctx-"));
+  writeFileSync(join(ctxDir, "01-CONTEXT.md"), "x");
+  writeFileSync(join(ctxDir, "02-CONTEXT.md"), "x");
+  writeFileSync(join(ctxDir, "03-CONTEXT.md"), "x");
+  writeFileSync(join(ctxDir, "CONTEXT.md"), "x");
+  const found = locateContexts([ctxDir]).map((c) => c.file).sort();
+  eqArr(found, ["01-CONTEXT.md", "02-CONTEXT.md", "03-CONTEXT.md"], "多份 CONTEXT 必须全部返回,且裸名 CONTEXT.md 不算");
+  // 同一目录以相对与绝对两种写法传入时不得重复计数
+  const dup = locateContexts([ctxDir, ctxDir]).length;
+  eqN(dup, found.length, "同一目录重复传入不得产生重复条目");
+  rmSync(ctxDir, { recursive: true, force: true });
   console.log(bad ? `\n${bad} 项自测不过 —— 门禁本身是坏的,先修门禁` : "\n✓ 门禁自测全过");
   return bad;
 }
