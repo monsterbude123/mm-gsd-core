@@ -22,7 +22,12 @@ description: "极简 GSD 讨论(决策捕获,灵魂环节):思考伙伴而非采
 - 先加载既有决策:STATE 的 Decisions 节、已有 CONTEXT 的 D-NN。已决的**预填**("phase 01 你选了 JWT,沿用还是改?"),不是从头再问;与既有决策冲突 → 显式指出让用户裁决。
 - 用户回答中引用的任何文档/spec/issue → 立即读,记入 CONTEXT 的 canonical refs(后续 plan 的验证命令可直接引用)。
 
-## 产出 `.planning/CONTEXT.md`(模板见 mm-gsd-plan/templates/context.md;本地不入库)
+## 产出 `.planning/<NN>-CONTEXT.md`(模板见 mm-gsd-plan/templates/context.md;本地不入库)
+
+**文件名必须带 phase 前缀**,不能叫 `CONTEXT.md`。检查器两处都只认 `-CONTEXT.md` 后缀
+(`pick("-CONTEXT.md")` 与决策保真门),写成裸名会**静默失效**:决策保真不跑、CONTEXT 实例门禁不跑、
+状态机永远推不出 planning,卡在 discussing。这正是本 skill 下面那句「检查器靠 CONTEXT 的存在
+推进状态机」的反面 —— 靠它推进的前提是名字先被认得。
 
 - **D-NN 决策要具体**:好 = "卡片式布局,不用时间线";坏 = "现代简洁"——追问到具体为止,模糊决策等于没决策。
 - **deferred 兜住范围蔓延**:用户提到的"以后能不能…"全部落进 deferred(不丢、不实施);规划阶段禁止实现 deferred 条目。
