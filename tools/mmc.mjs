@@ -16,6 +16,7 @@ import { execFileSync } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
 import { missingRules, BASELINE_RULES } from "./rule-baseline.mjs";
 import { registryGaps, unregisteredModules, baselineDrift } from "./module-registry.mjs";
+import { fatAdvice } from "./fat-advice.mjs";
 import { fileURLToPath } from "node:url";
 import { makeInboxClose } from "./gh-issues.mjs";
 
@@ -132,8 +133,7 @@ const CHECKS = {
     for (const f of files) { const n = lines(f); total += n; counts[rel(f)] = n; }
     let pass = true;
     // 全局总量只是参考线,不拦人。2026-10-19 起从硬顶改为参考 —— 理由见 docs/theory.md T-12:
-    // 硬顶会逼出「为了凑行数而合并/删减」的等价交换,那是收过路费,不是防肥胖。
-    // 真正防住膨胀的是下面两条硬门禁:单文件上限、文件数上限。
+    // 硬顶会逼出「为了凑行数而合并/删减」的等价交换,那是收过路费。真正防住膨胀的是下面两条硬门禁。
     const over = total - b.totalLines;
     if (over > 0) report.info(`总行数 ${total},高于参考线 ${b.totalLines}(超 ${over})—— 参考线不拦人;膨胀由单文件/文件数上限拦`);
     else report.pass(`总行数 ${total} / 参考线 ${b.totalLines}(余 ${b.totalLines - total})`);
@@ -141,7 +141,7 @@ const CHECKS = {
     for (const cap of b.fileCaps ?? []) {
       const match = globToMatcher(cap.pattern);
       for (const [p, n] of Object.entries(counts)) {
-        if (match(p) && n > cap.max) { report.fail(`${p}: ${n} 行,单文件上限 ${cap.max}(超 ${n - cap.max}) —— 散文与脚本都是脂肪最容易堆的地方`); pass = false; }
+        if (match(p) && n > cap.max) { report.fail(`${p}: ${n} 行,单文件上限 ${cap.max}(超 ${n - cap.max})\n${fatAdvice(p, n, cap, counts)}`); pass = false; }
       }
     }
     if (pass) report.pass(`全部 ${files.length} 个文件在单文件上限内`);

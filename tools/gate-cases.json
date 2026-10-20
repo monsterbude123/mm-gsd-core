@@ -4,7 +4,7 @@
   "_重开条件": "若某轮把门禁重构成独立模块,就把这里换成自动枚举 —— 那时才值得付自动化的维护成本。",
   "check-issue-evidence": "报修 issue 只给标题不给证据 → 非零退出并打印缺什么;证据只写占位符同样判红",
   "check-ledger-integrity": "台账里某条 active 规则的 check 指向 mmc.mjs 中不存在的门禁 → 判红「台账指向了不存在的门禁」",
-  "check-budget": "把某个受 fileCaps 约束的文件写到超过单文件上限 → 判红并指出是哪个文件超了多少",
+  "check-budget": "把某个受 fileCaps 约束的文件写到超过单文件上限 → 判红并指出是哪个文件超了多少;三种形状(main .mjs / references 内 / SKILL.md)必须给出**各自不同**的改造指引 —— 一刀切说「references 化」对后两种是废话,它们已经在那儿了",
   "check-syntax-and-modes": "任意 .mjs 引入语法错误 → 判红;六种模式在未初始化项目里任一跑不起来 → 判红",
   "check-templates-self-validate": "从模板里删掉一个必填小节(如 ship.md 的「交付内容」)→ --templates 报该模板不合规",
   "check-package-verifiable": "把 package.json 的 files 改到漏掉 bin/ → 判红「打包清单不符合预期」",
@@ -26,6 +26,7 @@
     "_why": "tools/ 下的模块不在 references/ 里,但同样是判定逻辑。按 T-02(散文没闸等于没写),它们也必须有会红的用例,否则改坏了没人知道。",
     "rule-baseline.mjs": "从台账删掉一条 active 规则 → health 报红指名缺哪条(基线在 ledger 之外、台账循环之外无条件执行);台账加一条基线没有的规则 → 报红「新增规则不登记基线,它就永久不受保护」;基线里有台账没有的规则 → 报红",
     "module-registry.mjs": "在 references/ 新增一个导出 check*/validate* 的模块但不登记 _modules → 判红;把登记项删掉 → 判红;模块写 export async function / export const 箭头 / export default function / function x(){} export { x } → 仍被抓(真导入枚举导出,不猜源码写法)",
-    "gh-issues.mjs": "报修走不通(没装 gh / 证据文件不存在)→ check-report-fails-loud 判红"
+    "gh-issues.mjs": "报修走不通(没装 gh / 证据文件不存在)→ check-report-fails-loud 判红",
+    "fat-advice.mjs": "把 check-budget 里的 fatAdvice 调用删掉或改成只报「超 N 行」→ budget 拦红时不再输出改造指引(门禁只判不导,等于把难题推回给读者)。三种形状(main / references / 散文)必须给出不同的指引,实测见 commit #4787 的 verify"
   }
 }
