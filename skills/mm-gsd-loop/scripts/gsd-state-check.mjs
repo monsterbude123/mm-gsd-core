@@ -305,9 +305,13 @@ if (process.argv.includes("--plan")) {
     else if (SHRINK_WEAK.test(body)) w(`${name}: 正文含 v1`, "确认这是版本号命名而不是范围缩水");
 
     // ---- 决策契约(核销 + 可逆性):搬进 decision-gates,主脚本只留接线 ----
-    const { locateContext, checkDecisions } = await import("../references/decision-gates.mjs");
+    const { locateContext, checkDecisions, checkDrift } = await import("../references/decision-gates.mjs");
     const ctxHit = locateContext([relForCtx, P(".")]);
-    if (ctxHit) checkDecisions({ name, ctxText: readFileSync(join(ctxHit.dir, ctxHit.file), "utf8"), planDecisions: parsed.decisions, e });
+    if (ctxHit) {
+      const ctxPath = join(ctxHit.dir, ctxHit.file);
+      checkDecisions({ name, ctxText: readFileSync(ctxPath, "utf8"), planDecisions: parsed.decisions, e });
+      checkDrift({ name, planPath: path, ctxPath, e, w });
+    }
   }
 
   console.log("\n=== mm-gsd 计划门禁(" + targets.length + " 份) ===");

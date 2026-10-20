@@ -9,7 +9,7 @@
 //   可逆性 —— 每条决策必须标 reversible / costly / one-way;one-way 要举证(D-03)
 //   漂移   —— 工件早于 CONTEXT 就是决策在工件之后又动过(D-04)
 
-import { readdirSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 
 const REVERSIBILITY = /\b(reversible|costly|one-way)\b/i;
 // one-way 的举证载体:撤销需要动 migration / 已发布契约 / 外部依赖系统。
@@ -57,5 +57,25 @@ export function checkDecisions({ name, ctxText, planDecisions, e }) {
     if (!COST_BEARER.test(section))
       e(`${name}: 决策 ${h[1]} 标了 one-way 但没举证不可逆代价`, "指名 migration / 已发布契约 / 外部依赖系统;「这个很难改」不算举证");
   }
+}
+
+/**
+ * 上下文漂移:工件严格早于 CONTEXT,说明决策在工件写出之后又移动过,
+ * 执行者正在按一份已被推翻的决策干活。相等不算漂移(同一次写入)。
+ *
+ * 读不到时间戳时**按不拦人 + 显式标记**处理:判红会让沙盒与只读文件系统下全线误红,
+ * 静默放行又违反 R-08「不得静默 no-op」。两个极端都要避免,标记是唯一诚实的中间态。
+ */
+export function checkDrift({ name, planPath, ctxPath, e, w }) {
+  let planMs, ctxMs;
+  try {
+    planMs = statSync(planPath).mtimeMs;
+    ctxMs = statSync(ctxPath).mtimeMs;
+  } catch (err) {
+    w(`${name}: 读不到 mtime,无法判定上下文漂移(${err.code ?? err.message})`, "确认文件可读;读不到既不等于没漂移也不等于有漂移,故只标记不拦人");
+    return;
+  }
+  if (planMs < ctxMs)
+    e(`${name}: 工件早于 CONTEXT —— 决策在工件写出之后又动过`, "重跑规划让工件对齐最新决策;不要靠手动改 prompt 假装同步,那只会把陈旧状态往前传");
 }
 
