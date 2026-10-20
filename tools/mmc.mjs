@@ -330,6 +330,26 @@ const CHECKS = {
     return false;
   },
 
+  // R-16:每个门禁必须登记一条会红用例。GitHub #6/#7/#8 的根因都是
+  // 「门禁看起来在跑、实际永远绿或判错」,而 R-15 只覆盖检查器的正则 ——
+  // mmc 自己的门禁坏了,当时没有任何东西能发现。
+  // 双向核对是关键:单向会漏掉「删了门禁忘了删台账」,而那正是最常见的腐化路径。
+  "check-gate-cases"(report) {
+    const reg = readJSON(R("tools", "gate-cases.json"), null);
+    if (!reg) { report.fail("读不到 tools/gate-cases.json"); return false; }
+    let pass = true;
+    for (const k of Object.keys(CHECKS)) {
+      if (k.startsWith("_")) continue;
+      if (typeof reg[k] !== "string" || !reg[k].trim()) { report.fail(`门禁 ${k} 没登记会红用例`); pass = false; }
+    }
+    for (const k of Object.keys(reg)) {
+      if (k.startsWith("_")) continue;
+      if (!CHECKS[k]) { report.fail(`台账登记了 ${k},但 mmc.mjs 里没有这个门禁 —— 可能删了门禁忘了删台账`); pass = false; }
+    }
+    if (pass) report.pass(`${Object.keys(CHECKS).length} 个门禁全部登记了会红用例,且台账与实现双向一致`);
+    return pass;
+  },
+
   // R-07:模式块必须排在 STATE 早退之前
   "check-mode-ordering"(report) {
     const src = readFileSync(CHECKER, "utf8");

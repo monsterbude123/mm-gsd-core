@@ -1,0 +1,19 @@
+{
+  "_why": "每个门禁必须登记一条会红用例:违反什么输入、期望看到什么输出。R-16 拿它和 mmc.mjs 的 CHECKS 双向核对。GitHub #6/#7/#8 三条事故的根因都是「门禁看起来在跑、实际永远绿或判错」,而 R-15 只覆盖检查器的正则 —— mmc 自己的门禁坏了,当时没有任何东西能发现。",
+  "_形态说明": "刻意不做「lint 自动发现红用例」:这些门禁是 mmc.mjs 里的内联代码块,不是可枚举模块,自动枚举在当前结构下不成立,靠正则瞎猜会假绿。这是显式声明 + 双向核对,不是自动推导。",
+  "_重开条件": "若某轮把门禁重构成独立模块,就把这里换成自动枚举 —— 那时才值得付自动化的维护成本。",
+  "check-issue-evidence": "报修 issue 只给标题不给证据 → 非零退出并打印缺什么;证据只写占位符同样判红",
+  "check-ledger-integrity": "台账里某条 active 规则的 check 指向 mmc.mjs 中不存在的门禁 → 判红「台账指向了不存在的门禁」",
+  "check-budget": "把某个受 fileCaps 约束的文件写到超过单文件上限 → 判红并指出是哪个文件超了多少",
+  "check-syntax-and-modes": "任意 .mjs 引入语法错误 → 判红;六种模式在未初始化项目里任一跑不起来 → 判红",
+  "check-templates-self-validate": "从模板里删掉一个必填小节(如 ship.md 的「交付内容」)→ --templates 报该模板不合规",
+  "check-package-verifiable": "把 package.json 的 files 改到漏掉 bin/ → 判红「打包清单不符合预期」",
+  "check-install-traceable": "安装流程不写版本清单文件 → 判红「安装不可追溯」",
+  "check-zero-dep": "在任一 .mjs 里 import 一个非 node: 的包 → 判红并指名是哪个文件的哪一行",
+  "check-report-reachable": "从 package.json 的 files 里删掉 skills/ → 报修入口在包内不可达,判红",
+  "check-report-fails-loud": "让报修在「没装 gh」或「证据文件不存在」时退出 0 → 判红「会让 agent 以为报上去了,实际没有」",
+  "check-gate-selftest": "故意改坏检查器里的一个正则(如把 VAGUE_FILE 的左右断言去掉)→ --selfcheck 报红「门禁本身是坏的」",
+  "check-mode-ordering": "把某个模式的入口块挪到 // ---- STATE ---- 标记之后 → 判红「未初始化项目里永远跑不到这个模式」",
+  "check-no-silent-noop": "写一个含 \\p{...} 的 PCRE 转义或一个空 catch → 判红「静默失效」",
+  "check-gate-cases": "从本文件删掉任意一个门禁条目 → R-16 判红「没登记会红用例」;往本文件加一个 mmc.mjs 里不存在的键 → 判红「可能删了门禁忘了删台账」"
+}
