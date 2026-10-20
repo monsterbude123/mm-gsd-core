@@ -15,6 +15,7 @@ import { join, dirname, relative, resolve, sep } from "node:path";
 import { execFileSync } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
 import { missingRules, BASELINE_RULES } from "./rule-baseline.mjs";
+import { registryGaps, unregisteredModules, baselineDrift } from "./module-registry.mjs";
 import { fileURLToPath } from "node:url";
 import { makeInboxClose } from "./gh-issues.mjs";
 
@@ -333,34 +334,19 @@ const CHECKS = {
 
   // R-16:每个门禁必须登记一条会红用例。GitHub #6/#7/#8 的根因都是
   // 「门禁看起来在跑、实际永远绿或判错」,而 R-15 只覆盖检查器的正则 ——
-  // mmc 自己的门禁坏了,当时没有任何东西能发现。
-  // 双向核对是关键:单向会漏掉「删了门禁忘了删台账」,而那正是最常见的腐化路径。
-  "check-gate-cases"(report) {
+  // mmc 自己的门禁坏了,当时没有任何东西能发现。核对实现见 module-registry.mjs。
+  async "check-gate-cases"(report) {
     const reg = readJSON(R("tools", "gate-cases.json"), null);
     if (!reg) { report.fail("读不到 tools/gate-cases.json"); return false; }
-    const keys = Object.keys(CHECKS), fail = (m) => report.fail(m);
-    let pass = true;
-    // `_` 是台账的元数据约定(`_why`/`_重开条件`),门禁名用它就成了逃生舱:
-    // 三处协同改名成 `_check-x` 后两侧的 startsWith("_") 都跳过,门禁从此不必登记会红用例。
-    if (keys.some((k) => k.startsWith("_"))) { fail(`门禁名不许以 _ 开头:${keys.filter((k) => k.startsWith("_")).join("、")}`); pass = false; }
-    for (const k of keys) if (typeof reg[k] !== "string" || !reg[k].trim()) { fail(`门禁 ${k} 没登记会红用例`); pass = false; }
-    for (const k of Object.keys(reg)) {
-      if (k.startsWith("_")) continue;                      // `_modules` 是嵌套对象,不是门禁名
-      if (!CHECKS[k]) { fail(`台账登记了 ${k},但 mmc.mjs 里没有这个门禁 —— 可能删了门禁忘了删台账`); pass = false; }
-    }
-    // 第三方向:每个门禁都得被至少一条 active 规则真正驱动。health 按台账跑,
-    // 一个既没规则引用也没登记用例的门禁会安静地永远不执行。
     const led = readJSON(R(".agents", "rules", "ledger.json"), { rules: [] });
     const driven = new Set((led.rules ?? []).filter((r) => r.status === "active").map((r) => r.check));
-    for (const k of keys) if (!driven.has(k)) { fail(`门禁 ${k} 没有 active 规则引用 —— 它永远不会被执行`); pass = false; }
+    let pass = true;
+    for (const m of registryGaps(Object.keys(CHECKS), reg, driven)) { report.fail(m); pass = false; }
     // references/ 下的门禁模块不在 CHECKS 里(那是 mmc 自己的门禁),由 R-15 自测覆盖。
-    // 这条核对让「新模块忘了登记」变成可判的,而不是靠人记得。
-    const rdir = R("skills", "mm-gsd-loop", "references"), mods = Object.keys(reg._modules ?? {});
-    for (const f of readdirSync(rdir).filter((f) => f.endsWith(".mjs"))) {
-      if (!/export function (check|validate)/.test(readFileSync(join(rdir, f), "utf8"))) continue;
-      if (!mods.includes(f)) { fail(`${f} 是门禁模块但没在 gate-cases.json 的 _modules 登记 —— 改坏了没人知道`); pass = false; }
-    }
-    if (pass) report.pass(`${keys.length} 个门禁全部登记了会红用例、被 active 规则驱动,模块区与实现一致`);
+    // 这条核对让「新模块忘了登记」变成可判的,而不是靠人记得。实现见 module-registry.mjs。
+    const unreg = await unregisteredModules(R("skills", "mm-gsd-loop", "references"), Object.keys(reg._modules ?? {}));
+    for (const f of unreg) { report.fail(`${f} 是门禁模块但没在 gate-cases.json 的 _modules 登记 —— 改坏了没人知道`); pass = false; }
+    if (pass) report.pass(`${Object.keys(CHECKS).length} 个门禁全部登记了会红用例、被 active 规则驱动,模块区与实现一致`);
     return pass;
   },
 
@@ -472,7 +458,7 @@ const CMD = {
   },
 
   // 3. 解决
-  fix(args) {
+  async fix(args) {
     head("③ fix —— 标记并验证");
     const id = args.find((a) => !a.startsWith("--"));
     if (!id) { bad("用法:mmc fix <issue-id>"); return 1; }
@@ -483,7 +469,7 @@ const CMD = {
     writeFileSync(f, t);
     ok(`${id} 标记为 fixed`);
     log("\n  修复要过的门禁:node tools/mmc.mjs health");
-    const h = CMD.health();
+    const h = await CMD.health();
     log(`\n  下一步:node tools/mmc.mjs distill  (把这次修复沉淀成规则/理论)${C.d} —— 不沉淀的修复下次还会犯${C.x}\n`);
     return h;
   },
@@ -512,7 +498,7 @@ const CMD = {
   },
 
   // 5. 体检:每次提交都跑
-  health() {
+  async health() {
     head("⑤ health —— 门禁体检(每次提交都要跑)");
     const ledgerPath = R(".agents", "rules", "ledger.json");
     const raw = readFileSync(ledgerPath, "utf8");
@@ -532,6 +518,20 @@ const CMD = {
       bad(`→ 缺:${miss.join("、")}。退役某条规则要改 tools/rule-baseline.mjs 并在 docs/theory.md 写清理由,不要只删台账。`);
       return 1;
     }
+    // 反向也要查(G-02)。只有上面那条时,洞只是从「删台账」挪到「删基线」:
+    // 只改 rule-baseline.mjs、台账不动 → exit 0,原始失败形状原样复现。
+    // 更硬的一条是新增规则:基线是冻结快照,反向不查就意味着**基线之后新增的
+    // 规则永久不受保护** —— 实测台账加 R-17 再删掉,exit 0,且无人会发现。
+    const drift = baselineDrift(BASELINE_RULES, led);
+    if (drift.extraInLedger.length) {
+      bad(`台账里有基线没有的 active 规则:${drift.extraInLedger.join("、")} —— 新增规则不登记基线,它就永久不受保护。把它们加进 tools/rule-baseline.mjs。`);
+      return 1;
+    }
+    if (drift.missingInLedger.length) {
+      bad(`基线里有台账没有的规则:${drift.missingInLedger.join("、")} —— 退役了却没从基线删。`);
+      bad(`→ 从 BASELINE_RULES 删掉,并在 docs/theory.md 写清退役理由。`);
+      return 1;
+    }
     const report = { pass: (s) => ok(s), fail: (s) => bad(s), info: (s) => log(`  ${C.d}· ${s}${C.x}`) };
     let failed = 0, ran = 0;
     for (const r of led.rules ?? []) {
@@ -541,7 +541,7 @@ const CMD = {
       ran++;
       const before = process.exitCode;
       let pass = false;
-      try { pass = !!fn(report); } catch (e) { report.fail(`${r.id} 的检查自身抛错:${e.message}`); }
+      try { pass = !!(await fn(report)); } catch (e) { report.fail(`${r.id} 的检查自身抛错:${e.message}`); }
       if (!pass) { failed++; log(`  ${C.d}${r.id} ${r.statement.slice(0, 40)}…${C.x}`); }
       else log(`  ${C.d}${r.id}${C.x}`);
       process.exitCode = before;
@@ -573,7 +573,7 @@ const CMD = {
 
   // release:发布部署流程。顺序有讲究 —— 先发 npm,再从 npm 装回来,
   // 这样「装出去的那份」和「发出去的那份」是同一份,不会出现本地改了没发的情况。
-  release(args) {
+  async release(args) {
     head("release —— 发布部署");
     const pkgPath = R("package.json");
     const pkg = readJSON(pkgPath, {});
@@ -588,7 +588,7 @@ const CMD = {
 
     // 1) 门禁必须全绿 —— 不绿就不许发
     log("  1/6 跑门禁");
-    if (CMD.health() !== 0) { bad("门禁没过,不发"); return 1; }
+    if ((await CMD.health()) !== 0) { bad("门禁没过,不发"); return 1; }
 
     // 2) 版本
     let version = pkg.version;
@@ -697,4 +697,4 @@ ${C.d}核心循环:observe → issue → fix → distill →(下次 observe)
   process.exit(0);
 }
 if (!CMD[cmd]) { bad(`未知命令 ${cmd}`); process.exit(1); }
-process.exit(CMD[cmd](args.slice(1)));
+process.exit(await CMD[cmd](args.slice(1)));

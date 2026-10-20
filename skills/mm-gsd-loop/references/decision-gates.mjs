@@ -99,7 +99,12 @@ export function checkReversibility({ ctxName, ctxText, e }) {
     // 边界必须是「下一条决策 **或** 下一级标题」—— 注释一直这么声称,代码却只认前者,
     // 于是文件后面任意一节里出现的 migration 字样都能替一条毫无举证的 one-way 决策过闸。
     const stop = lines.findIndex((l, j) => j > i && (decisionAt(l) || /^#{2,4}\s/.test(l)));
-    const section = lines.slice(i, stop < 0 ? lines.length : stop).join("\n");
+    // 举证区从**标题行的下一行**起算,不从标题行本身起算(G-01)。
+    // 标题是决策的**摘要**,不是它的理由:「## [D-01] 采用一次性迁移 (one-way)」
+    // 里那个「迁移」只说明这条决策讲的是什么,说明不了它撤销起来有多贵。
+    // 从标题行起算等于让作者把载体词挪进标题就能免举证 —— 本仓自己引入的假绿。
+    // 所以只有正文里的载体词才算举证。
+    const section = lines.slice(i + 1, stop < 0 ? lines.length : stop).join("\n");
     // 逐个命中点判断否定:「撤销需要 migration」算举证,「本次不改 contract」不算。
     // 否定词常隔得远 ——「本次不改 contract,保持现有 schema 不变」里「不」离 schema 有 20 字符,
     // 所以按**小句**判断而不是固定窗口,否则第二个关键词会漏网。

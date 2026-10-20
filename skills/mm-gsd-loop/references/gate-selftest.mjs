@@ -91,7 +91,16 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(dc("<decisions>\n### [D-01] one-way — 本次不改 contract,保持现有 schema 不变\n</decisions>", ["D-01"]), 1, "「不改 contract」不算不可逆举证");
   // 02-03:举证范围到下一级标题为止,不能从后一节借用 migration 字样
   eqN(dc("<decisions>\n### [D-01] one-way — 撤销很麻烦\n\n## 备注\n\n这里提到 migration\n</decisions>", ["D-01"]), 1, "不能从后一节借用举证");
-  eqN(dc("<decisions>\n### [D-01] one-way — 撤销需要 migration 03 重写\n</decisions>", ["D-01"]), 0, "真举证不该误伤");
+  eqN(dc("<decisions>\n### [D-01] one-way — 换掉存储层\n\n撤销需要 migration 03 重写全部数据。\n</decisions>", ["D-01"]), 0, "真举证不该误伤");
+  // 标题行自带载体词但正文零举证 → 该红(G-01)。上面这条的对照:同样载体词,写在正文里就过。
+  eqN(dc("<decisions>\n### [D-01] one-way — 换掉存储层\n\n这个决定改动不大。\n</decisions>", ["D-01"]), 1, "标题提到代价不算举证,正文零举证该红");
+  // G-01(02-06,fixture 来自独立对抗评审而非本仓自造):举证区此前从**标题行本身**起算,
+  // 于是把载体词从正文挪到标题就绕过举证检查 —— 本仓自己引入的假绿。
+  // 头一条是对照:标题中性时同样内容必须红,证明这不是措辞问题而是取样范围问题。
+  eqN(dc("<decisions>\n## [D-01] 调整存储方案 (one-way)\n\n执行者照做即可。\n</decisions>", ["D-01"]), 1, "对照:标题中性+正文零举证该红");
+  eqN(dc("<decisions>\n## [D-01] 采用一次性迁移 (one-way)\n\n执行者照做即可。\n</decisions>", ["D-01"]), 1, "载体词写在标题里不算举证");
+  eqN(dc("<decisions>\n## [D-01] 调整 schema (one-way)\n\n执行者照做即可。\n</decisions>", ["D-01"]), 1, "标题里的 schema 不算举证");
+  eqN(dc("<decisions>\n### [D-01] one-way — 锁定 contract\n</decisions>", ["D-01"]), 1, "标题尾部的 contract 不算举证");
   // locateContexts 必须返回**全部** CONTEXT,不是第一个。早先用 .find(),
   // 于是字母序靠后的 phase 的决策既不核销也不过可逆性门,而门禁看起来一切正常。
   // 这两条锁死「只查一份」这个形状:少返回一份就红。
