@@ -12,6 +12,7 @@
 // 而"会红"只能靠这些用例证明。
 
 import { validateVerification } from "./verification-gates.mjs";
+import { checkDecisions } from "./decision-gates.mjs";
 
 /** 跑一遍自测,返回失败条数 */
 export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
@@ -51,15 +52,32 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqArr(splitDeps("01, 03"), ["01", "03"], "多依赖应拆分");
   // 验收结论一致性闸:一条证明会红,一条证明不误伤。
   // 只测「会红」不够 —— 只会红的门禁等于把所有人都判死,没人会当它是对的。
-  const vt = (status, rows, human) => {
+  // 小节标题逐字抄自 templates/verification.md —— 含那个括号后缀。第一版这里写的是裸标题,
+  // 于是自测永远绿,而真实报告(照模板写)永远不触发这条检查:测试与实现同时偏离了 spec,
+  // 而且互相印证,谁也发现不了。这正是本轮最大的那条教训。
+  const HUMAN_H = "## Human Verification Required(机器验不了,恒发不省略)";
+  const vt = (status, rows, human, extra = "") => {
     const v = rows.filter((r) => r.startsWith("✓")).length;
     const doc = `---\nstatus: ${status}\nscore: ${v}/${rows.length}\n---\n\n## Observable Truths\n\n| # | Truth | 状态 | 证据 |\n|---|---|---|---|\n`
       + rows.map((r, i) => `| T${i + 1} | 导出 CSV | ${r} | 证据 ${i + 1} |`).join("\n")
-      + `\n\n## Human Verification Required\n\n${human}\n`;
+      + `\n${extra}\n${HUMAN_H}\n\n${human}\n`;
     return validateVerification(doc, status).filter((i) => i.level !== "warn").length;
   };
   eqN(vt("passed", ["✓ VERIFIED", "✗ FAILED"], "None"), 1, "正文有 FAILED 却写 passed 应判红");
   eqN(vt("passed", ["✓ VERIFIED", "✓ VERIFIED"], "None"), 0, "全 VERIFIED + 无人工项不应误伤");
+  // 下面四条用「闸作者模板之外」的输入(2026-10-20 教训):第一版自测的 fixture 是我自己
+  // 照模板写的,于是模板与闸互不兼容这件事永远暴露不出来 —— 两者会一起错,谁也发现不了。
+  // 标题逐字取自 templates/verification.md,符号取自评审给的绕过输入。
+  eqN(vt("passed", ["✓ VERIFIED", "❌ FAILED"], "None"), 1, "emoji ❌ FAILED 也该判红(第一版整行丢弃)");
+  eqN(vt("passed", ["✓ VERIFIED", "FAILED"], "None"), 1, "裸 FAILED 也该判红");
+  eqN(vt("passed", ["✓ VERIFIED", "✓ VERIFIED"], "- [ ] 视觉:导出按钮 hover 态 —— 期望:按钮变蓝"), 1, "模板实际的括号后缀标题要能触发人工项检查");
+  // Artifacts 表第 3 格是 exists/substantive,内容是 ✓ 或「212 行」—— 不该被当成判定行
+  eqN(vt("passed", ["✓ VERIFIED", "✓ VERIFIED"], "None", "| Artifact | exists | substantive | wired |\n|---|---|---|---|\n| src/a.ts | ✓ | ✓ 212 行 | ✓ |"), 0, "Artifacts 表不该被误判成判定行");
+  // decision-gates 的可逆性契约此前零自测覆盖 —— 改坏了没有任何东西能发现
+  const dc = (md, refs) => { const errs = []; checkDecisions({ name: "t", ctxText: md, planDecisions: refs, e: (a) => errs.push(a) }); return errs.length; };
+  eqN(dc("<decisions>\n### [D-01] 用 JWT,不用 session\n</decisions>", ["D-01"]), 1, "决策没标可逆性该判红");
+  eqN(dc("<decisions>\n### [D-01] one-way — 改成新架构\n</decisions>", ["D-01"]), 1, "one-way 没举证该判红");
+  eqN(dc("<decisions>\n### [D-01] reversible — 用 JWT\n### [D-02] costly — 引入 X,撤销需要 migration\n</decisions>", ["D-01", "D-02"]), 0, "标记齐全不该误伤");
   console.log(bad ? `\n${bad} 项自测不过 —— 门禁本身是坏的,先修门禁` : "\n✓ 门禁自测全过");
   return bad;
 }

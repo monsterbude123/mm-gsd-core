@@ -9,36 +9,53 @@
 // 为什么必须有:模板把「人工项非空时禁止 passed」写成了散文纪律,而机器只查 status 合法性。
 // 实测过的假绿灯:正文 6 条 truth 里 4 条 ✗ FAILED、1 条 ? UNCERTAIN、人工区非空,
 // frontmatter 写 status: passed / score: 6/6 —— gsd-state-check.mjs EXIT=0,phase 判完成。
+//
+// 本模块第一版有个更隐蔽的洞(2026-10-20 修):判定词表是封闭的,**认不出的写法整行丢弃**,
+// 而 T-08 兜底只在「一行都没解析出来」时生效 —— 于是「一行能解析、其余全部漏掉」
+// 反而静默放行。实测 ❌ FAILED / ✖ FAILED / 裸 FAILED 全部漏过。更糟的是人工区小节正则
+// 要求裸标题,而模板写的是 `## Human Verification Required(机器验不了,恒发不省略)` ——
+// **模板与闸互不兼容,这条纪律在任何照模板写的报告上都不生效。**
+// 教训:验证闸的输入必须来自闸作者自己的模板之外。用自己产出的文档验证自己写的解析器,
+// 等于没验证 —— 模板和闸会一起错,谁也发现不了。
 
+// 符号集放宽到 emoji —— agent 输出里 emoji 判定极其常见,模板不该是唯一合法写法。
 const VERDICT_RE = [
-  ["VERIFIED", /^[✓✔]\s*VERIFIED/i],
-  ["FAILED", /^[✗✘]\s*FAILED/i],
-  ["UNVERIFIED", /^⚠\s*PRESENT_BEHAVIOR_UNVERIFIED/i],
-  ["UNCERTAIN", /^[?？]\s*UNCERTAIN/i],
+  ["VERIFIED", /^[✓✔✅]\s*VERIFIED/i],
+  ["FAILED", /^[✗✘❌❎]\s*FAILED/i],
+  ["UNVERIFIED", /^⚠️?\s*PRESENT_BEHAVIOR_UNVERIFIED/i],
+  ["UNCERTAIN", /^[?？❓❔]\s*UNCERTAIN/i],
 ];
+// 指纹:这一格在谈「验证 / 失败」这件事,却没被精确 token 认下 → 写法跑偏,算 UNKNOWN。
+// 比精确 token 松、比任意散文紧:Artifacts 表第 3 格的 `✓` 或 `212 行` 不含这些词,不会误伤。
+const VERDICT_FINGERPRINT = /\b(VERIFIED|FAILED|UNCERTAIN|UNVERIFIED)\b/i;
 
 /** 统计 Observable Truths 表的判定列。取第 3 格而非全行正则 —— 证据列里可能合法出现 FAILED 字样 */
 function truthVerdicts(text) {
-  const c = { VERIFIED: 0, FAILED: 0, UNVERIFIED: 0, UNCERTAIN: 0 };
+  const c = { VERIFIED: 0, FAILED: 0, UNVERIFIED: 0, UNCERTAIN: 0, UNKNOWN: 0 };
   for (const line of text.split(/\r?\n/)) {
     const t = line.trim();
     if (!t.startsWith("|")) continue;
     const cell = t.split("|").slice(1, -1).map((s) => s.trim())[2] ?? "";
-    if (/^(状态|status|verdict)$/i.test(cell)) continue;
-    for (const [k, re] of VERDICT_RE) if (re.test(cell)) { c[k]++; break; }
+    if (/^(状态|status|verdict)$/i.test(cell) || /^:?-{2,}:?$/.test(cell)) continue;
+    let hit = false;
+    for (const [k, re] of VERDICT_RE) if (re.test(cell)) { c[k]++; hit = true; break; }
+    if (!hit && VERDICT_FINGERPRINT.test(cell)) c.UNKNOWN++;
   }
   return c;
 }
 
-/** Human Verification Required 小节里有几条真实条目(剔掉 <> 占位后仍有实质内容) */
+/**
+ * 人工验证小节里有几条真实条目(剔掉 <> 占位后仍有实质内容)。
+ * 标题正则必须容得下模板自己写的括号后缀,否则这条纪律等于不存在。
+ */
 function humanItems(text) {
-  const m = text.match(/^##\s*Human Verification Required\s*$/m);
+  const m = text.match(/^#{2,4}\s*[^\n]*\b(Human\s+Verification|人工验证|人工确认)\b[^\n]*$/im);
   if (!m) return 0;
   const rest = text.slice(m.index + m[0].length);
-  const next = rest.search(/\n##\s/);
+  const next = rest.search(/\n#{2,4}\s/);
   return (next < 0 ? rest : rest.slice(0, next))
     .split(/\r?\n/)
-    .filter((l) => /^\s*[-*]\s*\[[ xX]?\]/.test(l) && l.replace(/<[^>]*>/g, "").replace(/[\s:：—。，,]/g, "").length >= 4)
+    .filter((l) => /^\s*[-*]\s*(?:\[[ xX]?\])?\s*\S/.test(l) && l.replace(/<[^>]*>/g, "").replace(/[\s:：—。，,]/g, "").length >= 4)
     .length;
 }
 
@@ -57,6 +74,7 @@ export function validateVerification(text, status) {
   const add = (m, fix, level = "err") => out.push({ message: m, fix, level });
   const c = truthVerdicts(text);
   const parsed = c.VERIFIED + c.FAILED + c.UNVERIFIED + c.UNCERTAIN;
+  const total = parsed + c.UNKNOWN;
 
   if (status !== "passed") {
     if (status === "gaps_found" && !c.FAILED)
@@ -64,8 +82,12 @@ export function validateVerification(text, status) {
     return out;
   }
   // 一条判定都读不出来 = 格式跑偏或解析器失效。T-08:门禁读不到输入却放行,比误红危险得多。
-  if (!parsed)
+  if (!total)
     return [{ message: "status=passed 但一条 truth 判定都解析不出", fix: "按模板写 Observable Truths 表,判定列用 ✓ VERIFIED / ✗ FAILED / ⚠ PRESENT_BEHAVIOR_UNVERIFIED / ? UNCERTAIN", level: "err" }];
+  // 有行却认不出写法 —— 上一版把这种行整行丢弃,导致「一行能解析、其余全漏」反而静默放行。
+  // 写法跑偏等于这条 truth 根本没被验过,不能算进 VERIFIED,更不能被 passed 盖过去。
+  if (c.UNKNOWN)
+    add(`判定列有 ${c.UNKNOWN} 行写法不认,却写 status: passed`, "判定列只用 ✓/✗/⚠/? 四种写法(emoji 变体也认);认不出的写法等于这条 truth 没被验过");
   if (c.FAILED)
     add(`正文有 ${c.FAILED} 条 ✗ FAILED,却写 status: passed`, "有 FAILED 就是 gaps_found —— passed 要求每条 truth 都有行为证据");
   if (c.UNVERIFIED)
@@ -77,5 +99,8 @@ export function validateVerification(text, status) {
   const s = scoreOf(text);
   if (s && c.VERIFIED < s.n)
     add(`score 写 ${s.n}/${s.d},正文只有 ${c.VERIFIED} 条 ✓ VERIFIED`, "score 是 VERIFIED 条数 / 总数,按正文实测写,不手填", "warn");
+  // 分母对账:真通过报告的 score 分母应等于正文判定行数。不对账等于「少写几条 truth」零成本。
+  if (s && total && s.d !== total)
+    add(`score 分母写 ${s.d},正文只有 ${total} 行判定`, "score 是 VERIFIED 数 / 总数,总数就是正文的判定行数 —— 少写几条 truth 不会让验收更真", "warn");
   return out;
 }
