@@ -50,7 +50,7 @@ else {
   execFileSync(process.execPath, ["-e", `require('fs').mkdirSync(${JSON.stringify(join(sandbox, ".planning"))},{recursive:true})`]);
   execFileSync(process.execPath, ["-e", `require('fs').writeFileSync(${JSON.stringify(join(sandbox, ".planning", "STATE.md"))}, "---\\nstatus: discussing\\nactive_phase: 01\\n---\\n")`]);
   for (const m of ["", "--plan", "--phases", "--worktrees", "--stats", "--json", "--templates"]) {
-    try { execFileSync(process.execPath, [CHECKER, m].filter(Boolean), { cwd: sandbox, stdio: "pipe", timeout: 30000 }); }
+    try { execFileSync(process.execPath, [CHECKER, m].filter(Boolean), { cwd: sandbox, env: { ...process.env, GSD_SANDBOX: "1" }, stdio: "pipe", timeout: 30000 }); }
     catch (e) {
       const err = String(e.stderr || "");
       if (/is not a function|is not defined|Cannot find/.test(err)) bad(`模式 ${m || "(默认)"} 运行时崩了: ${err.split("\n")[0]}`);

@@ -36,9 +36,15 @@ const P = (...s) => join(root, ".planning", ...s);
 const SKILL_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 const TELEMETRY = process.env.GSD_TELEMETRY !== "0";
 const TELEMETRY_PATH = join(homedir(), ".agents", "mm-gsd-runs.jsonl");
+// sandbox 标记:由**跑沙箱的一方**声明,不由被观测方猜路径。
+// 为什么不用「路径含 Temp 就当沙箱」:用户自己建在临时目录里的真项目会被误排除,
+// 而自测沙箱也可能被挪到别处。声明式标记不会骗人。
+// 用途:自测沙箱里的失败是**正常的**(那是在故意造失败),不该混进
+// 「最该修的地方」排行 —— 否则 observe 环的诊断入口被自己的自测噪声淹掉。
+const SANDBOX = process.env.GSD_SANDBOX === "1";
 const MODE = ["init", "worktrees", "plan", "phases", "stats"].find((m) => process.argv.includes("--" + m))
   ?? (process.argv.includes("--json") ? "check-json" : "check");
-const runRec = { ts: new Date().toISOString(), mode: MODE, cwd: root, declared: null, derived: null, phase: null, errors: [], warnings: [] };
+const runRec = { ts: new Date().toISOString(), mode: MODE, cwd: root, sandbox: SANDBOX, declared: null, derived: null, phase: null, errors: [], warnings: [] };
 // exit 钩子保证每个 process.exit 路径都被记到,不靠人工在分支里记得写
 process.on("exit", (code) => {
   if (!TELEMETRY) return;
@@ -52,6 +58,21 @@ const errors = [];
 const warnings = [];
 const err = (m, fix) => { errors.push({ message: m, fix: fix ?? "" }); runRec.errors.push(m); };
 const warn = (m, fix) => { warnings.push({ message: m, fix: fix ?? "" }); runRec.warnings.push(m); };
+
+/**
+ * 早退出口 —— 打印给人看的同时**把原因写进遥测**。
+ *
+ * 为什么要有它:遥测里 97% 的失败是「零消息」(实测 4956 条真实记录、1822 次失败、
+ * 1770 次 errors/warnings 全空)—— 这些路径直接 console.log + process.exit(1),不经过
+ * err(),原因只进了 stdout。于是 --stats 报不出「高频报错类型排行」,observe 环看到的是
+ * 一片无原因的失败,抓不到「同一处反复失败」。门禁失明了,observe 环就跟着失明。
+ */
+function die(message, fix) {
+  if (message) console.log(message);
+  if (fix) console.log(fix);
+  err(message, fix);
+  process.exit(1);
+}
 
 // ---- 极简 frontmatter 解析(不引 YAML 依赖);剥行尾 # 注释,否则模板照抄即报错 ----
 function frontmatter(path) {
@@ -136,7 +157,7 @@ function listPlanFiles(plDir) {
 if (process.argv.includes("--worktrees")) {
   let raw = "";
   try { raw = execSync("git worktree list --porcelain", { stdio: ["ignore", "pipe", "ignore"], encoding: "utf8" }); }
-  catch { console.log("不在 git 仓库中,无法列 worktree。"); process.exit(1); }
+  catch { die("不在 git 仓库中,无法列 worktree。", "在项目根跑,或先 git init"); }
 
   const wts = [];
   let cur = null;
@@ -236,8 +257,7 @@ if (process.argv.includes("--plan")) {
     })();
 
   if (!targets.length) {
-    console.log("未找到任何 *-PLAN.md —— 先按 templates/plan.md 落盘,再跑本检查。");
-    process.exit(1);
+    die("未找到任何 *-PLAN.md —— 先按 templates/plan.md 落盘,再跑本检查。");
   }
 
   for (const rel of targets) {
@@ -324,7 +344,7 @@ if (process.argv.includes("--plan")) {
 // ---- --phases:波次计算(depends_on → wave,同波次零重叠)----
 if (process.argv.includes("--phases")) {
   const stPath = P("STATE.md");
-  if (!existsSync(stPath)) { console.log("无 .planning/STATE.md —— 没有 phase 清单可算波次。"); process.exit(1); }
+  if (!existsSync(stPath)) { die("无 .planning/STATE.md —— 没有 phase 清单可算波次。", "先跑 --init 建 STATE,或手工写 .planning/STATE.md"); }
   const allLines = readFileSync(stPath, "utf8").split(/\r?\n/);
   const hIdx = allLines.findIndex((l) => /^##[ \t]*Phases[ \t]*$/.test(l));
   const sec = [];
@@ -343,8 +363,7 @@ if (process.argv.includes("--phases")) {
     });
   }
   if (!phases.length) {
-    console.log("STATE.md 的 ## Phases 节里没解析到 phase —— 写成 '- [ ] 01 — 名称(depends_on: 01, 02)'");
-    process.exit(1);
+    die("STATE.md 的 ## Phases 节里没解析到 phase —— 写成 '- [ ] 01 — 名称(depends_on: 01, 02)'");
   }
 
   const byId = new Map(phases.map((p) => [p.id, p]));
@@ -363,8 +382,7 @@ if (process.argv.includes("--phases")) {
   if (cycles.length) {
     console.log("\n=== mm-gsd phase 波次 ===");
     for (const c of cycles) console.log(`  ✗ depends_on 成环: ${c.join(" → ")} —— 没有合法的执行顺序`);
-    console.log("  → 断环:里面至少一个依赖是错的,或两个 phase 其实该合并成一个。\n");
-    process.exit(1);
+    die("depends_on 成环:没有合法的执行顺序", "断环:里面至少一个依赖是错的,或两个 phase 其实该合并成一个。");
   }
 
   const wave = new Map();
@@ -412,33 +430,16 @@ if (process.argv.includes("--phases")) {
 }
 
 // ---- --stats:遥测聚合。读用户级日志,跨项目可比(项目级日志已被自动遥测取代)----
+// ---- --stats:遥测聚合。读用户级日志,跨项目可比(项目级日志已被自动遥测取代)----
 if (process.argv.includes("--stats")) {
-  const rows = existsSync(TELEMETRY_PATH)
-    ? readFileSync(TELEMETRY_PATH, "utf8").split(/\r?\n/).filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean)
-    : [];
+  const { readRows, aggregate, render } = await import("../references/telemetry-aggregate.mjs");
+  const rows = readRows(TELEMETRY_PATH);
   if (!rows.length) {
     console.log("尚无运行记录(" + TELEMETRY_PATH + ")。");
     console.log("  检查器每跑一次会自动记一行;跑一次任意模式(默认/--plan/--phases/--worktrees)即产生。");
     process.exit(0);
   }
-  const only = process.argv.includes("--all") ? rows : rows.filter((r) => r.cwd === root);
-  const scope = only.length === rows.length ? "全部项目" : "当前项目";
-  const bad = only.filter((r) => r.exit === 1);
-  const byMode = {};
-  for (const r of only) byMode[r.mode] = (byMode[r.mode] ?? 0) + 1;
-  console.log(`\nmm-gsd 运行记录(${only.length} 次,${scope};日志 ${TELEMETRY_PATH})`);
-  console.log("  模式分布:   " + Object.entries(byMode).map(([k, v]) => k + "×" + v).join("  "));
-  console.log(`  门禁失败:   ${bad.length}/${only.length} 次 (${((bad.length / only.length) * 100).toFixed(0)}%)  —— 连续失败的位置就是它卡住的地方`);
-  const stuck = {};       // 同一个项目反复失败 = 死锁嫌疑,不是偶发
-  for (const r of bad) stuck[r.cwd] = (stuck[r.cwd] ?? 0) + 1;
-  const loop = Object.entries(stuck).filter(([, c]) => c >= 3);
-  if (loop.length) for (const [cwd, c] of loop) console.log(`  ⚠ 反复失败: ${cwd} 连挂 ${c} 次 —— 大概率是门禁要的东西这一步做不到(死锁),不是内容质量问题`);
-  const top = {};         // 报得最多的错误类型 = 最该修的地方
-  for (const r of bad) for (const m of r.errors ?? []) { const k = m.replace(/"[^"]*"/g, '"…"').slice(0, 40); top[k] = (top[k] ?? 0) + 1; }
-  const topList = Object.entries(top).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  if (topList.length) { console.log("  高频报错:"); for (const [m, c] of topList) console.log("    " + c + "×  " + m); }
-  const last = only[only.length - 1];
-  if (last) console.log("  最近一次:   " + new Date(last.ts).toLocaleString() + " · " + last.mode + " · exit=" + last.exit + (last.derived ? " · 推导=" + last.derived : ""));
+  console.log(render(aggregate(rows, { scope: root, all: process.argv.includes("--all") }), TELEMETRY_PATH));
   console.log("");
   process.exit(0);
 }
@@ -477,13 +478,11 @@ if (process.argv.includes("--templates")) {
   }
   console.log("");
   if (!checked) {
-    console.log("  ✗ 一份模板都没找到 —— 目录解析坏了,这等于没检查(tmplRoot = " + tmplRoot + ")");
-    process.exit(1);
+    die("一份模板都没找到 —— 目录解析坏了,这等于没检查(tmplRoot = " + tmplRoot + ")", "确认 skills/mm-gsd-loop/templates/ 在位");
   }
   if (bad) {
     console.log("  " + bad + "/" + checked + " 份模板过不了自己的契约 —— 照抄即报错,agent 会卡在门禁上。");
-    console.log("  每条上面都给了正确写法,照着改完重跑即可。");
-    process.exit(1);
+    die(bad + "/" + checked + " 份模板过不了自己的契约", "每条上面都给了正确写法,照着改完重跑即可。");
   }
   console.log("  ✓ " + checked + " 份模板结构合规");
   process.exit(0);
@@ -556,9 +555,10 @@ if (!existsSync(P("STATE.md"))) {
     console.log(JSON.stringify({ state: null, derived: null, errors: [{ message: ".planning/STATE.md 不存在", fix: "跑 gsd-state-check.mjs --init 一条命令建好,别手搓" }], warnings: [] }));
   } else {
     console.log("mm-gsd 状态机:未初始化(无 .planning/STATE.md)。");
-  console.log("  → 跑 `node <本脚本> --init \"<项目目标>\"` 即可建好,不必手搓模板。");
+    console.log("  → 跑 `node <本脚本> --init \"<项目目标>\"` 即可建好,不必手搓模板。");
     console.log("    (建 STATE 不是门禁的执行方该干的活 —— 门禁要的东西做不到,门禁就是死锁而不是门禁。)");
   }
+  err(".planning/STATE.md 不存在", "跑 gsd-state-check.mjs --init 一条命令建好,别手搓");
   process.exit(1);
 }
 

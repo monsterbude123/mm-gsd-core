@@ -166,7 +166,7 @@ const CHECKS = {
     const modes = ["", "--plan", "--phases", "--worktrees", "--stats", "--json"];
     for (const m of modes) {
       try {
-        execFileSync(process.execPath, [CHECKER, m].filter(Boolean), { cwd: sandbox, stdio: "pipe", timeout: 20000 });
+        execFileSync(process.execPath, [CHECKER, m].filter(Boolean), { cwd: sandbox, env: { ...process.env, GSD_SANDBOX: "1" }, stdio: "pipe", timeout: 20000 });
       } catch (e) {
         const stderr = String(e.stderr || "").trim();
         if (/is not a function|is not defined|Cannot find/.test(stderr)) {
@@ -368,9 +368,9 @@ const CHECKS = {
       const i = src.indexOf(`process.argv.includes("${m}")`);
       if (i < 0) { report.fail(`检查器里找不到 ${m} 的入口`); pass = false; continue; }
       if (i > stateEarly) { report.fail(`${m} 的分块排在 STATE 早退之后 —— 未初始化项目里永远跑不到这个模式`); pass = false; }
-      // 每个模式的入口块里必须真的输出些什么(自测模式由 runSelfTest 负责输出)
+      // 每个模式的入口块里必须真的输出些什么(自测模式由 runSelfTest 负责输出;die() 也算 —— 它内部 console.log 后退出)
       const chunk = src.slice(i, i + 3000);
-      if (!/console\.log|runSelfTest/.test(chunk)) { report.fail(`${m} 的分块里没有任何输出 —— 静默的空输出等于没跑`); pass = false; }
+      if (!/console\.log|runSelfTest|\bdie\(/.test(chunk)) { report.fail(`${m} 的分块里没有任何输出 —— 静默的空输出等于没跑`); pass = false; }
     }
     if (pass) report.pass(`${modes.length} 个模式都在 STATE 早退之前,且各自有输出`);
     return pass;
