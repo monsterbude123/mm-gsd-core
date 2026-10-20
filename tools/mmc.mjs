@@ -14,6 +14,7 @@ import { readFileSync, readdirSync, existsSync, statSync, writeFileSync, mkdirSy
 import { join, dirname, relative, resolve, sep } from "node:path";
 import { execFileSync } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
+import { missingRules, BASELINE_RULES } from "./rule-baseline.mjs";
 import { fileURLToPath } from "node:url";
 import { makeInboxClose } from "./gh-issues.mjs";
 
@@ -40,7 +41,7 @@ function walk(dir, acc = []) {
     if (e.name === ".git" || e.name === "node_modules") continue;
     const p = join(dir, e.name);
     if (e.isDirectory()) walk(p, acc);
-    else if (/\.(md|mjs|ts)$/.test(e.name) || e.name === "pre-commit") acc.push(p);
+    else if (/\.(md|mjs|ts|json)$/.test(e.name) || e.name === "pre-commit") acc.push(p);
   }
   return acc;
 }
@@ -337,16 +338,29 @@ const CHECKS = {
   "check-gate-cases"(report) {
     const reg = readJSON(R("tools", "gate-cases.json"), null);
     if (!reg) { report.fail("读不到 tools/gate-cases.json"); return false; }
+    const keys = Object.keys(CHECKS), fail = (m) => report.fail(m);
     let pass = true;
-    for (const k of Object.keys(CHECKS)) {
-      if (k.startsWith("_")) continue;
-      if (typeof reg[k] !== "string" || !reg[k].trim()) { report.fail(`门禁 ${k} 没登记会红用例`); pass = false; }
-    }
+    // `_` 是台账的元数据约定(`_why`/`_重开条件`),门禁名用它就成了逃生舱:
+    // 三处协同改名成 `_check-x` 后两侧的 startsWith("_") 都跳过,门禁从此不必登记会红用例。
+    if (keys.some((k) => k.startsWith("_"))) { fail(`门禁名不许以 _ 开头:${keys.filter((k) => k.startsWith("_")).join("、")}`); pass = false; }
+    for (const k of keys) if (typeof reg[k] !== "string" || !reg[k].trim()) { fail(`门禁 ${k} 没登记会红用例`); pass = false; }
     for (const k of Object.keys(reg)) {
-      if (k.startsWith("_")) continue;
-      if (!CHECKS[k]) { report.fail(`台账登记了 ${k},但 mmc.mjs 里没有这个门禁 —— 可能删了门禁忘了删台账`); pass = false; }
+      if (k.startsWith("_")) continue;                      // `_modules` 是嵌套对象,不是门禁名
+      if (!CHECKS[k]) { fail(`台账登记了 ${k},但 mmc.mjs 里没有这个门禁 —— 可能删了门禁忘了删台账`); pass = false; }
     }
-    if (pass) report.pass(`${Object.keys(CHECKS).length} 个门禁全部登记了会红用例,且台账与实现双向一致`);
+    // 第三方向:每个门禁都得被至少一条 active 规则真正驱动。health 按台账跑,
+    // 一个既没规则引用也没登记用例的门禁会安静地永远不执行。
+    const led = readJSON(R(".agents", "rules", "ledger.json"), { rules: [] });
+    const driven = new Set((led.rules ?? []).filter((r) => r.status === "active").map((r) => r.check));
+    for (const k of keys) if (!driven.has(k)) { fail(`门禁 ${k} 没有 active 规则引用 —— 它永远不会被执行`); pass = false; }
+    // references/ 下的门禁模块不在 CHECKS 里(那是 mmc 自己的门禁),由 R-15 自测覆盖。
+    // 这条核对让「新模块忘了登记」变成可判的,而不是靠人记得。
+    const rdir = R("skills", "mm-gsd-loop", "references"), mods = Object.keys(reg._modules ?? {});
+    for (const f of readdirSync(rdir).filter((f) => f.endsWith(".mjs"))) {
+      if (!/export function (check|validate)/.test(readFileSync(join(rdir, f), "utf8"))) continue;
+      if (!mods.includes(f)) { fail(`${f} 是门禁模块但没在 gate-cases.json 的 _modules 登记 —— 改坏了没人知道`); pass = false; }
+    }
+    if (pass) report.pass(`${keys.length} 个门禁全部登记了会红用例、被 active 规则驱动,模块区与实现一致`);
     return pass;
   },
 
@@ -510,9 +524,12 @@ const CMD = {
       return 1;
     }
     const activeCount = (led.rules ?? []).filter((r) => r.status === "active").length;
-    if (!activeCount) {
-      bad("台账里 0 条 active 规则 —— 意味着一条门禁都没跑,却会显示「全通过」。");
-      bad("→ 台账被清空、被截断、或 status 全写错了。修好再提交。");
+    // 基线在台账驱动循环**之外**,且来自 ledger 之外的第二份记录(见 rule-baseline.mjs):
+    // 删掉台账里的一行,那个唯一能发现它被删掉的 check 就住在它自己身上。
+    const miss = missingRules(led);
+    if (miss.length) {
+      bad(`基线要求 ${BASELINE_RULES.length} 条 active 规则,台账里只有 ${activeCount} 条 —— 缺的门禁不会跑,却仍会显示「全通过」。`);
+      bad(`→ 缺:${miss.join("、")}。退役某条规则要改 tools/rule-baseline.mjs 并在 docs/theory.md 写清理由,不要只删台账。`);
       return 1;
     }
     const report = { pass: (s) => ok(s), fail: (s) => bad(s), info: (s) => log(`  ${C.d}· ${s}${C.x}`) };

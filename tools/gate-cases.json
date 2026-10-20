@@ -15,5 +15,11 @@
   "check-gate-selftest": "故意改坏检查器里的一个正则(如把 VAGUE_FILE 的左右断言去掉)→ --selfcheck 报红「门禁本身是坏的」",
   "check-mode-ordering": "把某个模式的入口块挪到 // ---- STATE ---- 标记之后 → 判红「未初始化项目里永远跑不到这个模式」",
   "check-no-silent-noop": "写一个含 \\p{...} 的 PCRE 转义或一个空 catch → 判红「静默失效」",
-  "check-gate-cases": "从本文件删掉任意一个门禁条目 → R-16 判红「没登记会红用例」;往本文件加一个 mmc.mjs 里不存在的键 → 判红「可能删了门禁忘了删台账」"
+  "check-gate-cases": "从本文件删掉任意一个门禁条目 → R-16 判红「没登记会红用例」;往本文件加一个 mmc.mjs 里不存在的键 → 判红「可能删了门禁忘了删台账」",
+  "_modules": {
+    "decision-gates.mjs": "由 R-15 的 --selfcheck 覆盖(它会真的执行断言,不是登记):核销、可逆性、漂移三条契约各有用例",
+    "verification-gates.mjs": "由 R-15 的 --selfcheck 覆盖:判定写法、Artifacts 表不误伤、score 对账各有用例",
+    "template-gates.mjs": "由 --templates 模式覆盖(校验六份模板结构)",
+    "gate-selftest.mjs": "自测框架本身,不被任何门禁校验 —— 改坏它会让所有 --selfcheck 用例一起消失"
+  }
 }
