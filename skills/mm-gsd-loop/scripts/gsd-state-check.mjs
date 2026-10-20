@@ -613,10 +613,9 @@ const artifactInfo = { context: null, plans: [], summaries: [], verification: nu
   const J = (f) => join(base, f);
 
   // CONTEXT 之前没有任何实例门禁:缺四个标签也照样把状态机推进到 planning
-  if (artifactInfo.context) {
-    const { validateInstance } = await import("../references/template-gates.mjs");
+  const { validateInstance, validateVerification } = await import("../references/template-gates.mjs");
+  if (artifactInfo.context)
     for (const i of validateInstance("context", artifactInfo.context, readFileSync(J(artifactInfo.context), "utf8"), null)) err(i.message, i.fix);
-  }
 
   const has = (a) => Boolean(a);
   if (!has(artifactInfo.context)) derived = "discussing";
@@ -645,6 +644,8 @@ const artifactInfo = { context: null, plans: [], summaries: [], verification: nu
     const vfm = frontmatter(J(artifactInfo.verification));
     if (!vfm?.status) err(`${artifactInfo.verification}: 缺 status(须为 ${VERIF_STATUSES.join("|")})`, "补 frontmatter");
     else if (!VERIF_STATUSES.includes(vfm.status)) err(`${artifactInfo.verification}: status 非法值 "${vfm.status}"`, `改为 ${VERIF_STATUSES.join(" 或 ")}`);
+    // status 合法 ≠ 报告诚实。这条闸拦的是「正文 4 条 FAILED、frontmatter 却写 passed」
+    for (const i of validateVerification(readFileSync(J(artifactInfo.verification), "utf8"), vfm.status)) i.level === "warn" ? warn(`${artifactInfo.verification}: ${i.message}`, i.fix) : err(`${artifactInfo.verification}: ${i.message}`, i.fix);
   }
   // ---- 交付契约:交付物"被消费",不是"被做完" ----
   if (artifactInfo.shipment) {

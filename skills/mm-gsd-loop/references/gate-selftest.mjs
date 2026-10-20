@@ -11,6 +11,8 @@
 // 三条都不是崩溃,是安静地给错答案。T-03 说门禁上线前必须先证明它会红,
 // 而"会红"只能靠这些用例证明。
 
+import { validateVerification } from "./verification-gates.mjs";
+
 /** 跑一遍自测,返回失败条数 */
 export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   let bad = 0;
@@ -18,6 +20,11 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
     const got = re.test(s), good = got === want;
     if (!good) bad++;
     console.log(`  ${good ? "✓" : "✗"} ${why}: ${JSON.stringify(s)} → ${got}`);
+  };
+  const eqN = (got, want, why) => {
+    const good = got === want;
+    if (!good) bad++;
+    console.log(`  ${good ? "✓" : "✗"} ${why}: ${got} → ${good ? "" : want}`);
   };
   const eqArr = (got, want, why) => {
     const good = JSON.stringify(got) === JSON.stringify(want);
@@ -42,6 +49,17 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqArr(splitDeps("无依赖"), [], "depends_on: 无依赖 应解析为空依赖");
   eqArr(splitDeps("none"), [], "depends_on: none 应解析为空依赖");
   eqArr(splitDeps("01, 03"), ["01", "03"], "多依赖应拆分");
+  // 验收结论一致性闸:一条证明会红,一条证明不误伤。
+  // 只测「会红」不够 —— 只会红的门禁等于把所有人都判死,没人会当它是对的。
+  const vt = (status, rows, human) => {
+    const v = rows.filter((r) => r.startsWith("✓")).length;
+    const doc = `---\nstatus: ${status}\nscore: ${v}/${rows.length}\n---\n\n## Observable Truths\n\n| # | Truth | 状态 | 证据 |\n|---|---|---|---|\n`
+      + rows.map((r, i) => `| T${i + 1} | 导出 CSV | ${r} | 证据 ${i + 1} |`).join("\n")
+      + `\n\n## Human Verification Required\n\n${human}\n`;
+    return validateVerification(doc, status).filter((i) => i.level !== "warn").length;
+  };
+  eqN(vt("passed", ["✓ VERIFIED", "✗ FAILED"], "None"), 1, "正文有 FAILED 却写 passed 应判红");
+  eqN(vt("passed", ["✓ VERIFIED", "✓ VERIFIED"], "None"), 0, "全 VERIFIED + 无人工项不应误伤");
   console.log(bad ? `\n${bad} 项自测不过 —— 门禁本身是坏的,先修门禁` : "\n✓ 门禁自测全过");
   return bad;
 }

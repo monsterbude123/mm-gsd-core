@@ -136,4 +136,8 @@ export function validateInstance(kind, name, text, fm) {
   return out;
 }
 
+// 验收结论对账(正文判定 vs frontmatter status)住 verification-gates.mjs。
+// 从这里转出而不是在调用点多写一行 import,是为了让 state-check 只认一个工件契约入口。
+export { validateVerification } from "./verification-gates.mjs";
+
 export const TEMPLATE_NAMES = Object.keys(CONTRACTS);
