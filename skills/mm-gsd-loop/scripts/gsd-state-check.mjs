@@ -304,19 +304,10 @@ if (process.argv.includes("--plan")) {
     if (SHRINK_STRONG.test(body)) e(`${name}: 正文含缩水措辞`, "范围缩水是拆票的理由,不是缩内容的理由(清单见 SKILL.md「缩水禁令」)");
     else if (SHRINK_WEAK.test(body)) w(`${name}: 正文含 v1`, "确认这是版本号命名而不是范围缩水");
 
-    // ---- 决策保真:CONTEXT 每条 D-NN 必须被引用 ----
-    let ctxRel = null;
-    for (const cand of [relForCtx, "."]) {
-      try {
-        const hit = readdirSync(cand === "." ? P(".") : cand).find((f) => f.endsWith("-CONTEXT.md"));
-        if (hit) { ctxRel = hit; break; }
-      } catch {}
-    }
-    if (ctxRel) {
-      const ids = [...readFileSync(P(ctxRel), "utf8").matchAll(/\[(D-\d+)\]/g)].map((m) => m[1]);
-      const missing = ids.filter((id) => !parsed.decisions.includes(id));
-      if (missing.length) e(`${name}: CONTEXT 决策 ${missing.join(",")} 未被任何任务引用`, "补任务引用并精确实现;若该决策其实是延后项,把它移出 decisions 节");
-    }
+    // ---- 决策契约(核销 + 可逆性):搬进 decision-gates,主脚本只留接线 ----
+    const { locateContext, checkDecisions } = await import("../references/decision-gates.mjs");
+    const ctxHit = locateContext([relForCtx, P(".")]);
+    if (ctxHit) checkDecisions({ name, ctxText: readFileSync(join(ctxHit.dir, ctxHit.file), "utf8"), planDecisions: parsed.decisions, e });
   }
 
   console.log("\n=== mm-gsd 计划门禁(" + targets.length + " 份) ===");
