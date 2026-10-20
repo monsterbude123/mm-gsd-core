@@ -19,12 +19,12 @@
     {
       "pattern": "skills/**/SKILL.md",
       "max": 320,
-      "_why": "散文是脂肪最容易堆的地方。loop 已 272 行,接近上限——想加内容先想删哪条。"
+      "_why": "散文是脂肪最容易堆的地方。loop SKILL.md 是本仓最大的 SKILL(实时值跑 mmc budget 看),想加内容先想删哪条。"
     },
     {
       "pattern": "skills/**/*.mjs",
       "max": 700,
-      "_why": "检查器 626 行。这个文件已经很大了;下次加模式前先考虑拆成两个文件。"
+      "_why": "检查器是本仓最大的文件、且长期贴着这个上限(实时值跑 mmc budget 看)。它已经很大:下次加模式前先考虑拆成两个文件。"
     },
     {
       "pattern": "skills/**/references/*.mjs",
@@ -53,5 +53,5 @@
     }
   ],
   "maxTotalFiles": 40,
-  "_maxFilesRationale": "16 个 skill/工具文件 + 文档已经不少。超过 40 个说明该合并而不是新增。"
+  "_maxFilesRationale": "skill/工具文件加文档已接近两位数(实时计数跑 mmc budget 看)。超过 40 个说明该合并而不是新增。"
 }
