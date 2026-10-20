@@ -304,17 +304,13 @@ if (process.argv.includes("--plan")) {
     if (SHRINK_STRONG.test(body)) e(`${name}: 正文含缩水措辞`, "范围缩水是拆票的理由,不是缩内容的理由(清单见 SKILL.md「缩水禁令」)");
     else if (SHRINK_WEAK.test(body)) w(`${name}: 正文含 v1`, "确认这是版本号命名而不是范围缩水");
 
-    // ---- 决策契约:搬进 decision-gates,主脚本只留接线。三条契约作用域不同,分两路走 ----
-    // 可逆性对全部 CONTEXT 生效;核销与漂移只对 plan 自己 phase 的那一份 ——
-    // 拿一个 plan 去对所有 CONTEXT 核销会造假红:phase 02 的 plan 不必引用 phase 03 的决策。
-    const { locateContexts, checkCoverage, checkReversibility, checkDrift } = await import("../references/decision-gates.mjs");
-    const ctxs = locateContexts([relForCtx, P(".")], root);   // root 必须传:否则 cwd ≠ 项目根时会读别人的 CONTEXT
-    for (const c of ctxs) checkReversibility({ ctxName: c.file, ctxText: readFileSync(c.path, "utf8"), e });
-    const phaseOf = (name.match(/^(\d+)/) ?? [])[1];
-    for (const c of ctxs.filter((c) => phaseOf && c.file.startsWith(phaseOf))) {
-      checkCoverage({ name, ctxText: readFileSync(c.path, "utf8"), planDecisions: parsed.decisions, e });
-      checkDrift({ name, planPath: path, ctxPath: c.path, e, w });
-    }
+    // ---- 决策契约:实现在 references/,主脚本只留接线(作用域差异见 runDecisionContracts 注释)----
+    const dg = await import("../references/decision-gates.mjs"), { runDecisionContracts } = await import("../references/ticket-alive.mjs");
+    const ctxs = dg.locateContexts([relForCtx, P(".")], root);   // root 必须传:否则 cwd ≠ 项目根时会读别人的 CONTEXT
+    runDecisionContracts({
+      name, planPath: path, ctxs, planDecisions: parsed.decisions, root,
+      readFile: (p) => readFileSync(p, "utf8"), check: dg, e, w,
+    });
   }
 
   console.log("\n=== mm-gsd 计划门禁(" + targets.length + " 份) ===");
@@ -644,6 +640,13 @@ const artifactInfo = { context: null, plans: [], summaries: [], verification: nu
     else if (!VERIF_STATUSES.includes(vfm.status)) err(`${artifactInfo.verification}: status 非法值 "${vfm.status}"`, `改为 ${VERIF_STATUSES.join(" 或 ")}`);
     // status 合法 ≠ 报告诚实。这条闸拦的是「正文 4 条 FAILED、frontmatter 却写 passed」
     for (const i of validateVerification(readFileSync(J(artifactInfo.verification), "utf8"), vfm.status)) i.level === "warn" ? warn(`${artifactInfo.verification}: ${i.message}`, i.fix) : err(`${artifactInfo.verification}: ${i.message}`, i.fix);
+  }
+  // D-04 要求漂移门管四类工件,--plan 那条只管 PLAN;验收/交付两份在这里补上
+  if (artifactInfo.context) {
+    const { checkConclusionDrift } = await import("../references/decision-gates.mjs");
+    const concl = [[artifactInfo.verification, "验收"], [artifactInfo.shipment, "交付"]].filter(([f]) => f);
+    for (const i of checkConclusionDrift({ ctxPath: J(artifactInfo.context), items: concl.map(([file, kind]) => ({ kind, file, path: J(file) })) }))
+      i.level === "warn" ? warn(i.message, i.fix) : err(i.message, i.fix);
   }
   // ---- 交付契约:交付物"被消费",不是"被做完" ----
   if (artifactInfo.shipment) {

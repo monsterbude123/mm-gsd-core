@@ -1,15 +1,15 @@
 // 决策契约 —— 从 gsd-state-check.mjs 拆出来的第二个关注面。
 //
-// 为什么要拆:主脚本在 02-01 之后已经 699/700,而「CONTEXT 定位 + 核销 + 可逆性 + 漂移」
-// 这四条决策契约装在里面必然顶破硬闸。按预算自己的说法(「下次加模式前先考虑拆成两个文件」),
+// 为什么拆:主脚本贴着 700 上限,「CONTEXT 定位 + 核销 + 可逆性 + 漂移」装不下。
 // 决策契约与工件契约是两回事:前者管「决策有没有被真正执行」,后者管「工件长什么样」。
 //
-// 本文件覆盖三条,作用域各不相同 —— 混用会造假红或假绿:
+// 本文件各契约作用域不同 —— 混用会造假红或假绿:
 //   核销 checkCoverage      —— 单个 phase:该 phase 的 plan 必须引用它的 CONTEXT
 //   可逆性 checkReversibility —— 全局:每份 CONTEXT 的每条决策都要有标记
 //   漂移   checkDrift        —— 单个 phase:工件不得早于自己 phase 的 CONTEXT
+//   漂移   checkConclusionDrift —— 验收/交付结论件同样受约束(D-04 要求四类工件)
 
-import { readdirSync, statSync } from "node:fs";
+import { readdirSync, statSync, readFileSync } from "node:fs";
 import { join, resolve, basename } from "node:path";
 
 const REVERSIBILITY = /\b(reversible|costly|one-way)\b/i;
@@ -157,4 +157,27 @@ export function checkDrift({ name, planPath, ctxPath, e, w }) {
   }
   if (planMs < ctxMs)
     e(`${name}: 工件早于 CONTEXT(${basename(ctxPath)}) —— 决策在工件写出之后又动过`, "重跑规划让工件对齐最新决策;不要靠手动改 prompt 假装同步,那只会把陈旧状态往前传");
+}
+
+
+/**
+ * 验收与交付结论件的漂移检查 —— D-04 要求漂移门管 PLAN / SUMMARY / VERIFICATION / SHIP
+ * **四类**工件,而 `--plan` 那条只查 PLAN。验收与交付是「按已定决策做出的结论」,
+ * 决策在其后被推翻时这两份比 PLAN 更该重做。
+ *
+ * 已定稿的(passed / shipped / held)降为 warn:恒红的门等于没有门(T-13)。
+ *
+ * @param items [{kind, file, path}] —— settled 由本函数自己从 frontmatter 读
+ */
+export function checkConclusionDrift({ ctxPath, items }) {
+  const SETTLED = { 验收: ["passed"], 交付: ["shipped", "held"] };
+  const out = [];
+  for (const it of items) {
+    const errs = [], warns = [];
+    checkDrift({ name: `${it.kind}工件 ${it.file}`, planPath: it.path, ctxPath, e: (m, f) => errs.push([m, f]), w: (m, f) => warns.push([m, f]) });
+    const st = readFileSync(it.path, "utf8").match(/^status:\s*"?([^"\n]*)"?\s*$/m)?.[1]?.trim();
+    for (const [m, f] of errs) out.push({ level: SETTLED[it.kind]?.includes(st) ? "warn" : "error", message: m, fix: f });
+    for (const [m, f] of warns) out.push({ level: "warn", message: m, fix: f });
+  }
+  return out;
 }

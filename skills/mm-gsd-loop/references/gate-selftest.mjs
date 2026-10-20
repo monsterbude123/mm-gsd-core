@@ -14,8 +14,9 @@
 // 而"会红"只能靠这些用例证明。
 
 import { validateVerification } from "./verification-gates.mjs";
-import { checkDecisions, locateContexts } from "./decision-gates.mjs";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { checkDecisions, locateContexts, checkDrift, checkConclusionDrift } from "./decision-gates.mjs";
+import { ticketsCovered } from "./ticket-alive.mjs";
+import { mkdtempSync, writeFileSync, rmSync, utimesSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -115,6 +116,56 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   const dup = locateContexts([ctxDir, ctxDir]).length;
   eqN(dup, found.length, "同一目录重复传入不得产生重复条目");
   rmSync(ctxDir, { recursive: true, force: true });
+  // ---- 漂移门此前**零会红用例**,而 tools/gate-cases.json 声称「核销、可逆性、漂移三条
+  // 各有用例」。台账登记是假的 —— R-16 的整个存在意义就是拦住这种事(T-03)。
+  // fixture 用本仓真实工件格式:phase 与 plan 分两个字段,plan 存票号后缀。
+  const tck = (text, ticket) => ticketsCovered([{ file: "x-SUMMARY.md", text }], ticket);
+  eqN(tck('---\nphase: "02"\nplan: "01"\n---\n', "02-01"), true, "SUMMARY 的 plan 后缀匹配该票该判已完成");
+  eqN(tck('---\nphase: "02"\nplan: "03,04,05"\n---\n', "02-03"), true, "一份 SUMMARY 覆盖多票时前三票都算完成(本仓真实格式)");
+  eqN(tck('---\nphase: "02"\nplan: "03,04,05"\n---\n', "02-05"), true, "一份 SUMMARY 覆盖多票时最后一票也算完成");
+  eqN(tck('---\nphase: "02"\nplan: "01"\n---\n', "02-02"), false, "plan:\"01\" 不该匹配 02-02 —— phase 与后缀必须都对上");
+  eqN(tck('---\nphase: "03"\nplan: "01"\n---\n', "02-01"), false, "phase 不同不该匹配");
+  eqN(tck('---\nphase: "01"\nstatus: complete\n---\n', "01-01"), false, "无 plan 字段的 SUMMARY 不作数(fail-closed,01-01 就是这种)");
+  // 漂移门本体:PLAN 早于 CONTEXT 判红,不早于不判红
+  const dDir = mkdtempSync(join(tmpdir(), "mm-gsd-drift-"));
+  const planF = join(dDir, "p.md"), ctxF = join(dDir, "c.md");
+  writeFileSync(planF, "x"); writeFileSync(ctxF, "y");
+  const dr = () => { const errs = []; checkDrift({ name: "t", planPath: planF, ctxPath: ctxF, e: (a) => errs.push(a), w: () => {} }); return errs.length; };
+  // 按天拉开口子:NTFS 的 mtime 精度较粗,相差几百毫秒会被量化到同一档,
+  // 于是「更早」与「不更早」两种情形测出来一样 —— 这条坑我踩过两次。
+  const DAY = 86400000, at = (d) => new Date(Date.UTC(2020, 0, 1 + d));
+  const set = (f, d) => utimesSync(f, at(d), at(d));
+  set(planF, 1); set(ctxF, 2);
+  eqN(dr(), 1, "工件早于 CONTEXT 该判红(漂移门会红,此前无任何用例证明)");
+  set(planF, 3);
+  eqN(dr(), 0, "工件不早于 CONTEXT 不该判红");
+  set(ctxF, 3);
+  eqN(dr(), 0, "mtime 相等不算漂移(同一次写入)");
+  // 结论件漂移(D-04 要求四类工件)。这条用例存在的直接原因:
+  // checkConclusionDrift 里少 import 了 readFileSync,health 全绿而该分支从未被执行 ——
+  // 「主流程不经过的分支不会被 R-04 的语法检查抓到」。没有用例就还会再漏一次。
+  const cF = join(dDir, "02-VERIFICATION.md"), cS = join(dDir, "02-SHIP.md"), cC = join(dDir, "02-CONTEXT.md");
+  writeFileSync(cF, '---\nstatus: passed\n---\n'); writeFileSync(cS, '---\nstatus: shipped\n---\n'); writeFileSync(cC, "y");
+  // 时间戳要拉得开:Windows 上 NTFS 的 mtime 精度较粗,相差几百毫秒会被量化到同一档,
+  // 于是「工件更早」与「工件不比 CONTEXT 新」两种情形测出来一模一样。这里按天分。
+  const pin = () => { set(cF, 1); set(cS, 1); };   // 改写内容会刷新 mtime,测漂移前必须按回去
+  pin(); set(cC, 2);
+  const cd3 = (items) => checkConclusionDrift({ ctxPath: cC, items });
+  eqN(cd3([{ kind: "验收", file: "02-VERIFICATION.md", path: cF }])[0]?.level, "warn", "已 passed 的验收件早于 CONTEXT 该报但只警告(恒红的门等于没有门)");
+  eqN(cd3([{ kind: "交付", file: "02-SHIP.md", path: cS }])[0]?.level, "warn", "已 shipped 的交付件同理只警告");
+  writeFileSync(cS, '---\nstatus: draft\n---\n'); pin();
+  eqN(cd3([{ kind: "交付", file: "02-SHIP.md", path: cS }])[0]?.level, "error", "未定稿的结论件早于 CONTEXT 该拦红");
+  // 反向:CONTEXT 被更新到比结论件更晚之后,旧结论件**仍然**该报漂移 —— 它确实过时了。
+  // 这里原写成「不该报」,是把方向搞反了:更新 CONTEXT 不是让结论件变新鲜,是让它更旧。
+  writeFileSync(cS, '---\nstatus: shipped\n---\n');   // 复位:上一条把它改成 draft 了,未定稿会走 error
+  set(cC, 3); pin();
+  eqN(cd3([{ kind: "验收", file: "02-VERIFICATION.md", path: cF }])[0]?.level, "warn", "CONTEXT 更新后旧验收件该报漂移(它确实过时了)");
+  eqN(cd3([{ kind: "交付", file: "02-SHIP.md", path: cS }])[0]?.level, "warn", "同样地:旧交付件该报漂移");
+  // 真正不该报的是反过来:结论件比 CONTEXT 新(重跑过验收 / 重新交付过)
+  set(cC, 1); set(cF, 5); set(cS, 5);
+  eqN(cd3([{ kind: "验收", file: "02-VERIFICATION.md", path: cF }]).length, 0, "重跑过的验收件不比 CONTEXT 早时不该报");
+  eqN(cd3([{ kind: "交付", file: "02-SHIP.md", path: cS }]).length, 0, "重新交付过的 SHIP 不该报");
+  rmSync(dDir, { recursive: true, force: true });
   console.log(bad ? `\n${bad} 项自测不过 —— 门禁本身是坏的,先修门禁` : "\n✓ 门禁自测全过");
   return bad;
 }

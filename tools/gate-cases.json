@@ -17,7 +17,7 @@
   "check-no-silent-noop": "写一个含 \\p{...} 的 PCRE 转义或一个空 catch → 判红「静默失效」",
   "check-gate-cases": "从本文件删掉任意一个门禁条目 → R-16 判红「没登记会红用例」;往本文件加一个 mmc.mjs 里不存在的键 → 判红「可能删了门禁忘了删台账」;往 _modules 删掉一个 references/ 下的门禁模块登记 → 判红;新增一个导出 check*/validate* 但没登记的模块(写 export function / async function / const 箭头 / default / 尾部 export {} 都会被真导入抓到)→ 判红",
   "_modules": {
-    "decision-gates.mjs": "由 R-15 的 --selfcheck 覆盖(它会真的执行断言,不是登记):核销、可逆性、漂移三条契约各有用例",
+    "decision-gates.mjs": "由 R-15 的 --selfcheck 覆盖(它会真的执行断言,不是登记):核销、可逆性、漂移三条契约各有用例。**漂移门此前零覆盖而本行声称有 —— 2026-10-20 复核发现该登记是假的并补上**(把 mtime 判定的那段删掉 → --selfcheck 立刻报红)",
     "verification-gates.mjs": "由 R-15 的 --selfcheck 覆盖:判定写法、Artifacts 表不误伤、score 对账各有用例",
     "template-gates.mjs": "由 --templates 模式覆盖(校验六份模板结构)",
     "gate-selftest.mjs": "自测框架本身,不被任何门禁校验 —— 改坏它会让所有 --selfcheck 用例一起消失"
