@@ -308,7 +308,7 @@ if (process.argv.includes("--plan")) {
     // 可逆性对全部 CONTEXT 生效;核销与漂移只对 plan 自己 phase 的那一份 ——
     // 拿一个 plan 去对所有 CONTEXT 核销会造假红:phase 02 的 plan 不必引用 phase 03 的决策。
     const { locateContexts, checkCoverage, checkReversibility, checkDrift } = await import("../references/decision-gates.mjs");
-    const ctxs = locateContexts([relForCtx, P(".")]);
+    const ctxs = locateContexts([relForCtx, P(".")], root);   // root 必须传:否则 cwd ≠ 项目根时会读别人的 CONTEXT
     for (const c of ctxs) checkReversibility({ ctxName: c.file, ctxText: readFileSync(c.path, "utf8"), e });
     const phaseOf = (name.match(/^(\d+)/) ?? [])[1];
     for (const c of ctxs.filter((c) => phaseOf && c.file.startsWith(phaseOf))) {

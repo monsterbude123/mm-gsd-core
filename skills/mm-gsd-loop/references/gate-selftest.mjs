@@ -81,6 +81,15 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(dc("<decisions>\n### [D-01] 用 JWT,不用 session\n</decisions>", ["D-01"]), 1, "决策没标可逆性该判红");
   eqN(dc("<decisions>\n### [D-01] one-way — 改成新架构\n</decisions>", ["D-01"]), 1, "one-way 没举证该判红");
   eqN(dc("<decisions>\n### [D-01] reversible — 用 JWT\n### [D-02] costly — 引入 X,撤销需要 migration\n</decisions>", ["D-01", "D-02"]), 0, "标记齐全不该误伤");
+  // 02-03:四种书写形态都要被「认出」—— 认不出的决策既不核销也不过可逆性门,是最坏的隐形
+  eqN(dc("<decisions>\n**[D-01]** 用 JWT\n</decisions>", ["D-01"]), 1, "粗体 ** 决策也要被认");
+  eqN(dc("<decisions>\n### [d-01] 用 JWT\n</decisions>", ["D-01"]), 1, "小写 ID 也要被认");
+  eqN(dc("<decisions>\n- [D-01] 用 JWT\n</decisions>", ["D-01"]), 1, "列表项决策也要被认");
+  // 02-03:否定句不是举证。「不改 X」恰恰说明这条决策可逆,当成举证就把 D-03 变成仪式
+  eqN(dc("<decisions>\n### [D-01] one-way — 本次不改 contract,保持现有 schema 不变\n</decisions>", ["D-01"]), 1, "「不改 contract」不算不可逆举证");
+  // 02-03:举证范围到下一级标题为止,不能从后一节借用 migration 字样
+  eqN(dc("<decisions>\n### [D-01] one-way — 撤销很麻烦\n\n## 备注\n\n这里提到 migration\n</decisions>", ["D-01"]), 1, "不能从后一节借用举证");
+  eqN(dc("<decisions>\n### [D-01] one-way — 撤销需要 migration 03 重写\n</decisions>", ["D-01"]), 0, "真举证不该误伤");
   // locateContexts 必须返回**全部** CONTEXT,不是第一个。早先用 .find(),
   // 于是字母序靠后的 phase 的决策既不核销也不过可逆性门,而门禁看起来一切正常。
   // 这两条锁死「只查一份」这个形状:少返回一份就红。

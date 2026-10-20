@@ -16,9 +16,21 @@ const REVERSIBILITY = /\b(reversible|costly|one-way)\b/i;
 // one-way 的举证载体:撤销需要动 migration / 已发布契约 / 外部依赖系统。
 // 「这个很难改」「以后不好维护」不是载体,它们描述的是主观感受而不是代价。
 const COST_BEARER = /migration|迁移|已发布|发布契约|contract|外部依赖|下游系统|schema|数据模型/i;
-// 决策可能写成标题(### [D-01] …)也可能写成列表项(- [D-01] …)——
-// 模板里的示例是列表项,实际产出常是标题,两种都得认,否则会静默漏检
-const DECISION_LINE = /^(?:#{2,4}\s+|[-*]\s+)\[(D-\d+)\]\s*(.*)$/;
+// 命中载体后还要看它前面有没有否定 —— 「本次不改 contract」「保持现有 schema 不变」
+// 恰恰说明这条决策**可逆**,却被纯关键词匹配当成有效举证,把 D-03 变成仪式。
+const NEGATION = /不|未|没|无需|不必|暂|禁/;
+// 决策的四种书写形态都要认:标题 / 列表项 / 粗体 / 裸方括号,ID 大小写不敏感。
+// 裸写 `D-01`(无方括号无标记)**刻意不认**:它与散文里的「理由见 D-01」在字符层面
+// 完全不可区分 —— 三份 CONTEXT 里有 40+ 处这样的引用,认它就是一片假红。
+// 这是已知局限,不是遗漏:无标记的裸 ID 没有机器可判的形态判据。
+const DECISION_LINE = /^(?:(?:#{2,4}|[-*])\s+|\*\*|\[)\s*\[?([Dd]-\d+)\]?/;
+
+/** 解析一行是不是决策起点;是则返回 { id(大写), tail(标题行上决策标签之后的正文) } */
+function decisionAt(line) {
+  const m = line.match(DECISION_LINE);
+  if (!m) return null;
+  return { id: m[1].toUpperCase(), tail: line.slice(m[0].length).replace(/^[\s*:：—–-]+/, "") };
+}
 
 /**
  * 列出给定目录里全部 <NN>-CONTEXT.md。名字必须带 phase 前缀,裸 CONTEXT.md 检查器认不出。
@@ -32,18 +44,25 @@ const DECISION_LINE = /^(?:#{2,4}\s+|[-*]\s+)\[(D-\d+)\]\s*(.*)$/;
  * phase 02 的 plan 不该被要求引用 phase 03 的决策,那是假红。
  *
  * dirs 常同时给相对路径与绝对路径(同一目录的两种写法),故按 resolve 后的真实路径去重。
+ *
+ * `base` 是项目根。**必须显式传**:dirs 里的相对路径若按进程 cwd 解析,那么
+ * `--planning <root>` 与 cwd 不一致时会读到另一个项目的 CONTEXT —— 而报错前缀
+ * 长得和真的一样(诱饵文件也叫 NN-CONTEXT.md),人分不出自己在验谁。
+ * 注意不能图省事把 dirs 直接换成项目根:那会永久放弃 `.planning/phases/<dir>/`
+ * 布局下的 CONTEXT,而 checkDrift 的 verify 跑的是 root 布局,看不出这个回归。
  */
-export function locateContexts(dirs) {
+export function locateContexts(dirs, base = process.cwd()) {
   const seen = new Set(), hits = [];
   for (const dir of dirs) {
+    const absDir = resolve(base, dir);
     let names = [];
-    try { names = readdirSync(dir); } catch { continue; }
+    try { names = readdirSync(absDir); } catch { continue; }
     for (const f of names) {
       if (!f.endsWith("-CONTEXT.md")) continue;
-      const abs = resolve(join(dir, f));
+      const abs = resolve(join(absDir, f));
       if (seen.has(abs)) continue;
       seen.add(abs);
-      hits.push({ dir, file: f, path: abs });
+      hits.push({ dir: absDir, file: f, path: abs });
     }
   }
   return hits;
@@ -68,19 +87,35 @@ export function checkCoverage({ name, ctxText, planDecisions, e }) {
 export function checkReversibility({ ctxName, ctxText, e }) {
   const lines = ctxText.split(/\r?\n/);
   const starts = [];
-  for (let i = 0; i < lines.length; i++) if (DECISION_LINE.test(lines[i])) starts.push(i);
+  for (let i = 0; i < lines.length; i++) if (decisionAt(lines[i])) starts.push(i);
   for (const i of starts) {
-    const h = lines[i].match(DECISION_LINE);
-    const rev = h[2].match(REVERSIBILITY);
+    const h = decisionAt(lines[i]);
+    const rev = h.tail.match(REVERSIBILITY);
     if (!rev) {
-      e(`${ctxName}: 决策 ${h[1]} 没标可逆性`, "在决策标题行标 reversible / costly / one-way —— 没说清可逆性的决策不算被决策过");
+      e(`${ctxName}: 决策 ${h.id} 没标可逆性`, "在决策标题行标 reversible / costly / one-way —— 没说清可逆性的决策不算被决策过");
       continue;
     }
     if (rev[1].toLowerCase() !== "one-way") continue;
-    const end = starts.find((s) => s > i) ?? lines.length;
-    const section = lines.slice(i, end).join("\n");
-    if (!COST_BEARER.test(section))
-      e(`${ctxName}: 决策 ${h[1]} 标了 one-way 但没举证不可逆代价`, "指名 migration / 已发布契约 / 外部依赖系统;「这个很难改」不算举证");
+    // 边界必须是「下一条决策 **或** 下一级标题」—— 注释一直这么声称,代码却只认前者,
+    // 于是文件后面任意一节里出现的 migration 字样都能替一条毫无举证的 one-way 决策过闸。
+    const stop = lines.findIndex((l, j) => j > i && (decisionAt(l) || /^#{2,4}\s/.test(l)));
+    const section = lines.slice(i, stop < 0 ? lines.length : stop).join("\n");
+    // 逐个命中点判断否定:「撤销需要 migration」算举证,「本次不改 contract」不算。
+    // 否定词常隔得远 ——「本次不改 contract,保持现有 schema 不变」里「不」离 schema 有 20 字符,
+    // 所以按**小句**判断而不是固定窗口,否则第二个关键词会漏网。
+    const CLAUSE = /[,，;；。\n]/;
+    let proven = false;
+    for (const m of section.matchAll(new RegExp(COST_BEARER.source, "gi"))) {
+      const before = section.slice(0, m.index);
+      const from = Math.max(before.lastIndexOf(","), before.lastIndexOf("，"),
+        before.lastIndexOf(";"), before.lastIndexOf("；"), before.lastIndexOf("。"),
+        before.lastIndexOf("\n")) + 1;
+      const rest = section.slice(m.index + m[0].length);
+      const cut = rest.search(CLAUSE);
+      if (!NEGATION.test(section.slice(from, cut < 0 ? section.length : m.index + m[0].length + cut))) { proven = true; break; }
+    }
+    if (!proven)
+      e(`${ctxName}: 决策 ${h.id} 标了 one-way 但没举证不可逆代价`, "指名 migration / 已发布契约 / 外部依赖系统;「这个很难改」「本次不改 X」都不算举证");
   }
 }
 
