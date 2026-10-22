@@ -7,7 +7,8 @@
 // 第三个问题要求 failures **带原因** —— 所以早退路径必须也把原因写进遥测
 // (见 gsd-state-check.mjs 的 die()),否则排行里 97% 是「无消息」,整个入口失明。
 
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 
 /** 读遥测文件;读不到返回空数组 */
 export function readRows(path) {
@@ -43,6 +44,37 @@ export function aggregate(rows, { scope, all }) {
     sandboxCount: sandbox.length, only, bad, byMode, stuck, top, silent,
     scopeName: all ? "全部项目" : "当前项目",
   };
+}
+
+/**
+ * phase 的过程健康三数:票数 / 受阻票数 / 缺口数。
+ *
+ * **量的来源是 phase 自己的工件历史(`.planning/` 下已落盘的文件),不是遥测**:
+ * 用户 2026-10-22 的口径是「遥测不记状态机的推导结果,declared/derived/phase 保持 null」,
+ * 而按 phase 统计恰恰需要 phase 维度 —— 所以这里数工件,不去给遥测加维度。
+ *
+ * **它测的是过程健康,不是质量** —— 代理指标与真目标之间有偏差,打印时必须带这个标注,
+ * 否则半年后它会被当成质量分用。
+ *
+ * 「首次过门禁的轮数」不做:重跑验收会覆盖同一份 VERIFICATION,拿不到轮数;
+ * 拿一个假的轮数比不报更坏(它会让人以为「轮数」已经被测过了)。
+ */
+export function phaseHealth(root, phase) {
+  const dir = join(root, ".planning");
+  let names = [];
+  try { names = readdirSync(dir); } catch { return { tickets: 0, blocked: 0, gaps: 0 }; }
+  const own = (f) => f.startsWith(phase + "-");
+  const read = (f) => readFileSync(join(dir, f), "utf8");
+  let blocked = 0;
+  for (const f of names.filter((f) => own(f) && f.endsWith("-SUMMARY.md"))) {
+    const st = read(f).match(/^status:\s*"?([^"\n]*)"?\s*$/m)?.[1]?.trim();
+    if (st === "halted") blocked++;              // 受阻的票:进过一次 exec 却没走完
+  }
+  let gaps = 0;
+  for (const f of names.filter((f) => own(f) && f.endsWith("-VERIFICATION.md"))) {
+    gaps += new Set([...read(f).matchAll(/\bG-\d+-\d+\b/g)].map((m) => m[0])).size;
+  }
+  return { tickets: names.filter((f) => own(f) && f.endsWith("-PLAN.md")).length, blocked, gaps };
 }
 
 /**

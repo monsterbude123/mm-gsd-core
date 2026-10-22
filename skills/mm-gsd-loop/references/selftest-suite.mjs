@@ -13,6 +13,7 @@
 import { classifyArtifact, parseAccounting, commitExists, checkArtifactLedger } from "./artifact-ledger.mjs";
 import { checkPhaseCoverage } from "./decision-gates.mjs";
 import { staleDecisions, coveredDecisions, phaseCovered, staleNote, planExists, runDecisionContracts } from "./ticket-alive.mjs";
+import { phaseHealth } from "./telemetry-aggregate.mjs";
 import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
@@ -119,6 +120,27 @@ export function runCoverageCases({ eqN, eqArr }) {
   eqArr(phaseCovered(dir, "06").sort(), ["D-01", "D-09"], "phase union 取本 phase 各票 covers 的并集");
   eqN(planExists(dir, "06-01"), true, "接替票存在性:真实存在的 PLAN 算存在");
   eqN(planExists(dir, "06-99"), false, "不存在的票不算存在");
+  rmSync(dir, { recursive: true, force: true });
+}
+
+/**
+ * phase 过程健康三数(D-04):票数 / 受阻票数 / 缺口数,数的是工件不是遥测。
+ */
+export function runPhaseHealthCases({ eqN }) {
+  const dir = mkdtempSync(join(tmpdir(), "mm-gsd-health-"));
+  const pl = join(dir, ".planning");
+  mkdirSync(pl, { recursive: true });
+  writeFileSync(join(pl, "06-01-PLAN.md"), "x");
+  writeFileSync(join(pl, "06-02-PLAN.md"), "x");
+  writeFileSync(join(pl, "06-01-SUMMARY.md"), '---\nphase: "06"\nplan: "01"\nstatus: complete\ncommits: 2\n---\n');
+  writeFileSync(join(pl, "06-02-SUMMARY.md"), '---\nphase: "06"\nplan: "02"\nstatus: halted\ncommits: 0\n---\n');
+  writeFileSync(join(pl, "06-VERIFICATION.md"), "缺口 G-06-1 与 G-06-2,还有重复提到的 G-06-1\n");
+  writeFileSync(join(pl, "05-01-PLAN.md"), "别的 phase 不算数");
+  const h = phaseHealth(dir, "06");
+  eqN(h.tickets, 2, "票数 = 本 phase 的 PLAN 件数");
+  eqN(h.blocked, 1, "受阻票数 = status=halted 的 SUMMARY 件数");
+  eqN(h.gaps, 2, "缺口数 = VERIFICATION 里的 G-NN-N 个数(重复的只算一次)");
+  eqN(phaseHealth(dir, "05").tickets, 1, "别的 phase 的票不算进本 phase");
   rmSync(dir, { recursive: true, force: true });
 }
 

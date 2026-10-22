@@ -328,7 +328,7 @@ if (process.argv.includes("--plan")) {
     const dg = await import("../references/decision-gates.mjs"), { runDecisionContracts } = await import("../references/ticket-alive.mjs"), rg = await import("../references/research-gates.mjs");
     const ctxs = dg.locateContexts([relForCtx, P(".")], root);   // root 必须传:否则 cwd ≠ 项目根时会读别人的 CONTEXT
     runDecisionContracts({
-      name, planPath: path, ctxs, planDecisions: parsed.decisions, root,
+      name, planPath: path, ctxs, root,
       readFile: (p) => readFileSync(p, "utf8"), check: dg, e, w,
     });
     rg.checkResearch({ name, goal: fm.goal ?? "", files: parsed.files, phase: unquote(String(fm.phase ?? name.slice(0, 2))), root, planDir: dirname(path), e, w });
@@ -339,6 +339,16 @@ if (process.argv.includes("--plan")) {
   for (const x of errs) console.log(`  ✗ ${x.message}${x.fix ? `\n      → ${x.fix}` : ""}`);
   for (const x of warns) console.log(`  ! ${x.message}${x.fix ? `\n      → ${x.fix}` : ""}`);
   if (!errs.length && !warns.length) console.log("  ✓ 四件套完整、失败方向明确、文件清单可解析、预算未超");
+  // ---- 本 phase 的过程健康三数(D-04):票数 / 受阻票数 / 缺口数 ----
+  // 量来自工件历史,不是遥测(遥测不记 phase 维度,那是用户的口径);
+  // 它测过程健康,不是质量分 —— 标注必须跟着数字一起出现。
+  {
+    const { phaseHealth } = await import("../references/telemetry-aggregate.mjs");
+    for (const ph of [...new Set(targets.map((t) => t.split(/[\\/]/).pop().slice(0, 2)))]) {
+      const h = phaseHealth(root, ph);
+      console.log(`  · phase ${ph} 过程健康:票 ${h.tickets} / 受阻 ${h.blocked} / 缺口 ${h.gaps}(过程健康,不是质量分)`);
+    }
+  }
   process.exit(errs.length ? 1 : 0);
 }
 
