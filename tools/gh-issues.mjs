@@ -9,6 +9,99 @@ import { readFileSync, readdirSync, existsSync, writeFileSync, mkdirSync } from 
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 
+/**
+ * 聚类口径 —— 把一条错误消息归一化成「同一类」的键。
+ *
+ * 为什么抽成共享函数:observe 的聚类与「issue 证据 ↔ 聚类」的匹配必须用**同一把尺子**。
+ * 两处各写一套,复发判定就会把没修好的那些也拉回来,制造噪音(03-CONTEXT D-03 的硬要求)。
+ */
+export function clusterKey(msg) {
+  return String(msg ?? "").replace(/"[^"]*"/g, '"…"').replace(/\d+/g, "#").slice(0, 60);
+}
+
+/** 归一化但不截断:匹配 issue 证据时要用全文(证据常常比一条消息长) */
+export function normalizeMsg(msg) {
+  return String(msg ?? "").replace(/"[^"]*"/g, '"…"').replace(/\d+/g, "#");
+}
+
+/** 本地 issue 件的状态字段:closed_at / recurred_at 都是可判事实,不是叙述 */
+const stateOf = (text) => {
+  const st = text.match(/^##\s*状态\s*\n\s*([^\n]+)/m)?.[1]?.trim() ?? "";
+  const at = (k) => text.match(new RegExp("^" + k + ":\\s*(\\S+)", "m"))?.[1] ?? null;
+  return { state: st.replace(/\s*\(.*\)$/, ""), closedAt: at("closed_at"), recurredAt: at("recurred_at") };
+};
+
+/** 证据段:先找围栏块,再退到缩进块 */
+const evidenceOf = (text) => {
+  const fence = text.match(/```[a-z]*\n([\s\S]*?)\n?```/);
+  if (fence) return fence[1];
+  const indent = text.match(/##\s*证据\s*\n\s*\n((?:[ \t]+.*\n?)+)/);
+  return indent ? indent[1] : "";
+};
+
+/** 读本地 issue 件 → [{id, file, path, text, state, closedAt, recurredAt, github, evidence}] */
+export function readLocalIssues(dir) {
+  let files = [];
+  try { files = readdirSync(dir).filter((f) => /^I-\d+\.md$/.test(f)); } catch { return []; }
+  return files.map((f) => {
+    const path = join(dir, f);
+    const text = readFileSync(path, "utf8");
+    const s = stateOf(text);
+    return {
+      id: f.replace(/\.md$/, ""), file: f, path, text,
+      state: s.state, closedAt: s.closedAt, recurredAt: s.recurredAt,
+      github: text.match(/^github:\s*#?(\d+)\s*$/m)?.[1] ?? null,
+      evidence: evidenceOf(text),
+    };
+  });
+}
+
+/**
+ * 复发检测(纯函数):关掉的 issue,其证据在关闭之后又以同一把尺子聚类出现。
+ *
+ * 只看**关闭之后**的失败:关闭之前的失败是它当时就该修的那次,不是复发。
+ * 按天比(不比时分秒):同一天内的失败不算复发 —— 保守方向是宁可漏报也不误报,
+ * 误报会把没修好的那些拉回来,制造噪音(03-CONTEXT D-03 的代价说明)。
+ *
+ * @param issues readLocalIssues 的结果
+ * @param rows   遥测行({ts, errors[], exit, sandbox})
+ * @returns [{issue, key, count, lastSeen}]
+ */
+export function findRecurrences(issues, rows) {
+  const out = [];
+  for (const it of issues) {
+    if (!it.closedAt) continue;                      // 不是这套流程关的 → 不是复发对象
+    const ev = normalizeMsg(it.evidence ?? "");
+    if (!ev.trim()) continue;
+    for (const r of rows) {
+      if (r.exit !== 1 || r.sandbox) continue;        // 自测沙盒的失败是故意造的,不算
+      if (String(r.ts).slice(0, 10) <= it.closedAt) continue;
+      for (const m of r.errors ?? []) {
+        const k = clusterKey(m);
+        if (!k || !ev.includes(k)) continue;
+        const prev = out.find((o) => o.issue.id === it.id);
+        if (prev) { prev.count++; if (String(r.ts) > prev.lastSeen) prev.lastSeen = r.ts; }
+        else out.push({ issue: it, key: k, count: 1, lastSeen: r.ts });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * 同一根因二次出现率 —— 本仓唯一的成败指标(03-CONTEXT D-05)。
+ * 分母只算这套流程关过的 issue;样本少于 5 时不报百分比(一个样本能刷出 100%)。
+ */
+export function recurrenceRate(issues) {
+  const closed = issues.filter((i) => i.closedAt);
+  const recurred = closed.filter((i) => i.recurredAt);
+  return {
+    closed: closed.length,
+    recurred: recurred.length,
+    rate: closed.length >= 5 ? recurred.length / closed.length : null,
+  };
+}
+
 export function makeInboxClose({ ISSUES, GH_BIN, log, ok, bad, head, C }) {
   return {
     // 2.5) 拉取:使用方报上来的 issue → 本地 issue 文件,接进同一条修复流
@@ -95,7 +188,10 @@ export function makeInboxClose({ ISSUES, GH_BIN, log, ok, bad, head, C }) {
             `已由 ${x.id} 修复并发布。\n\n---\n本条由 \`mmc inbox\` 拉取 → \`mmc fix\` 修复 → \`mmc close\` 关闭。若仍复现,带证据重开。`],
             { encoding: "utf8", stdio: "pipe" });
           const t = readFileSync(join(ISSUES, x.f), "utf8");
-          writeFileSync(join(ISSUES, x.f), t.replace(/^## 状态\s*\n\s*fixed.*$/m, "## 状态\n\nclosed"));
+          // 关闭日期要落盘:复发判定靠它区分「关闭之后的失败」与「当时就该修的那次」。
+          // 没有它,同一个错误在关闭前出现过一次,就会被算成复发。
+          writeFileSync(join(ISSUES, x.f), t.replace(/^## 状态\s*\n\s*fixed.*$/m,
+            "## 状态\n\nclosed\nclosed_at: " + new Date().toISOString().slice(0, 10)));
           ok(`GitHub #${x.num} 已关闭(对应 ${x.id})`);
           closed++;
         } catch (e) {

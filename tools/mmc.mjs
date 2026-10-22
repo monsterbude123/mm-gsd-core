@@ -19,7 +19,7 @@ import { registryGaps, unregisteredModules, baselineDrift } from "./module-regis
 import { fatAdvice } from "./fat-advice.mjs";
 import { collectFiles, countLines, collectScripts } from "./budget-collect.mjs";
 import { fileURLToPath } from "node:url";
-import { makeInboxClose } from "./gh-issues.mjs";
+import { makeInboxClose, clusterKey, readLocalIssues, findRecurrences, recurrenceRate } from "./gh-issues.mjs";
 import { makeReleaseFlow, checkTags } from "./release-flow.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -408,16 +408,18 @@ const CMD = {
     head("① observe —— 读遥测找重复失败");
     if (!existsSync(TELEMETRY)) { warn(`还没有遥测:${TELEMETRY}`); log("  检查器每跑一次会自动记一行;跑一次任意模式即产生。\n"); return 0; }
     const rows = readFileSync(TELEMETRY, "utf8").split(/\r?\n/).filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
-    const bad = rows.filter((r) => r.exit === 1);
+    // 自测沙盒里的失败是**故意造的**(门禁自测要证明自己会红),混进排行会淹掉真问题。
+    // 检查器早就给这些行打了 sandbox 标记,这里第一次真正用它。
+    const bad = rows.filter((r) => r.exit === 1 && !r.sandbox);
     const groups = {};
     for (const r of bad) for (const m of r.errors ?? []) {
-      const k = m.replace(/"[^"]*"/g, '"…"').replace(/\d+/g, "#").slice(0, 60);
+      // 聚类口径用共享函数:复发判定要用同一把尺子(见 gh-issues.mjs 的 clusterKey)
+      const k = clusterKey(m);
       (groups[k] ??= { count: 0, projects: new Set(), sample: m, modes: new Set() });
       groups[k].count++; groups[k].projects.add(r.cwd); groups[k].modes.add(r.mode);
     }
     const list = Object.entries(groups).sort((a, b) => b[1].count - a[1].count);
-    log(`  遥测 ${rows.length} 次运行,其中门禁失败 ${bad.length} 次,聚合出 ${list.length} 类问题\n`);
-    if (!list.length) { ok("没有失败记录"); return 0; }
+    log(`  遥测 ${rows.length} 次运行,其中门禁失败 ${bad.length} 次(自测沙盒的失败不计),聚合出 ${list.length} 类问题\n`);
     let i = 0;
     for (const [k, g] of list.slice(0, 8)) {
       const cross = g.projects.size > 1 ? `(跨 ${g.projects.size} 个项目 → 系统性问题)` : `(仅 ${[...g.projects][0]})`;
@@ -425,6 +427,39 @@ const CMD = {
       log(`  ${String(++i).padStart(2)}. ${g.count}× ${k}\n      ${cross};模式:${[...g.modes].join(",")}${hot}`);
       log(`      ${C.d}原文:${g.sample.slice(0, 90)}${C.x}`);
     }
+    if (!list.length) log("  没有失败记录\n");
+
+    // 复发(phase 03 D-03):关掉的 issue 不再是终态 —— 同一根因又出现就把它拉回来。
+    const local = readLocalIssues(ISSUES);
+    const recs = findRecurrences(local, rows);
+    if (recs.length) {
+      log(`\n  ♻ 复发 ${recs.length} 条(关掉之后又以同一把尺子出现):`);
+      for (const r of recs) {
+        const num = r.issue.github;
+        if (!num) { log(`  ${r.issue.id}: 复发 ${r.count} 次 —— 但它没有 github: 行,拉不回远端,本地标记备查`); }
+        else if (!GH_BIN) { warn(`${r.issue.id}: 复发 ${r.count} 次 —— 没有 gh 命令,拉不回远端`); }
+        else {
+          try {
+            execFileSync(GH_BIN, ["issue", "reopen", String(num), "--comment",
+              `同一个根因又出现了(${r.count} 次,最近 ${String(r.lastSeen).slice(0, 10)})。按约定:close 不是终态,复发即拉回。\n\n---\n本条由 \`mmc observe\` 检测到复发 → 自动 reopen。对应本地 ${r.issue.id}。`],
+              { encoding: "utf8", stdio: "pipe" });
+            ok(`GitHub #${num} 已拉回未解决(对应 ${r.issue.id},复发 ${r.count} 次)`);
+          } catch (e) { bad(`拉回 #${num} 失败:` + String(e.stderr || e.message).split("\n")[0]); }
+        }
+        // 本地状态也改回来 —— 两边状态不同步是常态,但本地不能还写着 closed
+        const today = new Date().toISOString().slice(0, 10);
+        writeFileSync(r.issue.path, r.issue.text
+          // 先清掉旧的日期行,再写新的 —— 否则 closed_at 会写两遍
+          .replace(/^(closed_at|recurred_at):.*\n?/gm, "")
+          .replace(/^## 状态\s*\n\s*closed[^\n]*$/m, `## 状态\n\nreopened\nclosed_at: ${r.issue.closedAt}\nrecurred_at: ${today}`));
+      }
+    }
+
+    // 唯一那个刷不上去的数(phase 03 D-05)
+    // 重新读一次:刚复发的 issue 已经被写上 recurred_at,拿旧快照算会把这次复发漏掉
+    const rate = recurrenceRate(readLocalIssues(ISSUES));
+    log(`\n  同一根因二次出现率:${rate.recurred}/${rate.closed}`
+      + (rate.rate === null ? "(样本不足 5,只报原始数 —— 一个样本能刷出 100%)" : ` = ${(rate.rate * 100).toFixed(0)}%`));
     log(`\n  转 issue:node tools/mmc.mjs issue "<标题>" --evidence "<复现命令或报错>"\n`);
     return 0;
   },
