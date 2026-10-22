@@ -20,6 +20,7 @@ import { fatAdvice } from "./fat-advice.mjs";
 import { collectFiles, countLines, collectScripts } from "./budget-collect.mjs";
 import { fileURLToPath } from "node:url";
 import { makeInboxClose } from "./gh-issues.mjs";
+import { makeReleaseFlow, checkTags } from "./release-flow.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const R = (...s) => join(ROOT, ...s);
@@ -389,6 +390,11 @@ const CHECKS = {
     const { checkArtifactLedger } = await import("../skills/mm-gsd-loop/references/artifact-ledger.mjs");
     return checkArtifactLedger({ root: ROOT, report });
   },
+
+  // R-19:预发布通道时效 —— next 不得比 latest 旧(通道腐烂的唯一方式)
+  "check-release-tags"(report) {
+    return checkTags(report);
+  },
 };
 const pathBase = (p) => p.split("/").pop();
 
@@ -571,108 +577,9 @@ const CMD = {
     return 0;
   },
 
-  // release:发布部署流程。顺序有讲究 —— 先发 npm,再从 npm 装回来,
-  // 这样「装出去的那份」和「发出去的那份」是同一份,不会出现本地改了没发的情况。
-  async release(args) {
-    head("release —— 发布部署");
-    const pkgPath = R("package.json");
-    const pkg = readJSON(pkgPath, {});
-    const bump = args.includes("--patch") ? "patch" : args.includes("--minor") ? "minor" : args.includes("--major") ? "major" : null;
-    const explicit = args.find((a) => /^\d+\.\d+\.\d+/.test(a));
-    // 认不出来的参数必须当场说。`release --bump patch` 曾被静默忽略,
-    // 拿旧版本号去发布 —— 用户以为在升版本,实际发布的是上一次的版本(T-09 同族)。
-    const known = new Set(["--patch", "--minor", "--major"]);
-    const junk = args.filter((a) => !known.has(a) && !/^\d+\.\d+\.\d+/.test(a));
-    if (junk.length) { bad("不认识的参数:" + junk.join(" ") + "\n      合法:--patch / --minor / --major / 显式版本号"); return 1; }
-    if (!bump && !explicit) { bad("没说升哪个版本 —— 加 --patch / --minor / --major,或直接给版本号"); return 1; }
-
-    // 1) 门禁必须全绿 —— 不绿就不许发
-    log("  1/6 跑门禁");
-    if ((await CMD.health()) !== 0) { bad("门禁没过,不发"); return 1; }
-
-    // 2) 版本
-    let version = pkg.version;
-    if (explicit) version = explicit.replace(/^v/, "");
-    else if (bump) {
-      const [ma, mi, pa] = version.split(".").map(Number);
-      version = bump === "major" ? ma + 1 + ".0.0" : bump === "minor" ? ma + "." + (mi + 1) + ".0" : ma + "." + mi + "." + (pa + 1);
-    }
-    if (version !== pkg.version) {
-      pkg.version = version;
-      writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
-      log("  2/6 版本 " + pkg.version + " → " + version);
-    } else log("  2/6 版本 " + version + "(未变)");
-
-    // 3) 提交 + 打标签
-    log("  3/6 提交与打标签");
-    const dirty = execFileSync("git", ["status", "--porcelain"], { cwd: ROOT, encoding: "utf8" }).trim();
-    if (dirty) {
-      try {
-        execFileSync("git", ["add", "-A"], { cwd: ROOT, stdio: "pipe" });
-        execFileSync("git", ["commit", "-m", "release: v" + version], { cwd: ROOT, stdio: "pipe" });
-        log("      已提交改动");
-      } catch (e) { bad("提交失败:" + String(e.stderr || e.message).split("\n")[0]); return 1; }
-    } else log("      工作区干净");
-    try { execFileSync("git", ["tag", "-f", "v" + version], { cwd: ROOT, stdio: "pipe" }); log("      已打标签 v" + version); }
-    catch { log("      标签 v" + version + " 已存在"); }
-
-    // 4) 发 npm
-    log("  4/6 发布到 npm");
-    try {
-      const out = execFileSync("npm", ["publish", "--access", "public"], { cwd: ROOT, encoding: "utf8", stdio: "pipe", shell: process.platform === "win32" });
-      log("      " + out.split("\n").filter((l) => l.includes("+")).join(" ").trim());
-    } catch (e) {
-      bad("npm publish 失败:\n" + String(e.stdout || "") + String(e.stderr || e.message));
-      log("      常见原因:账号未开 2FA 且 token 没有 bypass 2FA 权限(见 README「发布」)");
-      return 1;
-    }
-
-    // 5) 推 git
-    log("  5/6 推送 GitHub");
-    try {
-      execFileSync("git", ["push", "origin", "main", "--follow-tags"], { cwd: ROOT, stdio: "pipe" });
-      ok("已推送 main 与标签");
-    } catch (e) { bad("git push 失败:" + String(e.stderr || e.message).split("\n")[0]); return 1; }
-
-    // 6) 从 npm 装回来 —— 必须是 registry 上那一份,不是仓库里那份
-    //    npm publish 返回 ≠ 版本已可装:npm 有传播延迟,而且 staged publish 会留占位。
-    //    拿仓库副本装回来并写上 npm 来源,是这条注释曾经描述、代码却没做的假绿(T-07)。
-    log("  6/6 从 npm 装回本机");
-    const spec = pkg.name + "@" + version;
-    // npm 有传播延迟:实测 60-96 秒才可见。查一次就判失败,会让每次发布
-    // 都停在第 6 步,逼人手工补 —— 那等于把门禁写成了障碍。轮询到耗尽才判,
-    // 而耗尽之后还红,那才是真的没发出去。
-    let live = "";
-    for (let i = 0; i < 12; i++) {
-      try { live = execFileSync("npm.cmd", ["view", spec, "version"], { encoding: "utf8", shell: true, stdio: "pipe" }).trim(); }
-      catch { live = ""; /* 版本不存在时 npm 直接非零退出,不是返回空串 */ }
-      if (live === version) break;
-      if (i) log(`      registry 还没同步(第 ${i} 次)…… 再等 30s`);
-      else log(`      registry 还没同步,等它生效(最长 6 分钟)`);
-      try { execFileSync(process.execPath, ["-e", "setTimeout(()=>{},30000)"], { stdio: "ignore" }); } catch {}
-    }
-    if (live !== version) { bad(`registry 上 ${spec} 查不到(轮询 6 分钟仍未见)—— 发出去的没生效,别信 publish 那行 "+name@version"`); return 1; }
-    const sb = join(tmpdir(), "mmc-release-inst");
-    rmSync(sb, { recursive: true, force: true });
-    try {
-      execFileSync("npm.cmd", ["install", "--prefix", sb, "--no-audit", "--no-fund", spec], { encoding: "utf8", shell: true, stdio: "pipe", timeout: 180000 });
-      execFileSync(process.execPath, [join(sb, "node_modules", pkg.name, "bin", "mm-gsd.mjs"), "install"], { encoding: "utf8", stdio: "pipe" });
-      const mf = JSON.parse(readFileSync(join(HOME_SKILLS, MANIFEST_NAME), "utf8"));
-      if (mf.source !== "npm:" + spec) { bad(`装回来的来源是 ${mf.source},不是 npm —— 装错了东西`); return 1; }
-      ok(`本机 ~/.agents/skills/ 已更新到 ${version}(来源已核对:${mf.source})`);
-    } catch (e) {
-      bad("装回本机失败:" + String(e.stdout || "") + String(e.stderr || e.message).split("\n")[0]);
-      log("      npm 上已经有了,本机没更新 —— 下次 mmc sync 会补上");
-      return 1;
-    } finally { rmSync(sb, { recursive: true, force: true }); }
-
-    log("");
-    ok("v" + version + " 发布完成");
-    log("  npm:      npx mm-gsd-core@" + version);
-    log("  GitHub:   https://github.com/monsterbude123/mm-gsd-core/releases/tag/v" + version);
-    log("");
-    return 0;
-  },
+  // release / promote:发布通道。实现住在 tools/release-flow.mjs ——
+  // 主文件已 700/700 顶着上限,再加就破(本仓先例:gh-issues.mjs、rule-baseline.mjs)。
+  ...makeReleaseFlow({ log, ok, bad, warn, head, C, health: () => CMD.health() }),
 
 };
 
