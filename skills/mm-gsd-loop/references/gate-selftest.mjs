@@ -16,6 +16,8 @@
 import { validateVerification } from "./verification-gates.mjs";
 import { checkDecisions, locateContexts, checkDrift, checkConclusionDrift } from "./decision-gates.mjs";
 import { ticketsCovered } from "./ticket-alive.mjs";
+import { classifyArtifact, parseAccounting, commitExists } from "./artifact-ledger.mjs";
+import { mkAssert } from "./selftest-helpers.mjs";
 import { extractTemplateBlock } from "./template-gates.mjs";
 import { mkdtempSync, writeFileSync, rmSync, utimesSync } from "node:fs";
 import { join } from "node:path";
@@ -23,22 +25,7 @@ import { tmpdir } from "node:os";
 
 /** 跑一遍自测,返回失败条数 */
 export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
-  let bad = 0;
-  const eq = (re, s, want, why) => {
-    const got = re.test(s), good = got === want;
-    if (!good) bad++;
-    console.log(`  ${good ? "✓" : "✗"} ${why}: ${JSON.stringify(s)} → ${got}`);
-  };
-  const eqN = (got, want, why) => {
-    const good = got === want;
-    if (!good) bad++;
-    console.log(`  ${good ? "✓" : "✗"} ${why}: ${got} → ${good ? "" : want}`);
-  };
-  const eqArr = (got, want, why) => {
-    const good = JSON.stringify(got) === JSON.stringify(want);
-    if (!good) bad++;
-    console.log(`  ${good ? "✓" : "✗"} ${why}: ${JSON.stringify(got)} → ${good ? "" : JSON.stringify(want)}`);
-  };
+  const { eq, eqN, eqArr, st } = mkAssert();
   console.log("\n=== mm-gsd 门禁自测 ===");
   // N\/A 要左右断言:\b 挡不住 admin/auth —— n 是词字符、/ 不是,边界本就存在
   eq(VAGUE_FILE, "src/app/[locale]/admin/admin.css", false, "admin 路径不该被判模糊");
@@ -167,12 +154,34 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(cd3([{ kind: "验收", file: "02-VERIFICATION.md", path: cF }]).length, 0, "重跑过的验收件不比 CONTEXT 早时不该报");
   eqN(cd3([{ kind: "交付", file: "02-SHIP.md", path: cS }]).length, 0, "重新交付过的 SHIP 不该报");
   rmSync(dDir, { recursive: true, force: true });
+  // ---- 工件三态(D-01):三份 fixture 判出三个不同结论,且互斥 ----
+  // 互斥是硬要求:两种毛病同时存在时若能返回两种态,调用方就得自己决定先修哪个,
+  // 判定就退化成建议 —— 那正是「建议」与「判定」的分界。
+  const HEALTHY = { hasSummary: true, summaryStatus: "complete", commits: 2, planDecisionRefs: ["D-01"], ctxDecisionIds: ["D-01", "D-02"] };
+  eqN(classifyArtifact(HEALTHY).state, "accounted", "三样齐全 → accounted(不需要任何处置)");
+  eqN(classifyArtifact({ ...HEALTHY, hasSummary: false }).state, "incomplete", "缺 SUMMARY → incomplete");
+  eqN(classifyArtifact({ ...HEALTHY, summaryStatus: "" }).state, "incomplete", "SUMMARY 缺 status → incomplete");
+  eqN(classifyArtifact({ ...HEALTHY, stale: true }).state, "overdue", "CONTEXT 决策已改 → overdue");
+  eqN(classifyArtifact({ ...HEALTHY, commits: 0 }).state, "unaccounted", "零 commit → unaccounted");
+  eqN(classifyArtifact({ ...HEALTHY, planDecisionRefs: [] }).state, "unaccounted", "零 D-NN 引用 → unaccounted");
+  eqArr(classifyArtifact({ ...HEALTHY, commits: 0, planDecisionRefs: [] }).reasons, ["commits", "dnn"], "两种毛病同时在 → 理由是两个,态仍是一个");
+  eqN(classifyArtifact({ ...HEALTHY, commits: 0, planDecisionRefs: [] }).state, "unaccounted", "同时缺两样不得判成两种态");
+  // 记账台账解析:表头 / 分隔行 / 不认的缺口 / 不像 sha 的值,一律不作数
+  const accRows = parseAccounting([
+    "| 件 | 缺口 | 记账 commit | 说明 |", "|---|---|---|---|",
+    "| 02-01-SUMMARY.md | commits | c5c64f9 | 真记账 |",
+    "| 02-02-SUMMARY.md | 瞎写 | c5c64f9 | 缺口不认 |",
+    "| 02-03-SUMMARY.md | commits | zzzz | 不是 sha |",
+  ].join("\n"));
+  eqArr(accRows, [{ file: "02-01-SUMMARY.md", gap: "commits", commit: "c5c64f9" }], "记账台账只认合法行");
+  // 记账指向不存在的 commit → 不算记账。git 缺席时同样为 false(fail-closed)
+  eqN(commitExists(process.cwd(), "0000000000000000000000000000000000000000"), false, "不存在的 commit 不算记账");
   // 模板块必须认 CRLF:Git for Windows 的**系统级** core.autocrlf=true(不在仓库里,
   // 在 Git 安装目录的 etc/gitconfig)让 Windows 的新克隆全是 CRLF —— 只认 \n 的正则
   // 会让六份模板在每个 Windows 用户机器上一起假红,而这条门禁每次提交都跑。
   eqN(extractTemplateBlock("```markdown\r\nx\r\n```") !== null, true, "CRLF 模板也抽得出 ```markdown 块");
   eqN(extractTemplateBlock("```markdown\nx\n```") !== null, true, "LF 模板照抽");
   eqN(extractTemplateBlock("没有代码块") !== null, false, "没有块就老实说没有");
-  console.log(bad ? `\n${bad} 项自测不过 —— 门禁本身是坏的,先修门禁` : "\n✓ 门禁自测全过");
-  return bad;
+  console.log(st.bad ? `\n${st.bad} 项自测不过 —— 门禁本身是坏的,先修门禁` : "\n✓ 门禁自测全过");
+  return st.bad;
 }

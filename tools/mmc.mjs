@@ -383,6 +383,12 @@ const CHECKS = {
     const { runReferenceMapCheck, resolveGsdRoot } = await import("./reference-map.mjs");
     return runReferenceMapCheck({ mapPath: R("skills","mm-gsd-loop","references","reference-map.md"), gsdRoot: resolveGsdRoot(), report });
   },
+
+  // R-18:工件记账完整性 —— 「做完了却没记账」不许静默通过
+  async "check-artifact-ledger"(report) {
+    const { checkArtifactLedger } = await import("../skills/mm-gsd-loop/references/artifact-ledger.mjs");
+    return checkArtifactLedger({ root: ROOT, report });
+  },
 };
 const pathBase = (p) => p.split("/").pop();
 
