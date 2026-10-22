@@ -16,8 +16,7 @@
 import { validateVerification } from "./verification-gates.mjs";
 import { checkDecisions, locateContexts, checkDrift, checkConclusionDrift } from "./decision-gates.mjs";
 import { ticketsCovered } from "./ticket-alive.mjs";
-import { classifyArtifact, parseAccounting, commitExists } from "./artifact-ledger.mjs";
-import { mkAssert } from "./selftest-helpers.mjs";
+import { mkAssert, runArtifactCases, runCoverageCases } from "./selftest-suite.mjs";
 import { researchRequired, researchCompliant } from "./research-gates.mjs";
 import { extractTemplateBlock } from "./template-gates.mjs";
 import { mkdtempSync, writeFileSync, rmSync, utimesSync } from "node:fs";
@@ -72,7 +71,8 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   // 都会被误判成「有人工项」,被迫降级 human_needed(实测:本 phase 的验收报告就撞上了)
   eqN(vt("passed", ["✓ VERIFIED", "✓ VERIFIED"], "None —— 全部由程序验证\n**结论**: 没有人工项"), 0, "粗体结论段落不算人工项");
   // decision-gates 的可逆性契约此前零自测覆盖 —— 改坏了没有任何东西能发现
-  const dc = (md, refs) => { const errs = []; checkDecisions({ name: "t", ctxText: md, planDecisions: refs, e: (a) => errs.push(a) }); return errs.length; };
+  // coveredIds 是本 phase 全部票的 covers 并集(D-03 的核销输入),不是单张票的
+  const dc = (md, refs) => { const errs = []; checkDecisions({ name: "t", ctxText: md, coveredIds: refs, e: (a) => errs.push(a) }); return errs.length; };
   eqN(dc("<decisions>\n### [D-01] 用 JWT,不用 session\n</decisions>", ["D-01"]), 1, "决策没标可逆性该判红");
   eqN(dc("<decisions>\n### [D-01] one-way — 改成新架构\n</decisions>", ["D-01"]), 1, "one-way 没举证该判红");
   eqN(dc("<decisions>\n### [D-01] reversible — 用 JWT\n### [D-02] costly — 引入 X,撤销需要 migration\n</decisions>", ["D-01", "D-02"]), 0, "标记齐全不该误伤");
@@ -158,28 +158,10 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(cd3([{ kind: "验收", file: "02-VERIFICATION.md", path: cF }]).length, 0, "重跑过的验收件不比 CONTEXT 早时不该报");
   eqN(cd3([{ kind: "交付", file: "02-SHIP.md", path: cS }]).length, 0, "重新交付过的 SHIP 不该报");
   rmSync(dDir, { recursive: true, force: true });
-  // ---- 工件三态(D-01):三份 fixture 判出三个不同结论,且互斥 ----
-  // 互斥是硬要求:两种毛病同时存在时若能返回两种态,调用方就得自己决定先修哪个,
-  // 判定就退化成建议 —— 那正是「建议」与「判定」的分界。
-  const HEALTHY = { hasSummary: true, summaryStatus: "complete", commits: 2, planDecisionRefs: ["D-01"], ctxDecisionIds: ["D-01", "D-02"] };
-  eqN(classifyArtifact(HEALTHY).state, "accounted", "三样齐全 → accounted(不需要任何处置)");
-  eqN(classifyArtifact({ ...HEALTHY, hasSummary: false }).state, "incomplete", "缺 SUMMARY → incomplete");
-  eqN(classifyArtifact({ ...HEALTHY, summaryStatus: "" }).state, "incomplete", "SUMMARY 缺 status → incomplete");
-  eqN(classifyArtifact({ ...HEALTHY, stale: true }).state, "overdue", "CONTEXT 决策已改 → overdue");
-  eqN(classifyArtifact({ ...HEALTHY, commits: 0 }).state, "unaccounted", "零 commit → unaccounted");
-  eqN(classifyArtifact({ ...HEALTHY, planDecisionRefs: [] }).state, "unaccounted", "零 D-NN 引用 → unaccounted");
-  eqArr(classifyArtifact({ ...HEALTHY, commits: 0, planDecisionRefs: [] }).reasons, ["commits", "dnn"], "两种毛病同时在 → 理由是两个,态仍是一个");
-  eqN(classifyArtifact({ ...HEALTHY, commits: 0, planDecisionRefs: [] }).state, "unaccounted", "同时缺两样不得判成两种态");
-  // 记账台账解析:表头 / 分隔行 / 不认的缺口 / 不像 sha 的值,一律不作数
-  const accRows = parseAccounting([
-    "| 件 | 缺口 | 记账 commit | 说明 |", "|---|---|---|---|",
-    "| 02-01-SUMMARY.md | commits | c5c64f9 | 真记账 |",
-    "| 02-02-SUMMARY.md | 瞎写 | c5c64f9 | 缺口不认 |",
-    "| 02-03-SUMMARY.md | commits | zzzz | 不是 sha |",
-  ].join("\n"));
-  eqArr(accRows, [{ file: "02-01-SUMMARY.md", gap: "commits", commit: "c5c64f9" }], "记账台账只认合法行");
-  // 记账指向不存在的 commit → 不算记账。git 缺席时同样为 false(fail-closed)
-  eqN(commitExists(process.cwd(), "0000000000000000000000000000000000000000"), false, "不存在的 commit 不算记账");
+  // ---- 工件三态 + 记账台账 + 决策核销两组用例:在 selftest-suite.mjs 里 ----
+  // 搬出去是因为本文件 200/200 顶着上限,而门禁自测的用例只会继续长。
+  runArtifactCases({ eqN, eqArr });
+  runCoverageCases({ eqN, eqArr });
   // 模板块必须认 CRLF:Git for Windows 的**系统级** core.autocrlf=true(在安装目录的 etc/gitconfig,不在仓库里)
   // 让 Windows 的新克隆全是 CRLF —— 只认 \n 的正则会让六份模板在每个 Windows 用户机器上一起假红。
   eqN(extractTemplateBlock("```markdown\r\nx\r\n```") !== null, true, "CRLF 模板也抽得出 ```markdown 块");

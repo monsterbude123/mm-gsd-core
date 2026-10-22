@@ -4,7 +4,7 @@
 // 决策契约与工件契约是两回事:前者管「决策有没有被真正执行」,后者管「工件长什么样」。
 //
 // 本文件各契约作用域不同 —— 混用会造假红或假绿:
-//   核销 checkCoverage      —— 单个 phase:该 phase 的 plan 必须引用它的 CONTEXT
+//   核销 checkPhaseCoverage —— 单个 phase:该 phase 所有票的 covers 并集必须覆盖 CONTEXT 的决策
 //   可逆性 checkReversibility —— 全局:每份 CONTEXT 的每条决策都要有标记
 //   漂移   checkDrift        —— 单个 phase:工件不得早于自己 phase 的 CONTEXT
 //   漂移   checkConclusionDrift —— 验收/交付结论件同样受约束(D-04 要求四类工件)
@@ -68,12 +68,21 @@ export function locateContexts(dirs, base = process.cwd()) {
   return hits;
 }
 
-/** 核销:这份 CONTEXT 的每条 D-NN 都必须被本 plan 的任务引用。作用域 = 单个 phase */
-export function checkCoverage({ name, ctxText, planDecisions, e }) {
+/**
+ * 核销(phase 级 union):本 phase 所有票的 covers 并集必须覆盖 CONTEXT 的每条 D-NN。
+ *
+ * 为什么是 phase 级而不是票级:票级要求「每张票都认领全部决策」,逼着只做三分之一的票
+ * 也把不相关决策写进 covers —— 填不实的 covers 与本仓要治的「记账不全」是同一类病。
+ * 上游 GSD Core 的语义相同(`src/gate-decision-coverage-plan.cts:160-167`:
+ * 一条决策被本 phase 任意一张票认领即算核销)。
+ *
+ * @param coveredIds 本 phase 全部票的 covers 并集 —— 不是单张票的
+ */
+export function checkPhaseCoverage({ name, ctxText, coveredIds, e }) {
   const ids = [...ctxText.matchAll(/\[(D-\d+)\]/g)].map((m) => m[1]);
-  const missing = ids.filter((id) => !planDecisions.includes(id));
+  const missing = ids.filter((id) => !coveredIds.includes(id));
   if (missing.length)
-    e(`${name}: CONTEXT 决策 ${missing.join(",")} 未被任何任务引用`, "补任务引用并精确实现;若该决策其实是延后项,把它移出 decisions 节");
+    e(`${name}: CONTEXT 决策 ${missing.join(",")} 没有被本 phase 任何一张票认领`, "补一张票认领它并精确实现;若它其实是延后项,把它移出 decisions 节");
 }
 
 /**
@@ -125,7 +134,7 @@ export function checkReversibility({ ctxName, ctxText, e }) {
 }
 
 /**
- * 核销 + 可逆性 的合并入口,作用域 = 单份 CONTEXT 对单个 plan。
+ * 核销 + 可逆性 的合并入口,作用域 = 单份 CONTEXT 对一个 phase。
  *
  * 主脚本走的是拆分版(可逆性全局生效、核销与漂移按 phase),因为一份 plan
  * 只能核销自己 phase 的决策。这里保留合并版,给自测与不关心作用域的调用方用 ——
@@ -133,9 +142,11 @@ export function checkReversibility({ ctxName, ctxText, e }) {
  * 保留它还有一个实际原因:改导出名会打断已经依赖旧名的调用方,
  * 那次改名就打断了 gate-selftest.mjs,门禁自测整个崩在 import 上,health 跟着红。
  * 改名导出前先 grep 调用方,别只顾自己这一侧。
+ *
+ * @param coveredIds 本 phase 全部票的 covers 并集(核销的输入)
  */
-export function checkDecisions({ name, ctxText, planDecisions, e }) {
-  checkCoverage({ name, ctxText, planDecisions, e });
+export function checkDecisions({ name, ctxText, coveredIds, e }) {
+  checkPhaseCoverage({ name, ctxText, coveredIds, e });
   checkReversibility({ ctxName: name, ctxText, e });
 }
 
