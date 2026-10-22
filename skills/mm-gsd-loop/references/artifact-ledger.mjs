@@ -136,8 +136,11 @@ function collect(root, dir) {
  * 指向一个真实存在的 commit。原件是审计痕迹,改它就毁了痕迹。
  *
  * @param report {pass, fail, info} —— mmc 的报告接口
+ * @param gaps 查哪几种缺口。默认两样都查(本仓自己用);
+ *             分发包只查 "commits" —— 「PLAN 至少引用一条决策」那半条由 phase 级核销承担,
+ *             判据更准也更公平(D-02 明确不把它发进包)。
  */
-export function checkArtifactLedger({ root, report }) {
+export function checkArtifactLedger({ root, report, gaps = ["commits", "dnn"] }) {
   const dir = join(root, ".planning");
   if (!existsSync(dir)) { report.info("没有 .planning/ —— 还没有工件,记账门无事可判"); return true; }
 
@@ -163,7 +166,9 @@ export function checkArtifactLedger({ root, report }) {
       planDecisionRefs: refs, ctxDecisionIds: plan ? ids : [],
     });
     if (v.state !== "unaccounted") continue;
-    for (const reason of v.reasons) {
+    // 「零 commit」只在**声称完成**时才算毛病:一个 halted 的工件本来就没有 commit,
+    // 说它「做完了却没记账」是冤枉它。
+    for (const reason of v.reasons.filter((r) => gaps.includes(r) && (r !== "commits" || sum.fm.status === "complete"))) {
       const file = reason === "commits" ? sum.file : plan?.file;
       if (!file) continue;                    // 没有 PLAN 文件 → dnn 缺口无处归账
       const key = `${file}|${reason}`;
@@ -173,7 +178,7 @@ export function checkArtifactLedger({ root, report }) {
       if (ok && !ok.broken) { report.info(`${file}: ${reason === "commits" ? "零 commit" : "零 D-NN 引用"}已记账(${ok.commit})`); continue; }
       if (ok?.broken) { problems.push({ msg: `${file}: 记账指向的 commit ${ok.commit} 不存在 —— 记账不算数`, fix: "改成真实存在的 commit;或撤掉这行记账" }); continue; }
       problems.push(reason === "commits"
-        ? { msg: `${file}: SUMMARY 声称 status=complete 但 commits 为 ${sum.fm.commits ?? "(缺)"} —— 做完了却没记账`,
+        ? { msg: `${file}: SUMMARY 声称 status=${sum.fm.status} 却 commits 为 ${sum.fm.commits ?? "(缺)"} —— 说做完了,却拿不出一个 commit`,
             fix: `在 .planning/${ACCOUNTING_FILE} 记一行(件 ${file} | 缺口 commits | 记账 commit <真实 sha>),原件不动(D-01 的补充:原件是审计痕迹);sha 必须是真实存在的 commit` }
         : { msg: `${file}: PLAN 零 D-NN 引用 —— phase ${plan.phase} 的 CONTEXT 有 ${ids.join(",")} 条决策,本 PLAN 一条都没认领`,
             fix: `在 .planning/${ACCOUNTING_FILE} 记一行(件 ${file} | 缺口 dnn | 记账 commit <真实 sha>),原件不动;或新写一张 PLAN 认领这些决策` });

@@ -10,10 +10,11 @@
 //
 // 三种断言:eq(正则)、eqN(单值)、eqArr(数组)。全部把失败计入 st.bad。
 
-import { classifyArtifact, parseAccounting, commitExists } from "./artifact-ledger.mjs";
+import { classifyArtifact, parseAccounting, commitExists, checkArtifactLedger } from "./artifact-ledger.mjs";
 import { checkPhaseCoverage } from "./decision-gates.mjs";
 import { staleDecisions, coveredDecisions, phaseCovered, staleNote, planExists, runDecisionContracts } from "./ticket-alive.mjs";
 import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -118,5 +119,41 @@ export function runCoverageCases({ eqN, eqArr }) {
   eqArr(phaseCovered(dir, "06").sort(), ["D-01", "D-09"], "phase union 取本 phase 各票 covers 的并集");
   eqN(planExists(dir, "06-01"), true, "接替票存在性:真实存在的 PLAN 算存在");
   eqN(planExists(dir, "06-99"), false, "不存在的票不算存在");
+  rmSync(dir, { recursive: true, force: true });
+}
+
+/**
+ * 记账纪律进分发包(D-02):「声称完成却零 commit」判红,豁免台账能免单。
+ *
+ * fixture 是个真的 git 仓库 —— 豁免条件是「记账 commit 真实存在」,
+ * 不真的建一个仓库,这条豁免路径就测不到(测的是「不存在的 sha → 照红」那一半)。
+ */
+export function runLedgerGateCases({ eqN }) {
+  const dir = mkdtempSync(join(tmpdir(), "mm-gsd-ledger-"));
+  execFileSync("git", ["init", "-q"], { cwd: dir, stdio: "pipe" });
+  execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "记账用"], { cwd: dir, stdio: "pipe" });
+  const sha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir, encoding: "utf8" }).trim();
+  const pl = join(dir, ".planning");
+  mkdirSync(pl, { recursive: true });
+  writeFileSync(join(pl, "06-CONTEXT.md"), "<decisions>\n### [D-01] reversible — 甲\n</decisions>");
+  writeFileSync(join(pl, "06-01-PLAN.md"), '---\nphase: "06"\nplan: "01"\n---\n\n### T1 干活\n- **covers**: 无\n');
+  writeFileSync(join(pl, "06-01-SUMMARY.md"), '---\nphase: "06"\nplan: "01"\nstatus: complete\ncommits: 0\n---\n');
+  const run = (gaps) => {
+    const fails = [], infos = [];
+    checkArtifactLedger({ root: dir, report: { pass: () => {}, fail: (m) => fails.push(m), info: (m) => infos.push(m) }, gaps });
+    return { fails, infos };
+  };
+  eqN(run(["commits"]).fails.length, 1, "只判 commits:零 commit 的 complete SUMMARY 判红");
+  eqN(run(["commits", "dnn"]).fails.length, 2, "两样都判:零 D-NN 引用也进问题清单");
+  eqN(run(["dnn"]).fails.length, 1, "只判 dnn:零 commit 那条不进问题清单");
+  // 豁免台账:记一行指向真实存在的 commit → 免单
+  writeFileSync(join(pl, "artifact-ledger.md"), `| 件 | 缺口 | 记账 commit | 说明 |\n|---|---|---|---|\n| 06-01-SUMMARY.md | commits | ${sha} | 这批改动在别处 |\n`);
+  eqN(run(["commits"]).fails.length, 0, "台账记了一行且 sha 真实存在 → 免单");
+  // sha 不存在 → 记账不算数
+  writeFileSync(join(pl, "artifact-ledger.md"), `| 件 | 缺口 | 记账 commit | 说明 |\n|---|---|---|---|\n| 06-01-SUMMARY.md | commits | 0000000 | 假的 sha |\n`);
+  eqN(run(["commits"]).fails.length, 1, "台账行的 sha 不存在 → 照红(一句「已知悉」不算记账)");
+  // halted 的工件本来就没有 commit —— 不能冤枉它
+  writeFileSync(join(pl, "06-01-SUMMARY.md"), '---\nphase: "06"\nplan: "01"\nstatus: halted\ncommits: 0\n---\n');
+  eqN(run(["commits"]).fails.length, 0, "halted 的工件零 commit 不算毛病(它没声称完成)");
   rmSync(dir, { recursive: true, force: true });
 }

@@ -16,7 +16,7 @@
 import { validateVerification } from "./verification-gates.mjs";
 import { checkDecisions, locateContexts, checkDrift, checkConclusionDrift } from "./decision-gates.mjs";
 import { ticketsCovered } from "./ticket-alive.mjs";
-import { mkAssert, runArtifactCases, runCoverageCases } from "./selftest-suite.mjs";
+import { mkAssert, runArtifactCases, runCoverageCases, runLedgerGateCases } from "./selftest-suite.mjs";
 import { researchRequired, researchCompliant } from "./research-gates.mjs";
 import { extractTemplateBlock } from "./template-gates.mjs";
 import { mkdtempSync, writeFileSync, rmSync, utimesSync } from "node:fs";
@@ -158,10 +158,11 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(cd3([{ kind: "验收", file: "02-VERIFICATION.md", path: cF }]).length, 0, "重跑过的验收件不比 CONTEXT 早时不该报");
   eqN(cd3([{ kind: "交付", file: "02-SHIP.md", path: cS }]).length, 0, "重新交付过的 SHIP 不该报");
   rmSync(dDir, { recursive: true, force: true });
-  // ---- 工件三态 + 记账台账 + 决策核销两组用例:在 selftest-suite.mjs 里 ----
+  // ---- 工件三态 + 记账台账 + 决策核销 + 分发包记账门:在 selftest-suite.mjs 里 ----
   // 搬出去是因为本文件 200/200 顶着上限,而门禁自测的用例只会继续长。
   runArtifactCases({ eqN, eqArr });
   runCoverageCases({ eqN, eqArr });
+  runLedgerGateCases({ eqN });
   // 模板块必须认 CRLF:Git for Windows 的**系统级** core.autocrlf=true(在安装目录的 etc/gitconfig,不在仓库里)
   // 让 Windows 的新克隆全是 CRLF —— 只认 \n 的正则会让六份模板在每个 Windows 用户机器上一起假红。
   eqN(extractTemplateBlock("```markdown\r\nx\r\n```") !== null, true, "CRLF 模板也抽得出 ```markdown 块");

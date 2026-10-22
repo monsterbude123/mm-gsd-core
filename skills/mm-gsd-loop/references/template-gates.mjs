@@ -8,6 +8,12 @@
 //     frontmatter 键在不在、必填节有没有、枚举值写法对不对。
 //   真实工件查**内容**:status 是否合法值、commits 是否实测、有没有占位残留。
 //   拿实例的规则去卡模板,等于要求模板不能有占位符——那模板就没用了。
+//
+// --templates 模式(扫包里的模板并逐份过契约)也住在这里:它判的就是「模板长对没有」,
+// 规则与执行它的扫描放在一起名实相符;主脚本因此腾出三十多行给别的门禁(它贴着 700 上限)。
+
+import { readdirSync, readFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
 
 const STATUSES = ["discussing", "planning", "executing", "verifying", "completed", "shipped", "paused"];
 const SUMMARY_STATUSES = ["complete", "halted"];
@@ -154,3 +160,40 @@ export function validateInstance(kind, name, text, fm) {
 export { validateVerification } from "./verification-gates.mjs";
 
 export const TEMPLATE_NAMES = Object.keys(CONTRACTS);
+
+/**
+ * --templates 模式:扫包里的模板,逐份过结构契约。
+ *
+ * 退出码不在这决定 —— 调用方拿着返回值自己退出,理由才能进遥测
+ * (直接在模块里 exit 会让失败没有原因,T-14:看不见的失败等于没有诊断入口)。
+ *
+ * @returns {bad, checked, fatal?} —— fatal 是「一份模板都没找到」,那种情况是目录解析坏了
+ */
+export function checkTemplates({ tmplRoot, log = console.log }) {
+  log("\n=== mm-gsd 模板门禁 ===");
+  let bad = 0, checked = 0;
+  for (const tdir of [join(tmplRoot, "mm-gsd-exec", "templates"), join(tmplRoot, "mm-gsd-plan", "templates"),
+                      join(tmplRoot, "mm-gsd-verify", "templates"), join(tmplRoot, "mm-gsd-loop", "templates")]) {
+    if (!existsSync(tdir)) continue;
+    for (const f of readdirSync(tdir).filter((x) => x.endsWith(".md"))) {
+      checked++;
+      const txt = readFileSync(join(tdir, f), "utf8");
+      const block = extractTemplateBlock(txt);
+      if (block === null) { log("  ✗ " + f + ": 找不到 ```markdown 块 —— agent 不知道该抄哪一段"); bad++; continue; }
+      const issues = validateTemplate(f, block);
+      if (issues.length) {
+        bad++;
+        log("\n  ✗ " + f);
+        for (const i of issues) { log("      " + i.message); log("        → " + i.fix); }
+      } else log("  ✓ " + f);
+    }
+  }
+  log("");
+  if (!checked) return { bad: 1, checked, fatal: "一份模板都没找到 —— 目录解析坏了,这等于没检查(tmplRoot = " + tmplRoot + ")" };
+  if (bad) {
+    log("  " + bad + "/" + checked + " 份模板过不了自己的契约 —— 照抄即报错,agent 会卡在门禁上。");
+    return { bad, checked };
+  }
+  log("  ✓ " + checked + " 份模板结构合规");
+  return { bad: 0, checked };
+}

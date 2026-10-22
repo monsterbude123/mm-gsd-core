@@ -452,39 +452,13 @@ if (process.argv.includes("--selfcheck")) {
   process.exit(runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) ? 1 : 0);
 }
 
-// ---- --templates:模板自检 + 实例结构契约(规则表按需加载,不进本文件)----
+// ---- --templates:模板自检 + 实例结构契约(规则表与扫描都在 references/,这里只留接线)----
 if (process.argv.includes("--templates")) {
-  const { validateTemplate, extractTemplateBlock } = await import("../references/template-gates.mjs");
+  const { checkTemplates } = await import("../references/template-gates.mjs");
   // SKILL_DIR = skills/mm-gsd-loop,往上一级才是 skills/。别再用 URL 字符串拼路径,Windows 上会解析不出目录。
-  const tmplRoot = join(SKILL_DIR, "..");
-
-  console.log("\n=== mm-gsd 模板门禁 ===");
-  let bad = 0, checked = 0;
-  for (const tdir of [join(tmplRoot, "mm-gsd-exec", "templates"), join(tmplRoot, "mm-gsd-plan", "templates"),
-                      join(tmplRoot, "mm-gsd-verify", "templates"), join(tmplRoot, "mm-gsd-loop", "templates")]) {
-    if (!existsSync(tdir)) continue;
-    for (const f of readdirSync(tdir).filter((x) => x.endsWith(".md"))) {
-      checked++;
-      const txt = readFileSync(join(tdir, f), "utf8");
-      const block = extractTemplateBlock(txt);
-      if (block === null) { console.log("  ✗ " + f + ": 找不到 ```markdown 块 —— agent 不知道该抄哪一段"); bad++; continue; }
-      const issues = validateTemplate(f, block);
-      if (issues.length) {
-        bad++;
-        console.log("\n  ✗ " + f);
-        for (const i of issues) { console.log("      " + i.message); console.log("        → " + i.fix); }
-      } else console.log("  ✓ " + f);
-    }
-  }
-  console.log("");
-  if (!checked) {
-    die("一份模板都没找到 —— 目录解析坏了,这等于没检查(tmplRoot = " + tmplRoot + ")", "确认 skills/mm-gsd-loop/templates/ 在位");
-  }
-  if (bad) {
-    console.log("  " + bad + "/" + checked + " 份模板过不了自己的契约 —— 照抄即报错,agent 会卡在门禁上。");
-    die(bad + "/" + checked + " 份模板过不了自己的契约", "每条上面都给了正确写法,照着改完重跑即可。");
-  }
-  console.log("  ✓ " + checked + " 份模板结构合规");
+  const { bad, checked, fatal } = checkTemplates({ tmplRoot: join(SKILL_DIR, "..") });
+  if (fatal) die(fatal, "确认 skills/mm-gsd-loop/templates/ 在位");
+  if (bad) die(bad + "/" + checked + " 份模板过不了自己的契约", "每条上面都给了正确写法,照着改完重跑即可。");
   process.exit(0);
 }
 
@@ -633,6 +607,14 @@ const artifactInfo = { context: null, plans: [], summaries: [], verification: nu
     else if (!SUMMARY_STATUSES.includes(sfm.status)) err(`${s}: status 非法值 "${sfm.status}"`, `改为 ${SUMMARY_STATUSES.join(" 或 ")}`);
     else if (sfm.status === "halted") warn(`${s}: status=halted —— 有未解决的阻碍目标,不算完成`, "补修复计划或如实留待下个 phase;别拿它当完成");
     if (sfm && !/^\d+$/.test(sfm.commits ?? "")) err(`${s}: commits 非纯数字 "${sfm.commits ?? "(缺)"}" —— 必须 git rev-list 实测`, "git rev-list --count <base>..HEAD");
+  }
+  // ---- 记账纪律随包分发(D-02):「声称完成却零 commit」当场判红 ----
+  // 只发这半条 —— 「PLAN 至少引用一条决策」由 phase 级核销承担(判据更准也更公平)。
+  // 存量项目的老工件会立刻变红,豁免台账(.planning/artifact-ledger.md)是随包件:
+  // 记一行指向一个真实存在的 commit,原件不动。
+  {
+    const { checkArtifactLedger } = await import("../references/artifact-ledger.mjs");
+    checkArtifactLedger({ root, report: { pass: () => {}, fail: (m) => err(m), info: (m) => warn(m) }, gaps: ["commits"] });
   }
   if (artifactInfo.verification) {
     const vfm = frontmatter(J(artifactInfo.verification));
