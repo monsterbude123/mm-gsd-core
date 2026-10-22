@@ -42,7 +42,7 @@ const TELEMETRY_PATH = join(homedir(), ".agents", "mm-gsd-runs.jsonl");
 // 用途:自测沙箱里的失败是**正常的**(那是在故意造失败),不该混进
 // 「最该修的地方」排行 —— 否则 observe 环的诊断入口被自己的自测噪声淹掉。
 const SANDBOX = process.env.GSD_SANDBOX === "1";
-const MODE = ["init", "worktrees", "plan", "phases", "stats"].find((m) => process.argv.includes("--" + m))
+const MODE = ["init", "worktrees", "plan", "phases", "stats", "route"].find((m) => process.argv.includes("--" + m))
   ?? (process.argv.includes("--json") ? "check-json" : "check");
 const runRec = { ts: new Date().toISOString(), mode: MODE, cwd: root, sandbox: SANDBOX, declared: null, derived: null, phase: null, errors: [], warnings: [] };
 // exit 钩子保证每个 process.exit 路径都被记到,不靠人工在分支里记得写
@@ -385,7 +385,7 @@ if (process.argv.includes("--selfcheck")) {
 
 // ---- --routes:技能路由门禁 —— 每个技能都要说清自己的下一步(D-05)----
 if (process.argv.includes("--routes")) {
-  const { checkRoutes } = await import("../references/skill-routing-gates.mjs");
+  const { checkRoutes } = await import("../references/agent-routing.mjs");
   const problems = checkRoutes(join(SKILL_DIR, ".."));
   console.log("\n=== mm-gsd 技能路由门禁 ===");
   for (const p of problems) console.log(`  ✗ ${p.skill}: ${p.problem}\n      → ${p.fix}`);
@@ -394,6 +394,50 @@ if (process.argv.includes("--routes")) {
     die(new Set(problems.map((p) => p.skill)).size + " 个技能的「完成后」没写清", "每条上面都写了缺什么和怎么改,补完重跑即可。");
   }
   console.log("  ✓ 每个技能都说清了自己的下一步");
+  process.exit(0);
+}
+
+// ---- --route:宿主 agent 路由提示(只读)—— 该读什么、本项目门禁速查、能不能开子代理 ----
+// 排版在这里,判定在 references/agent-routing.mjs:那里出数据,这里出文本。
+if (process.argv.includes("--route")) {
+  const { buildRouteBrief } = await import("../references/agent-routing.mjs");
+  const at = process.argv.indexOf("--route"), arg = process.argv[at + 1];
+  const b = buildRouteBrief({
+    stage: arg && !arg.startsWith("--") ? arg : null,
+    skillsRoot: join(SKILL_DIR, ".."), projectRoot: root, home: homedir(),
+    activePhase: unquote(frontmatter(P("STATE.md"))?.active_phase) ?? null,
+  });
+  const L = [];
+  if (b.kind === "ring") {
+    L.push("=== mm-gsd 路由:各阶段的出口(阶段名 = 技能名去掉 mm-gsd- 前缀)===");
+    for (const s of b.skills) L.push(`  ${s.skill.replace("mm-gsd-", "")}  →  ${s.exits.length ? s.exits.join(", ") : "(没写出口)"}`);
+    L.push("\n  要某一步的完整提示(该读什么 + 本项目门禁速查):--route <阶段>");
+  } else if (b.kind === "unknown") {
+    L.push("=== mm-gsd 路由 ===", "  " + b.message);
+  } else {
+    L.push(`=== mm-gsd 路由提示(阶段:${b.stage})===`);
+    L.push(b.host.canSpawn
+      ? `  宿主:${b.host.host}(agent 卡目录 ${b.host.agentsDir})—— 可以开子代理:开一个只读子代理,让它读下面的路径并照着做`
+      : `  宿主:${b.host.note}`);
+    L.push("  该读的路径(只传路径,别把文件内容抄进 prompt —— 主会话上下文 ≤15%):");
+    for (const p of b.readPaths) L.push("    " + p);
+    if (b.projectPaths.length) {
+      L.push("  本项目的上下文路径(存在才列):");
+      for (const p of b.projectPaths) L.push("    " + p);
+    }
+    L.push("  角色定义只有一份:上面那个 SKILL.md。别的文件按它指的路走。");
+    L.push("  本项目门禁速查(机器从 ledger/budget 读出,不是手写):");
+    for (const n of b.quick.notes) L.push("    · " + n);
+    if (b.quick.rules.length) {
+      L.push(`    · active 规则 ${b.quick.rules.length} 条:`);
+      for (const r of b.quick.rules) L.push(`        ${r.id} ${r.text}`);
+    }
+    if (b.quick.caps.length) {
+      L.push(`    · 单文件上限 ${b.quick.caps.length} 条:`);
+      for (const c of b.quick.caps) L.push(`        ${c.pattern} ≤ ${c.max}`);
+    }
+  }
+  console.log("\n" + L.join("\n"));
   process.exit(0);
 }
 

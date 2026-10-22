@@ -23,14 +23,14 @@
     "gate-selftest.mjs": "自测框架本身,不被任何门禁校验 —— 改坏它会让所有 --selfcheck 用例一起消失",
     "artifact-ledger.mjs": "由 R-18 的 check-artifact-ledger 驱动(它真读 .planning/ 判红),判定内核由 R-15 的 --selfcheck 覆盖:三态判定互斥、记账行解析、commit 存在性核对、纯实现票(零 D-NN 引用)不判红(退役回归)",
     "research-gates.mjs": "由 --plan 的研究触发检查驱动(触发条件成立又没有合规研究产物 → 判红),判定内核由 R-15 的 --selfcheck 覆盖:跨目录触发、单文件不触发、空洞研究不算合规、URL 端口号不算 file:line 引用",
-    "skill-routing-gates.mjs": "由 --routes 模式驱动(每个 mm-gsd 技能都要有「完成后」小节、小节点名的技能必须真实存在),判定内核由 R-15 的 --selfcheck 覆盖:缺小节判红、点名不存在的技能判红、小节边界只到下一个标题"
+    "agent-routing.mjs": "由 --routes 模式驱动(每个 mm-gsd 技能都要有「完成后」小节、小节点名的技能必须真实存在),判定内核由 R-15 的 --selfcheck 覆盖:缺小节判红、点名不存在的技能判红、小节边界只到下一个标题。phase 04 加进来的宿主路由提示也在同一组用例里:速查只列 active 规则且文本来自台账、读不到台账时速查为空不补写、指针卡里不许出现规则原文"
   },
   "_tools": {
     "_why": "tools/ 下的模块不在 references/ 里,但同样是判定逻辑。按 T-02(散文没闸等于没写),它们也必须有会红的用例,否则改坏了没人知道。",
     "rule-baseline.mjs": "从台账删掉一条 active 规则 → health 报红指名缺哪条(基线在 ledger 之外、台账循环之外无条件执行);台账加一条基线没有的规则 → 报红「新增规则不登记基线,它就永久不受保护」;基线里有台账没有的规则 → 报红",
     "module-registry.mjs": "在 references/ 新增一个导出 check*/validate* 的模块但不登记 _modules → 判红;把登记项删掉 → 判红;模块写 export async function / export const 箭头 / export default function / function x(){} export { x } → 仍被抓(真导入枚举导出,不猜源码写法)",
     "gh-issues.mjs": "报修走不通(没装 gh / 证据文件不存在)→ check-report-fails-loud 判红",
-    "fat-advice.mjs": "把 check-budget 里的 fatAdvice 调用删掉或改成只报「超 N 行」→ budget 拦红时不再输出改造指引(门禁只判不导,等于把难题推回给读者)。三种形状(main / references / 散文)必须给出不同的指引,实测见 commit #4787 的 verify",
+    "budget.mjs": "把 check-budget 里的 fatAdvice 调用删掉或改成只报「超 N 行」→ budget 拦红时不再输出改造指引(门禁只判不导,等于把难题推回给读者)。三种形状(main / references / 散文)必须给出不同的指引,实测见 commit #4787 的 verify。phase 04 把 fat-advice.mjs 与 budget-collect.mjs 合成一份(两个都只服务 check-budget),导出名一个没改",
     "reference-map.mjs": "把 extractRefs 的正则改坏(如让它只认 .md)→ 抽不到 .cts 引用 → R-17 判红「一个路径引用都没抽到」;把 checkRefs 的 existsSync 判断去掉 → 失效路径不再报红",
     "release-flow.mjs": "把 tagsVerdict 的比较方向改反 → 门禁自证那一行立刻判红「标签门禁自证失败:喂 next=0.0.1/latest=9.9.9 竟没判红」(门禁自己证明它会红,照 check-report-fails-loud 的先例);把 compareVersions 换成字符串比较 → 0.10.0 会被判成小于 0.9.0;把 promote 的默认改回真跑 → R-20 判红(见 check-promote-safety)"
   },

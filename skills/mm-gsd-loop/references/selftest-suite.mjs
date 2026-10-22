@@ -11,7 +11,7 @@ import { classifyArtifact, parseAccounting, commitExists, checkArtifactLedger } 
 import { checkPhaseCoverage } from "./decision-gates.mjs";
 import { staleDecisions, coveredDecisions, phaseCovered, staleNote, planExists, runDecisionContracts } from "./ticket-alive.mjs";
 import { phaseHealth } from "./telemetry-aggregate.mjs";
-import { checkRoutes, routeSection } from "./skill-routing-gates.mjs";
+import { checkRoutes, routeSection } from "./agent-routing.mjs";
 import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
