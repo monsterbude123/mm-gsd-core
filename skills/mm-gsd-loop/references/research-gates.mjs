@@ -40,7 +40,9 @@ export function researchRequired({ files = [], unseenDirs = [], goal = "" }) {
   const asked = ASK.test(String(goal));
   const reasons = [];
   if (dirs.size >= CROSS_DIRS) reasons.push(`files_modified 跨 ${dirs.size} 个顶层目录(${[...dirs].join("、")})`);
-  if (novel.length) reasons.push(`触及 git 历史里从未改过的目录(${novel.join("、")})`);
+  // 列**目录**,不列文件:novel 里装的是文件路径,而判据是「这个目录 git 历史里没有」——
+  // 报错写成「目录(docs/b.md、tools/c.mjs)」会让读的人以为那是两个目录。
+  if (novel.length) reasons.push(`触及 git 历史里从未改过的目录(${[...new Set(novel.map((f) => norm(f).split("/").slice(0, -1).join("/")))].join("、")})`);
   if (asked) reasons.push("goal 里明写「深入了解/研究清楚」");
   return { required: reasons.length > 0, reasons, dirs: [...dirs], novel, asked };
 }

@@ -252,6 +252,10 @@ node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --worktrees
 
 占位文本("To be filled"/"placeholder"/"TBD")= 未完成;SUMMARY 缺失或无对应提交 = 未完成。完成判定要 SUMMARY + 提交双证(提交指代码提交,与 SUMMARY 是否入库无关)。
 
+**旧 PLAN 怎么办**看 `references/historical-artifacts.md`:历史工件分三态(未完成 / 没记账 / 过时),
+判据只取可机器判定的事实,不看文档新旧。**认出第三种比认出前两种重要** —— 把「做完了却没记账」
+当成「未完成」而重做一遍,是最贵的处理:它把已验证的成果变成未验证的。
+
 ## 引导安装/体检(第一次用,或怀疑哪里没对时)
 
 ```bash

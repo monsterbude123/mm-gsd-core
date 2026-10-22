@@ -180,9 +180,8 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqArr(accRows, [{ file: "02-01-SUMMARY.md", gap: "commits", commit: "c5c64f9" }], "记账台账只认合法行");
   // 记账指向不存在的 commit → 不算记账。git 缺席时同样为 false(fail-closed)
   eqN(commitExists(process.cwd(), "0000000000000000000000000000000000000000"), false, "不存在的 commit 不算记账");
-  // 模板块必须认 CRLF:Git for Windows 的**系统级** core.autocrlf=true(不在仓库里,
-  // 在 Git 安装目录的 etc/gitconfig)让 Windows 的新克隆全是 CRLF —— 只认 \n 的正则
-  // 会让六份模板在每个 Windows 用户机器上一起假红,而这条门禁每次提交都跑。
+  // 模板块必须认 CRLF:Git for Windows 的**系统级** core.autocrlf=true(在安装目录的 etc/gitconfig,不在仓库里)
+  // 让 Windows 的新克隆全是 CRLF —— 只认 \n 的正则会让六份模板在每个 Windows 用户机器上一起假红。
   eqN(extractTemplateBlock("```markdown\r\nx\r\n```") !== null, true, "CRLF 模板也抽得出 ```markdown 块");
   eqN(extractTemplateBlock("```markdown\nx\n```") !== null, true, "LF 模板照抽");
   eqN(extractTemplateBlock("没有代码块") !== null, false, "没有块就老实说没有");
@@ -190,6 +189,7 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(researchRequired({ files: ["a/x.ts"] }).required, false, "单文件 → 不触发研究");
   eqN(researchRequired({ files: ["a/x.ts", "b/y.ts", "c/z.ts"] }).required, true, "跨 3 个顶层目录 → 触发研究");
   eqN(researchRequired({ files: ["a/x.ts"], unseenDirs: ["a"] }).required, true, "git 历史里没有的目录 → 触发研究");
+  eqN(researchRequired({ files: ["docs/b.md"], unseenDirs: ["docs"] }).reasons[0].includes("docs/b.md"), false, "陌生目录的报错列目录,不列文件路径");
   eqN(researchRequired({ files: ["a/x.ts"], goal: "先深入了解这个模块" }).required, true, "goal 明写深入了解 → 触发研究");
   eqN(researchRequired({ files: ["a/x.ts", "b/y.ts"], goal: "补个字段" }).required, false, "两个目录 + 没有陌生领域 → 不触发");
   eqN(researchCompliant("读了很多文件,收获很大").ok, false, "空洞研究不算合规(读了很多文件不能自证读对了)");
