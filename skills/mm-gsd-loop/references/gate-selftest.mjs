@@ -16,7 +16,7 @@
 import { validateVerification } from "./verification-gates.mjs";
 import { checkDecisions, locateContexts, checkDrift, checkConclusionDrift } from "./decision-gates.mjs";
 import { ticketsCovered } from "./ticket-alive.mjs";
-import { mkAssert, runArtifactCases, runCoverageCases, runLedgerGateCases, runPhaseHealthCases } from "./selftest-suite.mjs";
+import { mkAssert, runArtifactCases, runCoverageCases, runLedgerGateCases, runPhaseHealthCases, runRouteCases } from "./selftest-suite.mjs";
 import { researchRequired, researchCompliant } from "./research-gates.mjs";
 import { extractTemplateBlock } from "./template-gates.mjs";
 import { mkdtempSync, writeFileSync, rmSync, utimesSync } from "node:fs";
@@ -164,6 +164,7 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   runCoverageCases({ eqN, eqArr });
   runLedgerGateCases({ eqN });
   runPhaseHealthCases({ eqN });
+  runRouteCases({ eqN });
   // 模板块必须认 CRLF:Git for Windows 的**系统级** core.autocrlf=true(在安装目录的 etc/gitconfig,不在仓库里)
   // 让 Windows 的新克隆全是 CRLF —— 只认 \n 的正则会让六份模板在每个 Windows 用户机器上一起假红。
   eqN(extractTemplateBlock("```markdown\r\nx\r\n```") !== null, true, "CRLF 模板也抽得出 ```markdown 块");

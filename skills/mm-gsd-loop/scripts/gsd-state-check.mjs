@@ -442,16 +442,8 @@ if (process.argv.includes("--phases")) {
 
 // ---- --stats:遥测聚合。读用户级日志,跨项目可比(项目级日志已被自动遥测取代)----
 if (process.argv.includes("--stats")) {
-  const { readRows, aggregate, render } = await import("../references/telemetry-aggregate.mjs");
-  const rows = readRows(TELEMETRY_PATH);
-  if (!rows.length) {
-    console.log("尚无运行记录(" + TELEMETRY_PATH + ")。");
-    console.log("  检查器每跑一次会自动记一行;跑一次任意模式(默认/--plan/--phases/--worktrees)即产生。");
-    process.exit(0);
-  }
-  console.log(render(aggregate(rows, { scope: root, all: process.argv.includes("--all") }), TELEMETRY_PATH));
-  console.log("");
-  process.exit(0);
+  const { runStats } = await import("../references/telemetry-aggregate.mjs");
+  process.exit(runStats({ path: TELEMETRY_PATH, scope: root, all: process.argv.includes("--all") }));
 }
 
 // ---- --selfcheck:门禁自己的正则自测 ----
@@ -460,6 +452,20 @@ if (process.argv.includes("--stats")) {
 if (process.argv.includes("--selfcheck")) {
   const { runSelfTest } = await import("../references/gate-selftest.mjs");
   process.exit(runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) ? 1 : 0);
+}
+
+// ---- --routes:技能路由门禁 —— 每个技能都要说清自己的下一步(D-05)----
+if (process.argv.includes("--routes")) {
+  const { checkRoutes } = await import("../references/skill-routing-gates.mjs");
+  const problems = checkRoutes(join(SKILL_DIR, ".."));
+  console.log("\n=== mm-gsd 技能路由门禁 ===");
+  for (const p of problems) console.log(`  ✗ ${p.skill}: ${p.problem}`);
+  if (problems.length) {
+    console.log("  " + problems.length + " 处没写清下一步 —— 补一段「## 完成后」,写明做完这一步调哪个 mm-gsd 技能。");
+    die(problems.length + " 个技能的「完成后」没写清", "每条上面都写了缺什么,补完重跑即可。");
+  }
+  console.log("  ✓ 每个技能都说清了自己的下一步");
+  process.exit(0);
 }
 
 // ---- --templates:模板自检 + 实例结构契约(规则表与扫描都在 references/,这里只留接线)----

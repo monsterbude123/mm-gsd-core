@@ -71,3 +71,10 @@ description: "极简 GSD 执行:偏差规则 R1-R4、git 纪律(逐文件staging
 - **Known Stubs**:写 SUMMARY 前扫一遍占位/硬编码空值/无数据源组件,列 file+line+原因;阻碍目标的 stub 不得标 complete。
 - **Threat Flags**:引入了计划外的新端点/认证路径/信任边界 → 加一节标注。
 - **Self-Check**:SUMMARY 后核对 key files 在盘、每个提交 hash 是当前分支祖先,结果写进 `## Self-Check: PASSED/FAILED`。
+
+## 完成后
+
+- 这一步做完的判据:SUMMARY 落盘在 `.planning/`,每个提交都在当前分支的历史里(`git rev-list` 实测,不手填),且本任务的 `<verify>` 退出码 0。
+- **下一步:调用 `mm-gsd-verify`** —— 验证独立读证据,不接受 SUMMARY 的自述。
+- 例外:`status: halted` 就如实写 halted 并说明阻碍 —— 那是给下游看的信号,不是失败;受阻时**不要**停在「等我再想想」。
+- 环的完整顺序只有 mm-gsd-loop 持有,这里只写自己这一步的出口。

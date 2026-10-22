@@ -120,3 +120,10 @@ CONTEXT.md 每条 D-NN 决策必须被本 phase **至少一张票认领**并精�
 5. 复制上一 phase 的 verify 命令,不看它在当前上下文还成不成立。
 6. 决策保真偷懒:D-NN 只提一句不复述精确语义,执行时按自己的理解实现。
 7. 依赖/文件重叠没算清,并行计划互相踩文件(同 wave 零重叠是硬约束)。
+
+## 完成后
+
+- 这一步做完的判据:PLAN 落盘在 `.planning/<NN>-<MM>-PLAN.md`,且 `node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --plan <你的文件>` 退出码 0。
+- **下一步:调用 `mm-gsd-exec`** —— 按 PLAN 里的任务四件套动手,别临场重解需求。
+- 例外:`--plan` 没转绿就进执行,是拿一份执行者猜不出来的契约开工。报错里都写着该改什么,先改;真要改决策才回 mm-gsd-discuss。
+- 环的完整顺序只有 mm-gsd-loop 持有,这里只写自己这一步的出口。

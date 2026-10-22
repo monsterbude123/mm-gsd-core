@@ -18,9 +18,8 @@ description: "极简 GSD 主循环:discuss→plan→execute→verify→ship 五�
 
 命名规则:`<phase>[-<plan>]-<类型>.md`,类型固定为 CONTEXT/PLAN/SUMMARY/VERIFICATION/SHIP/RESEARCH。**检查器只看文件存在性与 frontmatter 契约**——文件名不对,状态机就推导错,每步收尾报错。
 
-**工件链 = CONTEXT → PLAN → SUMMARY → VERIFICATION → SHIP**。最后一环最容易被省掉:
-VERIFICATION 通过只推出 `completed`,**只有 SHIP 落盘才推出 `shipped`**。省掉它,循环就在"验证过了"这个
-半成品状态上宣布结束,而交付(合并/发布/文档)没人负责。
+**工件链 = CONTEXT → PLAN → SUMMARY → VERIFICATION → SHIP**:最后一环最容易被省掉 ——
+VERIFICATION 通过只推出 `completed`,**只有 SHIP 落盘才推出 `shipped`**。
 
 ## 冷启动(项目里还没有 .planning/STATE.md 时)
 
@@ -84,6 +83,10 @@ agent 在 discuss 结束时跑门禁 → 报"未初始化" → 按"转绿才准�
 受阻就写 `status: held` 并说明阻碍——蒙混成 shipped 会让状态机把整个 phase 判成终态,而其实什么都没落到用户手里。
 涉及删数据、force push、动生产、发布,属于拍板权第 2/3 类,**先问用户**。
 
+## 完成后
+
+- 这个 phase 走完五步环(SHIP 落盘、交付物被消费)→ **下一步是下一个 phase**:回到 `mm-gsd-discuss` 或 `mm-gsd-plan`;环没走完就按上面「五步成环」接着走,每一步的出口由那个技能自己的「完成后」节写着。
+
 ## 门禁接线(每步跑哪个模式,不是"想起来才跑")
 
 `CK=~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs`,下表用 `node $CK` 代指。
@@ -95,7 +98,7 @@ agent 在 discuss 结束时跑门禁 → 报"未初始化" → 按"转绿才准�
 | PLAN 落盘 | `--plan` | 四件套齐、失败方向明确、文件清单可解析、预算未超;顺带打印本 phase 过程健康三数 |
 | 每步收尾 | 默认(无参数) | 声明与工件推导一致、无假完成信号、无交付缺口 |
 | 开多 worktree 前 | `--worktrees` | 跨 worktree 文件与 REQ 无冲突 |
-| 改了模板 | `--templates` | 6 份模板结构合规;多值写法会被当场抓出 |
+| 改了模板或技能 | `--templates` / `--routes` | 6 份模板结构合规;每个技能都说清了自己的下一步 |
 | 排查 | `--stats` | 反复失败的同一个项目 = 死锁嫌疑 |
 | 改了检查器正则 | `--selfcheck` | 门禁对自己的用例仍全绿(防 admin 路径、全角括号那类判错) |
 
@@ -162,7 +165,6 @@ mm-gsd 是从更大的项目蒸馏出来的。被丢掉的部分往往不是功�
 - **计划期预授权决策**:PLAN 里列出"执行期可能需要问人的点",在规划时就替用户定夺并标 `[AUTO]` + 依据。执行期照着做,**提问成本从执行期挪到规划期**;预授权不匹配实际选项时不许静默选一个。
 - **不无限等**:子代理/长任务没有发完成信号,但 commits 可见 + SUMMARY 存在 → **按成功继续**,不要死等(信号可能丢,文件系统不会说谎)。
 - **非失败重新分类**:认证失败 = 等凭据的门,不是失败;配额/限流 = 等额度恢复再 resume,不是失败(不要立刻重试烧配额);环境起不来 = 自己修,不是甩锅(见 exec 的环境修复义务)。把"我跑不动"分类成已知状态,agent 就不会中途放弃或过度报告。
-- **STATE 是 digest**:超过 100 行就是在写档案不是写状态;决策只留 3-5 条近期。
 
 ## 运行日志(让"用起来不顺"可诊断)
 

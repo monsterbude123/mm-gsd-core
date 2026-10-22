@@ -85,3 +85,12 @@ VERIFICATION 报告落 `.planning/<NN>-VERIFICATION.md`(本地不入库):truths 
 (模板见 mm-gsd-loop/templates/ship.md)。**验证环节不要代劳 ship**——它没有交付的上下文,
 也不知道发布窗口、生产配置这类外部事实;但也**不要在 passed 之后就把 phase 宣布完成**,
 那是循环断在半路,检查器会警告"停在验证没走到交付"。
+
+## 完成后
+
+- 这一步做完的判据:`.planning/<NN>-VERIFICATION.md` 落盘,每条 REQ 都有证据,人工区不为空时如实写 `human_needed`。
+- **下一步按 status 分支**(上面那张表就是判据,别自己另发明一套):
+  - `gaps_found` → 回到 `mm-gsd-exec` 修(修复预算 2 轮,超了升级到人);
+  - `human_needed` → **等人**测完,此时**不调任何技能**;
+  - `passed` → 进 mm-gsd-loop 的 ship 步 —— 交付物被消费才算完成,`passed` 只推出 `completed`。
+- 环的完整顺序只有 mm-gsd-loop 持有,这里只写自己这一步的出口。

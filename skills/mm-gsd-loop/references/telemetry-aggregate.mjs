@@ -47,6 +47,24 @@ export function aggregate(rows, { scope, all }) {
 }
 
 /**
+ * --stats 模式:读用户级遥测日志,打印聚合视图。
+ *
+ * 为什么搬到这里:它判/读的就是遥测聚合,规则与执行它的扫描放一起名实相符;
+ * 主脚本贴着 700 上限(它还要装别的门禁),这段是纯 IO,搬走腾行数。
+ */
+export function runStats({ path, scope, all, log = console.log }) {
+  const rows = readRows(path);
+  if (!rows.length) {
+    log("尚无运行记录(" + path + ")。");
+    log("  检查器每跑一次会自动记一行;跑一次任意模式(默认/--plan/--phases/--worktrees)即产生。");
+    return 0;
+  }
+  log(render(aggregate(rows, { scope, all }), path));
+  log("");
+  return 0;
+}
+
+/**
  * phase 的过程健康三数:票数 / 受阻票数 / 缺口数。
  *
  * **量的来源是 phase 自己的工件历史(`.planning/` 下已落盘的文件),不是遥测**:

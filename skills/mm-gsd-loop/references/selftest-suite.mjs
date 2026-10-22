@@ -14,6 +14,7 @@ import { classifyArtifact, parseAccounting, commitExists, checkArtifactLedger } 
 import { checkPhaseCoverage } from "./decision-gates.mjs";
 import { staleDecisions, coveredDecisions, phaseCovered, staleNote, planExists, runDecisionContracts } from "./ticket-alive.mjs";
 import { phaseHealth } from "./telemetry-aggregate.mjs";
+import { checkRoutes, routeSection } from "./skill-routing-gates.mjs";
 import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
@@ -42,7 +43,6 @@ export function mkAssert() {
 
 /**
  * 工件三态 + 记账台账用例组(原在 gate-selftest.mjs,现搬到这里给新用例腾位置)。
- *
  * 互斥是硬要求:两种毛病同时存在时若能返回两种态,调用方就得自己决定先修哪个,
  * 判定就退化成建议 —— 那正是「建议」与「判定」的分界。
  */
@@ -70,7 +70,6 @@ export function runArtifactCases({ eqN, eqArr }) {
 
 /**
  * 决策核销用例组(D-01 反向核销 + D-03 phase 级 union + 批注免单)。
- *
  * fixture 用本仓真实工件格式:phase 与 plan 分两个字段,plan 存票号后缀。
  */
 export function runCoverageCases({ eqN, eqArr }) {
@@ -120,6 +119,24 @@ export function runCoverageCases({ eqN, eqArr }) {
   eqArr(phaseCovered(dir, "06").sort(), ["D-01", "D-09"], "phase union 取本 phase 各票 covers 的并集");
   eqN(planExists(dir, "06-01"), true, "接替票存在性:真实存在的 PLAN 算存在");
   eqN(planExists(dir, "06-99"), false, "不存在的票不算存在");
+  rmSync(dir, { recursive: true, force: true });
+}
+
+/** 路由门禁用例组(D-05):小节在不在、小节点名的技能存不存在 */
+export function runRouteCases({ eqN }) {
+  const dir = mkdtempSync(join(tmpdir(), "mm-gsd-routes-"));
+  const sk = join(dir, "skills");
+  const mk = (n, b) => { mkdirSync(join(sk, n), { recursive: true }); writeFileSync(join(sk, n, "SKILL.md"), b); };
+  mk("mm-gsd-a", "# A\n\n## 完成后\n\n- 下一步:调用 `mm-gsd-b`\n");
+  mk("mm-gsd-b", "# B\n\n## 完成后\n\n- 下一步:调用 `mm-gsd-a`\n");
+  mk("mm-gsd-c", "# C\n\n## 干活\n\n- 没什么可说的\n");
+  mk("mm-gsd-d", "# D\n\n## 完成后\n\n- 下一步:调用 `mm-gsd-zzz`\n");
+  const ps = checkRoutes(sk);
+  eqN(ps.length, 2, "缺「完成后」小节与点名不存在的技能,各报一条");
+  eqN(ps.some((p) => p.skill === "mm-gsd-c"), true, "缺小节要指名是哪个技能");
+  eqN(ps.some((p) => p.problem.includes("mm-gsd-zzz")), true, "点名不存在的技能要打出那个名字");
+  eqN(ps.some((p) => p.skill === "mm-gsd-a"), false, "齐全的技能不该被报");
+  eqN(routeSection("## 完成后\n- x\n\n## 别的\n- mm-gsd-zzz\n").includes("mm-gsd-zzz"), false, "「完成后」只到下一个标题为止");
   rmSync(dir, { recursive: true, force: true });
 }
 
