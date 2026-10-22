@@ -625,12 +625,13 @@ const artifactInfo = { context: null, plans: [], summaries: [], verification: nu
     if (sfm && !/^\d+$/.test(sfm.commits ?? "")) err(`${s}: commits 非纯数字 "${sfm.commits ?? "(缺)"}" —— 必须 git rev-list 实测`, "git rev-list --count <base>..HEAD");
   }
   // ---- 记账纪律随包分发(D-02):「声称完成却零 commit」当场判红 ----
-  // 只发这半条 —— 「PLAN 至少引用一条决策」由 phase 级核销承担(判据更准也更公平)。
+  // 记账门只判这一条 —— 「这张票认领了哪条决策」由 phase 级 union 门判(D-03),
+  // 一个判定只能有一个 owner;两处各判一半,判据还各说各话。
   // 存量项目的老工件会立刻变红,豁免台账(.planning/artifact-ledger.md)是随包件:
   // 记一行指向一个真实存在的 commit,原件不动。
   {
     const { checkArtifactLedger } = await import("../references/artifact-ledger.mjs");
-    checkArtifactLedger({ root, report: { pass: () => {}, fail: (m) => err(m), info: (m) => warn(m) }, gaps: ["commits"] });
+    checkArtifactLedger({ root, report: { pass: () => {}, fail: (m) => err(m), info: (m) => warn(m) } });
   }
   if (artifactInfo.verification) {
     const vfm = frontmatter(J(artifactInfo.verification));

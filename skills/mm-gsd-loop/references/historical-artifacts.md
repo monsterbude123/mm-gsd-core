@@ -8,8 +8,8 @@
 | 态 | 判据 | 处置 |
 |---|---|---|
 | **未完成** | 有 PLAN 无 SUMMARY,或 SUMMARY 缺 `status` | **续做不重做**;或明确改成 deferred(写进 CONTEXT 的 deferred,别留半成品) |
-| **没记账** | 有 SUMMARY 且 `status: complete`,但 `commits: 0`,或 PLAN 一条本 phase 的决策都没引用 | **补记账,不重做** —— 原件不动,新件说清关系(见下) |
-| **过时** | 功能在仓库里,但本 phase CONTEXT 的决策已改 | 旧 PLAN 标 stale(正文顶部写明「哪条决策变了、被谁覆盖」),**新 PLAN 覆盖它** |
+| **没记账** | 有 SUMMARY 且 `status: complete`,但 `commits: 0` | **补记账,不重做** —— 原件不动,新件说清关系(见下) |
+| **过时** | 功能在仓库里,但本 phase CONTEXT 的决策已改 | 旧 PLAN 在 frontmatter 加一行 `stale_note` 批注(哪条决策变了、被谁接替),**接替票必须真实存在**;**新 PLAN 覆盖它** |
 
 ## 为什么「重做一遍」是最贵的处理
 
@@ -41,7 +41,10 @@
 台账是共享记忆,**建议入库** —— 项目若 gitignore 了 `.planning/`,用一条 un-ignore 例外放它进去;
 不入库就每人各记一份。
 
-**不豁免的那半条**:「PLAN 至少引用一条决策」不发进分发包 —— 它由 phase 级核销承担,判据更准也更公平。
+**决策核销不归记账门**:「这张票认领了哪条决策」由 phase 级 union 门判 —— 本 phase 全部票的
+`covers` 并集要覆盖 CONTEXT 的全部决策。记账门只判 `commits` 这一种缺口
+(「四件套不齐」归 `--plan` 门管)。一个判定只能有一个 owner:两处各判一半,判据还会各说各话 ——
+2026-10-22 实测过,按 per-plan 判的那半会把一张合法的纯实现票(`covers: 无`,而 phase 并集已覆盖)判红。
 
 ## 「过时」怎么判、怎么免单
 

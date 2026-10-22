@@ -1,7 +1,6 @@
 // 自测套件 —— 断言工具 + 长到塞不进 gate-selftest.mjs 的用例组。
 //
-// 为什么改名:它原本叫 selftest-helpers.mjs,只装断言工具(mkAssert)。
-// 现在它同时装着用例组,文件名要跟内容对上 —— 文件名骗人比文件超限更难查。
+// 为什么改名:它原本叫 selftest-helpers.mjs,只装断言工具(mkAssert);现在它同时装着用例组 —— 文件名要跟内容对上,文件名骗人比文件超限更难查。
 //
 // 为什么用例要从 gate-selftest.mjs 里搬出来:那个文件现 200/200 顶着 references/ 的上限,
 // 而门禁自测的用例只会继续长 —— 每加一条契约就要加用例。
@@ -43,19 +42,19 @@ export function mkAssert() {
 
 /**
  * 工件三态 + 记账台账用例组(原在 gate-selftest.mjs,现搬到这里给新用例腾位置)。
- * 互斥是硬要求:两种毛病同时存在时若能返回两种态,调用方就得自己决定先修哪个,
- * 判定就退化成建议 —— 那正是「建议」与「判定」的分界。
+ * 互斥是硬要求:两种毛病同时存在时若能返回两种态,调用方就得自己决定先修哪个,判定就退化成建议。
  */
 export function runArtifactCases({ eqN, eqArr }) {
-  const HEALTHY = { hasSummary: true, summaryStatus: "complete", commits: 2, planDecisionRefs: ["D-01"], ctxDecisionIds: ["D-01", "D-02"] };
+  const HEALTHY = { hasSummary: true, summaryStatus: "complete", commits: 2 };
   eqN(classifyArtifact(HEALTHY).state, "accounted", "三样齐全 → accounted(不需要任何处置)");
   eqN(classifyArtifact({ ...HEALTHY, hasSummary: false }).state, "incomplete", "缺 SUMMARY → incomplete");
   eqN(classifyArtifact({ ...HEALTHY, summaryStatus: "" }).state, "incomplete", "SUMMARY 缺 status → incomplete");
   eqN(classifyArtifact({ ...HEALTHY, stale: true }).state, "overdue", "CONTEXT 决策已改 → overdue");
   eqN(classifyArtifact({ ...HEALTHY, commits: 0 }).state, "unaccounted", "零 commit → unaccounted");
-  eqN(classifyArtifact({ ...HEALTHY, planDecisionRefs: [] }).state, "unaccounted", "零 D-NN 引用 → unaccounted");
-  eqArr(classifyArtifact({ ...HEALTHY, commits: 0, planDecisionRefs: [] }).reasons, ["commits", "dnn"], "两种毛病同时在 → 理由是两个,态仍是一个");
-  eqN(classifyArtifact({ ...HEALTHY, commits: 0, planDecisionRefs: [] }).state, "unaccounted", "同时缺两样不得判成两种态");
+  eqN(classifyArtifact({ ...HEALTHY, fourPieceOk: false }).state, "unaccounted", "四件套不齐全 → unaccounted");
+  eqArr(classifyArtifact({ ...HEALTHY, commits: 0, fourPieceOk: false }).reasons, ["commits", "done"], "两种毛病同时在 → 理由是两个,态仍是一个");
+  // 退役回归(2026-10-22):「零 D-NN 引用」不再是毛病 —— 核销归 phase 级 union 门(D-03)。谁把 per-plan 判定塞回分类器,这里立刻红。
+  eqN(classifyArtifact({ ...HEALTHY, planDecisionRefs: [], ctxDecisionIds: ["D-01"] }).state, "accounted", "零 D-NN 引用不再产生理由(核销归 phase 级 union)");
   // 记账台账解析:表头 / 分隔行 / 不认的缺口 / 不像 sha 的值,一律不作数
   const accRows = parseAccounting([
     "| 件 | 缺口 | 记账 commit | 说明 |", "|---|---|---|---|",
@@ -177,22 +176,25 @@ export function runLedgerGateCases({ eqN }) {
   writeFileSync(join(pl, "06-CONTEXT.md"), "<decisions>\n### [D-01] reversible — 甲\n</decisions>");
   writeFileSync(join(pl, "06-01-PLAN.md"), '---\nphase: "06"\nplan: "01"\n---\n\n### T1 干活\n- **covers**: 无\n');
   writeFileSync(join(pl, "06-01-SUMMARY.md"), '---\nphase: "06"\nplan: "01"\nstatus: complete\ncommits: 0\n---\n');
-  const run = (gaps) => {
-    const fails = [], infos = [];
-    checkArtifactLedger({ root: dir, report: { pass: () => {}, fail: (m) => fails.push(m), info: (m) => infos.push(m) }, gaps });
-    return { fails, infos };
+  const problems = () => {
+    const out = [];
+    checkArtifactLedger({ root: dir, report: { pass: () => {}, fail: (m) => out.push(m), info: () => {} } });
+    return out;
   };
-  eqN(run(["commits"]).fails.length, 1, "只判 commits:零 commit 的 complete SUMMARY 判红");
-  eqN(run(["commits", "dnn"]).fails.length, 2, "两样都判:零 D-NN 引用也进问题清单");
-  eqN(run(["dnn"]).fails.length, 1, "只判 dnn:零 commit 那条不进问题清单");
+  eqN(problems().length, 1, "零 commit 的 complete SUMMARY 判红");
+  // 退役回归(2026-10-22):纯实现票(covers: 无、什么都不认领)不再是「没记账」。
+  // D-03 之后核销由 phase 级 union 门判 —— 记账门若还按 per-plan 判,这里会是 2 条。
+  writeFileSync(join(pl, "06-02-PLAN.md"), '---\nphase: "06"\nplan: "02"\n---\n\n### T1 干活\n- **covers**: 无\n');
+  writeFileSync(join(pl, "06-02-SUMMARY.md"), '---\nphase: "06"\nplan: "02"\nstatus: complete\ncommits: 2\n---\n');
+  eqN(problems().length, 1, "纯实现票(零 D-NN 引用)不进问题清单 —— 核销归 phase 级 union");
   // 豁免台账:记一行指向真实存在的 commit → 免单
   writeFileSync(join(pl, "artifact-ledger.md"), `| 件 | 缺口 | 记账 commit | 说明 |\n|---|---|---|---|\n| 06-01-SUMMARY.md | commits | ${sha} | 这批改动在别处 |\n`);
-  eqN(run(["commits"]).fails.length, 0, "台账记了一行且 sha 真实存在 → 免单");
+  eqN(problems().length, 0, "台账记了一行且 sha 真实存在 → 免单");
   // sha 不存在 → 记账不算数
   writeFileSync(join(pl, "artifact-ledger.md"), `| 件 | 缺口 | 记账 commit | 说明 |\n|---|---|---|---|\n| 06-01-SUMMARY.md | commits | 0000000 | 假的 sha |\n`);
-  eqN(run(["commits"]).fails.length, 1, "台账行的 sha 不存在 → 照红(一句「已知悉」不算记账)");
+  eqN(problems().length, 1, "台账行的 sha 不存在 → 照红(一句「已知悉」不算记账)");
   // halted 的工件本来就没有 commit —— 不能冤枉它
   writeFileSync(join(pl, "06-01-SUMMARY.md"), '---\nphase: "06"\nplan: "01"\nstatus: halted\ncommits: 0\n---\n');
-  eqN(run(["commits"]).fails.length, 0, "halted 的工件零 commit 不算毛病(它没声称完成)");
+  eqN(problems().length, 0, "halted 的工件零 commit 不算毛病(它没声称完成)");
   rmSync(dir, { recursive: true, force: true });
 }

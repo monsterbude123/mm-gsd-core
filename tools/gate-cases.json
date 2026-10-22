@@ -21,7 +21,7 @@
     "verification-gates.mjs": "由 R-15 的 --selfcheck 覆盖:判定写法、Artifacts 表不误伤、score 对账各有用例",
     "template-gates.mjs": "由 --templates 模式覆盖(校验六份模板结构)",
     "gate-selftest.mjs": "自测框架本身,不被任何门禁校验 —— 改坏它会让所有 --selfcheck 用例一起消失",
-    "artifact-ledger.mjs": "由 R-18 的 check-artifact-ledger 驱动(它真读 .planning/ 判红),判定内核由 R-15 的 --selfcheck 覆盖:三态判定互斥、记账行解析、commit 存在性核对",
+    "artifact-ledger.mjs": "由 R-18 的 check-artifact-ledger 驱动(它真读 .planning/ 判红),判定内核由 R-15 的 --selfcheck 覆盖:三态判定互斥、记账行解析、commit 存在性核对、纯实现票(零 D-NN 引用)不判红(退役回归)",
     "research-gates.mjs": "由 --plan 的研究触发检查驱动(触发条件成立又没有合规研究产物 → 判红),判定内核由 R-15 的 --selfcheck 覆盖:跨目录触发、单文件不触发、空洞研究不算合规、URL 端口号不算 file:line 引用",
     "skill-routing-gates.mjs": "由 --routes 模式驱动(每个 mm-gsd 技能都要有「完成后」小节、小节点名的技能必须真实存在),判定内核由 R-15 的 --selfcheck 覆盖:缺小节判红、点名不存在的技能判红、小节边界只到下一个标题"
   },
@@ -34,5 +34,5 @@
     "reference-map.mjs": "把 extractRefs 的正则改坏(如让它只认 .md)→ 抽不到 .cts 引用 → R-17 判红「一个路径引用都没抽到」;把 checkRefs 的 existsSync 判断去掉 → 失效路径不再报红"
   },
   "check-reference-map": "把 docs/reference-map.md 里某个路径改成 GSD Core 里不存在的文件名(如 src/gate-not-exist.cts)→ R-17 判红「路径在 GSD Core 里不存在」;把 GSD_CORE_ROOT 指到一个空目录 → 判「没核对」而不是判红",
-  "check-artifact-ledger": "造一份 status=complete 但 commits: 0 的 SUMMARY,或一份零 D-NN 引用的 PLAN → R-18 判红并指名缺什么;在 .planning/artifact-ledger.md 记一行指向真实存在的 commit → 转绿;把那行的 commit 改成不存在的 sha → 仍判红「记账指向的 commit 不存在」"
+  "check-artifact-ledger": "造一份 status=complete 但 commits: 0 的 SUMMARY → R-18 判红并指名缺什么;在 .planning/artifact-ledger.md 记一行指向真实存在的 commit → 转绿;把那行的 commit 改成不存在的 sha → 仍判红「记账指向的 commit 不存在」;再加一张零 D-NN 引用的纯实现票(commits 正常)→ 不该进问题清单(决策核销归 phase 级 union 门,D-03)"
 }
