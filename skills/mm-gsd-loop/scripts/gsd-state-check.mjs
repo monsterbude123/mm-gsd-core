@@ -454,7 +454,7 @@ if (process.argv.includes("--selfcheck")) {
 
 // ---- --templates:模板自检 + 实例结构契约(规则表按需加载,不进本文件)----
 if (process.argv.includes("--templates")) {
-  const { validateTemplate } = await import("../references/template-gates.mjs");
+  const { validateTemplate, extractTemplateBlock } = await import("../references/template-gates.mjs");
   // SKILL_DIR = skills/mm-gsd-loop,往上一级才是 skills/。别再用 URL 字符串拼路径,Windows 上会解析不出目录。
   const tmplRoot = join(SKILL_DIR, "..");
 
@@ -466,9 +466,9 @@ if (process.argv.includes("--templates")) {
     for (const f of readdirSync(tdir).filter((x) => x.endsWith(".md"))) {
       checked++;
       const txt = readFileSync(join(tdir, f), "utf8");
-      const m = txt.match(/```markdown\n([\s\S]*?)\n```/);
-      if (!m) { console.log("  ✗ " + f + ": 找不到 ```markdown 块 —— agent 不知道该抄哪一段"); bad++; continue; }
-      const issues = validateTemplate(f, m[1]);
+      const block = extractTemplateBlock(txt);
+      if (block === null) { console.log("  ✗ " + f + ": 找不到 ```markdown 块 —— agent 不知道该抄哪一段"); bad++; continue; }
+      const issues = validateTemplate(f, block);
       if (issues.length) {
         bad++;
         console.log("\n  ✗ " + f);

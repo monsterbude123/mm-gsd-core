@@ -16,6 +16,7 @@
 import { validateVerification } from "./verification-gates.mjs";
 import { checkDecisions, locateContexts, checkDrift, checkConclusionDrift } from "./decision-gates.mjs";
 import { ticketsCovered } from "./ticket-alive.mjs";
+import { extractTemplateBlock } from "./template-gates.mjs";
 import { mkdtempSync, writeFileSync, rmSync, utimesSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -166,6 +167,12 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(cd3([{ kind: "验收", file: "02-VERIFICATION.md", path: cF }]).length, 0, "重跑过的验收件不比 CONTEXT 早时不该报");
   eqN(cd3([{ kind: "交付", file: "02-SHIP.md", path: cS }]).length, 0, "重新交付过的 SHIP 不该报");
   rmSync(dDir, { recursive: true, force: true });
+  // 模板块必须认 CRLF:Git for Windows 的**系统级** core.autocrlf=true(不在仓库里,
+  // 在 Git 安装目录的 etc/gitconfig)让 Windows 的新克隆全是 CRLF —— 只认 \n 的正则
+  // 会让六份模板在每个 Windows 用户机器上一起假红,而这条门禁每次提交都跑。
+  eqN(extractTemplateBlock("```markdown\r\nx\r\n```") !== null, true, "CRLF 模板也抽得出 ```markdown 块");
+  eqN(extractTemplateBlock("```markdown\nx\n```") !== null, true, "LF 模板照抽");
+  eqN(extractTemplateBlock("没有代码块") !== null, false, "没有块就老实说没有");
   console.log(bad ? `\n${bad} 项自测不过 —— 门禁本身是坏的,先修门禁` : "\n✓ 门禁自测全过");
   return bad;
 }

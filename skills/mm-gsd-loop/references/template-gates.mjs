@@ -74,6 +74,19 @@ const CONTRACTS = {
   },
 };
 
+/**
+ * 从模板文件里抽出 ```markdown 块 —— agent 照抄的就是这一段。
+ *
+ * **必须认 CRLF**:Git for Windows 的**系统级** `core.autocrlf=true`(不在仓库里,
+ * 在 Git 安装目录的 etc/gitconfig),所以 Windows 上的新克隆全是 CRLF。
+ * 只认 `\n` 的正则会在每个 Windows 用户的机器上判「找不到 ```markdown 块」——
+ * 六份模板一起假红,而这条门禁(R-05/R-09/R-11)每次提交都跑。
+ * 假绿要命,恒红也要命:后者让人学会忽略它。
+ */
+export function extractTemplateBlock(text) {
+  return String(text ?? "").match(/```markdown\r?\n([\s\S]*?)\r?\n```/)?.[1] ?? null;
+}
+
 /** 校验模板文本本身:只查结构,不查占位符 */
 export function validateTemplate(name, text) {
   const out = [];
