@@ -18,6 +18,7 @@ import { checkDecisions, locateContexts, checkDrift, checkConclusionDrift } from
 import { ticketsCovered } from "./ticket-alive.mjs";
 import { classifyArtifact, parseAccounting, commitExists } from "./artifact-ledger.mjs";
 import { mkAssert } from "./selftest-helpers.mjs";
+import { researchRequired, researchCompliant } from "./research-gates.mjs";
 import { extractTemplateBlock } from "./template-gates.mjs";
 import { mkdtempSync, writeFileSync, rmSync, utimesSync } from "node:fs";
 import { join } from "node:path";
@@ -182,6 +183,15 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(extractTemplateBlock("```markdown\r\nx\r\n```") !== null, true, "CRLF 模板也抽得出 ```markdown 块");
   eqN(extractTemplateBlock("```markdown\nx\n```") !== null, true, "LF 模板照抽");
   eqN(extractTemplateBlock("没有代码块") !== null, false, "没有块就老实说没有");
+  // ---- 研究触发(D-03):触发条件必须可数 ----「总是触发」等于给每个 phase 都加一道必过的门(T-13);「agent 觉得不熟悉」恒真即恒红
+  eqN(researchRequired({ files: ["a/x.ts"] }).required, false, "单文件 → 不触发研究");
+  eqN(researchRequired({ files: ["a/x.ts", "b/y.ts", "c/z.ts"] }).required, true, "跨 3 个顶层目录 → 触发研究");
+  eqN(researchRequired({ files: ["a/x.ts"], unseenDirs: ["a"] }).required, true, "git 历史里没有的目录 → 触发研究");
+  eqN(researchRequired({ files: ["a/x.ts"], goal: "先深入了解这个模块" }).required, true, "goal 明写深入了解 → 触发研究");
+  eqN(researchRequired({ files: ["a/x.ts", "b/y.ts"], goal: "补个字段" }).required, false, "两个目录 + 没有陌生领域 → 不触发");
+  eqN(researchCompliant("读了很多文件,收获很大").ok, false, "空洞研究不算合规(读了很多文件不能自证读对了)");
+  eqN(researchCompliant("见 src/gate-evidence.cts:6 的三态定义").ok, true, "带 file:line 引用的研究算合规");
+  eqN(researchCompliant("详见 https://example.com:8080/x").ok, false, "URL 里的端口号不算引用");
   console.log(st.bad ? `\n${st.bad} 项自测不过 —— 门禁本身是坏的,先修门禁` : "\n✓ 门禁自测全过");
   return st.bad;
 }

@@ -325,12 +325,13 @@ if (process.argv.includes("--plan")) {
     else if (SHRINK_WEAK.test(body)) w(`${name}: 正文含 v1`, "确认这是版本号命名而不是范围缩水");
 
     // ---- 决策契约:实现在 references/,主脚本只留接线(作用域差异见 runDecisionContracts 注释)----
-    const dg = await import("../references/decision-gates.mjs"), { runDecisionContracts } = await import("../references/ticket-alive.mjs");
+    const dg = await import("../references/decision-gates.mjs"), { runDecisionContracts } = await import("../references/ticket-alive.mjs"), rg = await import("../references/research-gates.mjs");
     const ctxs = dg.locateContexts([relForCtx, P(".")], root);   // root 必须传:否则 cwd ≠ 项目根时会读别人的 CONTEXT
     runDecisionContracts({
       name, planPath: path, ctxs, planDecisions: parsed.decisions, root,
       readFile: (p) => readFileSync(p, "utf8"), check: dg, e, w,
     });
+    rg.checkResearch({ name, goal: fm.goal ?? "", files: parsed.files, phase: unquote(String(fm.phase ?? name.slice(0, 2))), root, planDir: dirname(path), e, w });
   }
 
   console.log("\n=== mm-gsd 计划门禁(" + targets.length + " 份) ===");
@@ -429,7 +430,6 @@ if (process.argv.includes("--phases")) {
   process.exit(errs.length ? 1 : 0);
 }
 
-// ---- --stats:遥测聚合。读用户级日志,跨项目可比(项目级日志已被自动遥测取代)----
 // ---- --stats:遥测聚合。读用户级日志,跨项目可比(项目级日志已被自动遥测取代)----
 if (process.argv.includes("--stats")) {
   const { readRows, aggregate, render } = await import("../references/telemetry-aggregate.mjs");

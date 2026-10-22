@@ -44,14 +44,22 @@ depends_on: []
 
 ## 覆盖审计(定稿前必做)
 
-四源对照:GOAL / REQ / RESEARCH(如做了) / CONTEXT。任何一项 MISSING → 显式报告并决定
+四源对照:GOAL / REQ / RESEARCH / CONTEXT。任何一项 MISSING → 显式报告并决定
 (补任务 / 移到下一 phase / 用户裁决),绝不带缺口静默定稿。
 
 | 源 | 覆盖情况 | 缺口如何处理 |
 |----|---------|------------|
 | GOAL | | |
 | REQ  | | |
+| RESEARCH | | |
 | CONTEXT | | |
+
+**RESEARCH 那一格不是装饰**(D-03):研究从「可选」变成「有条件必经」。满足任一触发条件就必须研究 ——
+files_modified 跨 ≥3 个顶层目录 / 触及 git 历史里从未改过的目录 / goal 明写「深入了解」。
+
+触发条件成立 → 写 `.planning/<NN>-RESEARCH.md`:读到了什么、**因此决定了什么**,
+并至少给出一条 file:line 引用(形如 `src/foo.mjs:120`)——「读了 12 个文件」不能自证读对了。
+触发条件不成立 → 这一格写「不适用:<理由>」。检查器 `--plan` 按同一套条件判定。
 ```
 
 维护规则:

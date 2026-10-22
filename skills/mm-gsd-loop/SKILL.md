@@ -12,11 +12,11 @@ description: "极简 GSD 主循环:discuss→plan→execute→verify→ship 五�
 ├── STATE.md                        # 唯一状态入口;frontmatter.status ∈ {discussing,planning,executing,verifying,completed,shipped,paused}
 ├── HANDOFF.md                      # 仅 paused 时存在
 ├── REQUIREMENTS.md                 # REQ-N 编号的唯一出处(冷启动时建)
-└── <NN>-CONTEXT.md / <NN-MM>-PLAN.md / <NN-MM>-SUMMARY.md / <NN>-VERIFICATION.md / <NN-MM>-SHIP.md
+└── <NN>-CONTEXT.md / <NN-MM>-PLAN.md / <NN-MM>-SUMMARY.md / <NN>-VERIFICATION.md / <NN-MM>-SHIP.md / <NN>-RESEARCH.md
     (phase 用 NN 前缀;多 phase 可放 .planning/phases/<NN-slug>/ 下,检查器两种布局都认)
 ```
 
-命名规则:`<phase>[-<plan>]-<类型>.md`,类型固定为 CONTEXT/PLAN/SUMMARY/VERIFICATION/SHIP。**检查器只看文件存在性与 frontmatter 契约**——文件名不对,状态机就推导错,每步收尾报错。
+命名规则:`<phase>[-<plan>]-<类型>.md`,类型固定为 CONTEXT/PLAN/SUMMARY/VERIFICATION/SHIP/RESEARCH。**检查器只看文件存在性与 frontmatter 契约**——文件名不对,状态机就推导错,每步收尾报错。
 
 **工件链 = CONTEXT → PLAN → SUMMARY → VERIFICATION → SHIP**。最后一环最容易被省掉:
 VERIFICATION 通过只推出 `completed`,**只有 SHIP 落盘才推出 `shipped`**。省掉它,循环就在"验证过了"这个
@@ -44,7 +44,7 @@ agent 在 discuss 结束时跑门禁 → 报"未初始化" → 按"转绿才准�
 
 | 类 | 位置 | 入库? | 内容 |
 |---|---|---|---|
-| **流程记忆** | `.planning/` | **否** | STATE / CONTEXT / PLAN / SUMMARY / VERIFICATION / HANDOFF |
+| **流程记忆** | `.planning/` | **否** | STATE / CONTEXT / PLAN / SUMMARY / VERIFICATION / HANDOFF / RESEARCH |
 | **业务产出** | 项目既有票面目录(如 `.scratch/<主题>-<日期>/`) | **是** | 缺陷票 / 设计稿票 / DAG / 票面 README |
 
 两类混放会让下一棒分不清哪些是共享契约、哪些是临时状态。三个要点:
@@ -176,6 +176,11 @@ node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --stats
 
 它报三样最有用的东西:**门禁失败率**、**同一项目反复失败的次数**(≥3 次 = 死锁嫌疑,不是内容质量差)、
 **高频报错类型排行**(最该修的地方)。单行字段的含义跑 `--help` 看。
+
+**每次安装 mm-gsd 后,手动清一次这个日志文件**(`~/.agents/mm-gsd-runs.jsonl`):它记的是
+**上一次安装之前**的使用历史,装新版本后那些记录对应的是旧版本的门禁语义,继续留着会让
+`--stats` 混进已经改掉的行为。手动清是一次「重新开始计数」的动作;自动清会让「到底清过没有」
+不可追溯 —— 所以程序里**刻意没有**这个开关,安装时也不自动截断。要清就手动删那个文件。
 
 ## 报修(卡住时把坑报回去,不要自己将就)
 
