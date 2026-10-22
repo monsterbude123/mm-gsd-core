@@ -22,6 +22,7 @@ GSD Core 的设计我很喜欢——五步成环、fresh-context 子代理、规
 - [仓库结构](#仓库结构)
 - [设计上的几个硬决定](#设计上的几个硬决定)
 - [发布部署](#发布部署)
+- [宿主 agent 路由:指针卡与路由提示](#宿主-agent-路由指针卡与路由提示)
 - [自我维护:它自己怎么变好](#自我维护它自己怎么变好)
 - [已知局限](#已知局限)
 
@@ -123,6 +124,7 @@ node $CK --plan               # PLAN 落盘后:四件套/失败方向/文件清�
 node $CK --phases             # 规划前:算波次 + 同波次零重叠 + 环依赖
 node $CK --worktrees          # 并行前:跨 worktree 文件与 REQ 冲突
 node $CK --routes             # 技能门禁:每个技能都写清了自己的下一步
+node $CK --route <阶段>      # 宿主 agent 路由:该读什么 + 本项目门禁速查
 node $CK --stats              # 诊断:读遥测,不用手工记
 ```
 
@@ -217,7 +219,7 @@ mm-gsd-core/
 │                           decision-gates / ticket-alive   决策核销·可逆性·漂移
 │                           artifact-ledger                 历史工件三态 + 记账门
 │                           research-gates / verification-gates
-│                           skill-routing-gates             「完成后」路由门
+│                           agent-routing                    「完成后」路由门 + 宿主路由提示
 │                           template-gates / selftest-suite 模板契约 + 门禁自测
 └── workflows/
     └── mm-gsd-phase.dwf.ts    ZCode 动态工作流(7 阶段 + 模型路由)
@@ -330,6 +332,59 @@ token with bypass 2fa enabled is required to publish packages`。
 
 
 ---
+
+## 宿主 agent 路由:指针卡与路由提示
+
+你在宿主里(ZCode / Claude Code)手工维护 agent 卡时,常见的一件事是:卡里抄了一份
+项目规则,过一阵就与仓库分叉,分叉了没人发现。这里的做法是**指针 + 注入**——
+卡里只指路,规则由机器从仓库里读出来。
+
+### 装指针卡
+
+```bash
+node ~/.agents/skills/mm-gsd-loop/scripts/mm-gsd-install.mjs --agents-only
+```
+
+给探到的宿主(zcode 与 claude 有 agent 卡目录的约定,其余宿主没探到就不装)各写一张
+`mm-gsd-<阶段>.md` 的**指针卡**,内容只有三件事:该读哪个 `SKILL.md` 的绝对路径、
+「只传路径不传内容」的边界、以及门禁速查怎么拿。
+
+**卡里没有一条规则原文**——那正是要消灭的第二真相源。**也不接管你已有的卡**:
+同名文件存在就跳过,只报一句「已存在,没动」。
+
+### 拿路由提示
+
+```bash
+node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --route plan
+```
+
+输出三样东西:
+
+```
+=== mm-gsd 路由提示(阶段:plan)===
+  宿主:zcode(agent 卡目录 ~/.zcode/agents)—— 可以开子代理:开一个只读子代理,让它读下面的路径并照着做
+  该读的路径(只传路径,别把文件内容抄进 prompt —— 主会话上下文 ≤15%):
+    .../skills/mm-gsd-plan/SKILL.md
+    .../skills/mm-gsd-plan/templates/plan.md
+  角色定义只有一份:上面那个 SKILL.md。别的文件按它指的路走。
+  本项目门禁速查(机器从 ledger/budget 读出,不是手写):
+    · active 规则 20 条:
+        R-01 任何进 main 的行为改变,都必须能追溯到一个 issue……
+    · 单文件上限 7 条:
+        skills/**/SKILL.md ≤ 320
+```
+
+速查是**现场读出来的**:从当前项目的 `.agents/rules/ledger.json` 与 `budget.json` 读。
+项目里没有台账,它就说「本项目没有台账 —— 规则速查为空(不补写)」,**一个字都不替你想**。
+
+不给阶段名时,它把环摆出来让你挑(各阶段的出口由各技能自己的「完成后」小节持有,
+这里不另造一张表):
+
+```bash
+node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --route
+```
+
+宿主探不到 agent 卡目录时,它只说「本阶段建议开新上下文」——**不假装能派发**。
 
 ## 自我维护:它自己怎么变好
 

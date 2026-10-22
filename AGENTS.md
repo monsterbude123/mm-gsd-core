@@ -66,6 +66,22 @@ observe ──→ issue ──→ fix ──→ distill ──→ health ──�
 | distill | `node tools/mmc.mjs distill` | 复盘 → 规则 / 理论条目 |
 | health | `node tools/mmc.mjs health` | **每次提交前必跑** |
 
+### 派子代理时怎么用路由提示
+
+本仓自己也是「主会话只做编排与验收,重活开子代理做,只传路径不传内容」。
+要派哪个技能、该让它读哪些文件、这个项目的门禁是哪几条,一条命令就有:
+
+```bash
+node skills/mm-gsd-loop/scripts/gsd-state-check.mjs --route plan
+```
+
+速查是**现场从 `.agents/rules/ledger.json` 与 `budget.json` 读出来的**,不是抄进 prompt 的 ——
+抄的那份迟早与台账分叉,而分叉没人发现。用户项目里没有台账时,它会说「没有台账」,不补写。
+
+**本仓不给自己的 agent 卡发指针卡**:指针卡是给使用方的宿主(ZCode / Claude Code)用的,
+分发通道是 `node skills/mm-gsd-loop/scripts/mm-gsd-install.mjs --agents-only`,
+只写指路与边界,不接管用户已有的卡。
+
 ### 闭环两端
 
 **使用方报修**（随包分发，agent 在任何项目里都能跑）：

@@ -17,11 +17,13 @@
 //
 // 零依赖、跨平台。所有修改前自动备份(只备份最初原件)。
 
-import { existsSync, readFileSync, writeFileSync, copyFileSync, mkdirSync, symlinkSync, lstatSync, readlinkSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, readFileSync, writeFileSync, copyFileSync, mkdirSync, symlinkSync, lstatSync, readlinkSync, readdirSync } from "node:fs";
+import { join, resolve, dirname } from "node:path";
 import { homedir } from "node:os";
 import { execSync } from "node:child_process";
 import { createInterface } from "node:readline";
+import { fileURLToPath } from "node:url";
+import { HOSTS, pointerCard } from "../references/agent-routing.mjs";
 
 const argv = process.argv.slice(2);
 const has = (f) => argv.includes(f);
@@ -30,26 +32,26 @@ const CHECK_ONLY = has("--check");
 const AUTO_YES = has("--yes");
 const SKILLS_ONLY = has("--skills-only");
 const HOOKS_ONLY = has("--hooks-only");
+const AGENTS_ONLY = has("--agents-only");
 const HOME = val("--home", homedir());
 const H = (...p) => join(HOME, ...p);
 
 // ---- 技能清单(主仓位置即 ~/.agents/skills/)----
+// 从**本脚本的同级目录**派生,不写死:写死过一次,结果新增的 mm-gsd-diagnose
+// 永远不会被链接到宿主的 skills 目录 —— 没人发现,因为少一个技能不报错。
 const MASTER = H(".agents", "skills");
-const SKILLS = ["mm-gsd-loop", "mm-gsd-discuss", "mm-gsd-plan", "mm-gsd-exec", "mm-gsd-verify"];
+const SKILLSDIR = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
+const SKILLS = (() => {
+  try { return readdirSync(SKILLSDIR).filter((d) => d.startsWith("mm-gsd-")).sort(); }
+  catch { return []; }
+})();
 const GUARD_SRC = join(MASTER, "mm-gsd-loop", "hooks", "guard-dangerous-git.mjs");
 const PRECOMMIT_SRC = join(MASTER, "mm-gsd-loop", "hooks", "pre-commit");
 
 // ---- 宿主适配表 ----
-// link: 是否需要建 skills 软链;hook: hooks 格式(claude / zcode / null=不支持或走插件)
+// 住在 references/agent-routing.mjs:安装与路由提示都要它,一个 owner 才不会分叉。
+// link: 是否需要建 skills 软链;hook: hooks 格式;agents: 该宿主的 agent 卡目录(null = 没探到约定)
 // 发现方式:目录探测。dist 说明为什么这样处理。
-const HOSTS = {
-  zcode:  { dir: ".zcode",                skills: ".agents/skills", hook: "zcode",  config: ".zcode/cli/config.json", hookDir: ".zcode/hooks", dist: "技能主仓(native),无需链接" },
-  claude: { dir: ".claude",               skills: ".claude/skills",  hook: "claude", config: ".claude/settings.json", hookDir: ".claude/hooks",  dist: "标准 Claude Code 格式" },
-  codex:  { dir: ".codex",                skills: ".codex/skills",   hook: null,     config: ".codex/config.toml",   dist: "hooks 由插件(claude-codex-hooks.json)托管,直装会与插件冲突 → 跳过" },
-  trae:   { dir: ".trae",                 skills: ".trae/skills",    hook: null,     config: null,                  dist: "未验证 hooks 机制 → 只装技能" },
-  cursor: { dir: ".cursor",               skills: ".cursor/skills",  hook: null,     config: null,                  dist: "未验证 hooks 机制 → 只装技能" },
-  minimax:{ dir: ".minimax",              skills: null,              hook: null,     config: ".minimax/config.yaml", dist: "未发现 skills 目录约定 → 跳过" },
-};
 
 const wantHosts = (val("--hosts", "") || "").split(",").map((s) => s.trim()).filter(Boolean);
 const present = Object.entries(HOSTS).filter(([k, v]) => existsSync(H(v.dir)));
@@ -109,7 +111,7 @@ if (CHECK_ONLY) {
 }
 
 // ---------- 动作 1:技能软链分发 ----------
-if (!HOOKS_ONLY) {
+if (!HOOKS_ONLY && !AGENTS_ONLY) {
   for (const [name, v] of targets) {
     if (!v.skills || v.skills === ".agents/skills") continue;
     const dstRoot = H(v.skills);
@@ -132,7 +134,7 @@ if (!HOOKS_ONLY) {
 }
 
 // ---------- 动作 2:危险 git 拦截(按宿主格式) ----------
-if (!SKILLS_ONLY) {
+if (!SKILLS_ONLY && !AGENTS_ONLY) {
   const guardDest = H(".agents", "hooks", "guard-dangerous-git.mjs"); // 脚本放公共区,各宿主配置指向它
   if (!existsSync(GUARD_SRC)) {
     warns.push("未找到 guard-dangerous-git.mjs(技能主仓不完整)——为避免装出指向不存在脚本的死配置,跳过所有 hooks 安装");
@@ -177,7 +179,7 @@ if (!SKILLS_ONLY) {
 }
 
 // ---------- 动作 3:git pre-commit(可选保险,无现有 hooks 体系时) ----------
-if (!HOOKS_ONLY && isGit) {
+if (!HOOKS_ONLY && !AGENTS_ONLY && isGit) {
   if (hooksPath || hasHusky) skips.push("git pre-commit:检测到现有 hooks 体系(" + (hooksPath || ".husky") + "),不装(会顶掉现有门禁)");
   else if (await confirm("安装 git pre-commit 门禁?(仅多一层'坏工件不进 git 历史'的保险;检查项已被状态检查器覆盖;会占用 core.hooksPath)", false)) {
     try {
@@ -188,6 +190,33 @@ if (!HOOKS_ONLY && isGit) {
       changes.push("git pre-commit 已装(项目 .githooks/pre-commit)");
     } catch (e) { warns.push("git pre-commit 安装失败:" + e.message); }
   } else skips.push("git pre-commit:未装(只靠状态检查器体检)");
+}
+
+// ---------- 动作 4:指针卡(只指路,不接管用户已有的卡) ----------
+// 04-CONTEXT D-01/D-02:卡里只有「读哪个 SKILL.md」「边界是什么」「速查怎么拿」,
+// 一条规则原文都不许有 —— 卡里出现规则就是第二真相源,而那正是本 phase 要消灭的东西。
+if (!SKILLS_ONLY && !HOOKS_ONLY) {
+  const routeCmd = `node "${join(MASTER, "mm-gsd-loop", "scripts", "gsd-state-check.mjs")}"`;
+  const cards = SKILLS.filter((s) => existsSync(join(MASTER, s, "SKILL.md")));
+  for (const [name, v] of targets) {
+    if (!v.agents) { skips.push(name + " 指针卡:没探到该宿主的 agent 卡目录约定,不装(不硬造目录结构)"); continue; }
+    const dir = H(v.agents);
+    if (!existsSync(dir)) { skips.push(name + " 指针卡:" + dir + " 不存在 —— 这个宿主的子代理机制没验证过,不装"); continue; }
+    if (!cards.length) { skips.push(name + " 指针卡:主仓里没有技能,发不了卡(先跑 mm-gsd install)"); continue; }
+    if (!await confirm(`给 ${name} 装 ${cards.length} 张 mm-gsd 指针卡?(卡里只有指路与边界,不改你已有的卡)`, true)) {
+      skips.push(name + " 指针卡:没装");
+      continue;
+    }
+    let made = 0, kept = 0;
+    for (const s of cards) {
+      const f = join(dir, s + ".md");
+      if (existsSync(f)) { kept++; continue; }        // 不接管、不覆盖既有的卡
+      writeFileSync(f, pointerCard({ skill: s, skillPath: join(MASTER, s, "SKILL.md"), routeCmd }));
+      made++;
+    }
+    if (made) changes.push(name + ":指针卡 " + made + " 张 → " + dir + (kept ? "(" + kept + " 张已存在,没动)" : ""));
+    else oks.push(name + ":指针卡已齐全(" + kept + " 张,没动已有的)");
+  }
 }
 
 // ---------- 汇总 ----------
