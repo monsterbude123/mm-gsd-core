@@ -17,6 +17,7 @@ import { homedir, tmpdir } from "node:os";
 import { missingRules, BASELINE_RULES } from "./rule-baseline.mjs";
 import { registryGaps, unregisteredModules, baselineDrift } from "./module-registry.mjs";
 import { fatAdvice } from "./fat-advice.mjs";
+import { collectFiles, countLines, collectScripts } from "./budget-collect.mjs";
 import { fileURLToPath } from "node:url";
 import { makeInboxClose } from "./gh-issues.mjs";
 
@@ -36,19 +37,7 @@ const warn = (s) => log(`${C.y}!${C.x} ${s}`);
 const bad = (s) => log(`${C.r}✗${C.x} ${s}`);
 const head = (s) => log(`\n${C.b}${s}${C.x}`);
 
-// 收集目录下所有文件(用于预算统计),按仓库相对路径
-function walk(dir, acc = []) {
-  if (!existsSync(dir)) return acc;
-  for (const e of readdirSync(dir, { withFileTypes: true })) {
-    if (e.name === ".git" || e.name === "node_modules") continue;
-    const p = join(dir, e.name);
-    if (e.isDirectory()) walk(p, acc);
-    else if (/\.(md|mjs|ts|json)$/.test(e.name) || e.name === "pre-commit") acc.push(p);
-  }
-  return acc;
-}
 const rel = (p) => relative(ROOT, p).split(sep).join("/");
-const lines = (p) => readFileSync(p, "utf8").split(/\r?\n/).length - 1;
 const readJSON = (p, fallback) => { try { return JSON.parse(readFileSync(p, "utf8")); } catch { return fallback; } };
 
 // 匹配器自测:门禁自己必须先证明自己是好的。
@@ -118,7 +107,7 @@ const CHECKS = {
   },
 
   // R-03:体积预算
-  "check-budget"(report) {
+  async "check-budget"(report) {
     for (const [pat, path, want] of MATCHER_SELFTEST) {
       let got;
       try { got = globToMatcher(pat)(path); }
@@ -127,10 +116,9 @@ const CHECKS = {
     }
     const b = readJSON(R("budget.json"), null);
     if (!b) { report.fail("读不到 budget.json"); return false; }
-    let total = 0;
-    const files = walk(R("skills")).concat(walk(R("tools")));
-    const counts = {};
-    for (const f of files) { const n = lines(f); total += n; counts[rel(f)] = n; }
+    const { collectFiles, countLines } = await import("./budget-collect.mjs");
+    const files = collectFiles(ROOT, "skills", "tools");
+    const { counts, total } = countLines(ROOT, files);
     let pass = true;
     // 全局总量只是参考线,不拦人。2026-10-19 起从硬顶改为参考 —— 理由见 docs/theory.md T-12:
     // 硬顶会逼出「为了凑行数而合并/删减」的等价交换,那是收过路费。真正防住膨胀的是下面两条硬门禁。
@@ -151,9 +139,9 @@ const CHECKS = {
   },
 
   // R-04:语法 + 六种模式真跑
-  "check-syntax-and-modes"(report) {
+  async "check-syntax-and-modes"(report) {
     let pass = true;
-    for (const f of walk(R("skills")).concat(walk(R("tools"))).filter((p) => p.endsWith(".mjs"))) {
+    for (const f of (await collectScripts(ROOT, "skills", "tools"))) {
       try { execFileSync(process.execPath, ["--check", f], { stdio: "pipe" }); }
       catch (e) { report.fail(`${rel(f)}: 语法错误\n${String(e.stderr || e.message).split("\n").slice(0, 3).join("\n")}`); pass = false; }
     }
@@ -236,9 +224,9 @@ const CHECKS = {
   // 判据:node: 内置 或 . 开头(相对同仓库,且单独校验可达)。
   // 静态 import 写错路径 Node 加载时就崩(红得很响);动态 import() 藏在函数里
   // 加载期不崩、运行到才炸,所以两种都得扫 —— 只扫静态的等于漏一半。
-  "check-zero-dep"(report) {
+  async "check-zero-dep"(report) {
     let pass = true;
-    for (const f of walk(R("skills")).concat(walk(R("tools"))).filter((p) => p.endsWith(".mjs"))) {
+    for (const f of (await collectScripts(ROOT, "skills", "tools"))) {
       const src = readFileSync(f, "utf8");
       const specs = [
         ...[...src.matchAll(/^\s*import\s+.*?from\s+["']([^"']+)["']/gm)].map((m) => m[1]),
@@ -388,6 +376,12 @@ const CHECKS = {
     if (bareCatches.length > 6) { report.fail(`有 ${bareCatches.length} 处空 catch —— 吞掉错误等于让失败看起来像成功`); pass = false; }
     if (pass) report.pass("无静默失效(无 PCRE 转义 / 空 catch 受控)");
     return pass;
+  },
+
+  // R-17:参考系对照表里的路径必须真的存在 —— 引用失效的对照表比没有表更坏
+  async "check-reference-map"(report) {
+    const { runReferenceMapCheck, resolveGsdRoot } = await import("./reference-map.mjs");
+    return runReferenceMapCheck({ mapPath: R("skills","mm-gsd-loop","references","reference-map.md"), gsdRoot: resolveGsdRoot(), report });
   },
 };
 const pathBase = (p) => p.split("/").pop();
@@ -552,7 +546,7 @@ const CMD = {
     return 0;
   },
 
-  budget() { const rep = { pass: ok, fail: bad, info: (s) => log(`  ${C.d}· ${s}${C.x}`) }; return CHECKS["check-budget"](rep) ? 0 : 1; },
+  async budget() { const rep = { pass: ok, fail: bad, info: (s) => log(`  ${C.d}· ${s}${C.x}`) }; return (await CHECKS["check-budget"](rep)) ? 0 : 1; },
   // sync:把仓库里的技能装到 ~/.agents/skills/ —— 走和 npm 包完全相同的那条安装路径,
   // 不再手工 cp。手工 cp 是「装了但不知道是哪一版」的根源。
   sync(args) {
