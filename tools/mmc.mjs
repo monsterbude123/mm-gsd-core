@@ -395,12 +395,17 @@ const CHECKS = {
     return checkTags(report);
   },
 
-  // R-20:改外部发布通道的标签必须显式 --execute —— 默认只演练。
+  // R-20:改外部发布通道必须显式 —— promote 默认只演练;发版只落 next,latest 只能由 promote 显式动。
   // 为什么要有这条:改 npm 的 dist-tag 是外部副作用,「批 promote」是人保留的动作
   // (03-CONTEXT D-04)。promote 一旦默认就真跑,agent 顺手敲一条命令就把公开标签改了。
   // 这里不查源码,查行为:注入一个会记账的假 exec,断言默认路径一次 registry 都没碰。
-  async "check-promote-safety"(report) {
-    const { makeReleaseFlow } = await import("./release-flow.mjs");
+  //
+  // 发版那一半:npm publish 默认落 latest —— 「发个版」会把正式通道一起带走,
+  // 而 latest 的语义是「最稳那条」(03-CONTEXT D-01)。2026-10-22 真发 0.4.1 时
+  // 就是这么发生的:latest 从 0.4.0 跳到 0.4.1,工具的收尾文案却写着「latest 未动」。
+  // 断言的是命令本身(构造与调用是同一处),不是某句文案。
+  async "check-channel-safety"(report) {
+    const { makeReleaseFlow, publishArgs } = await import("./release-flow.mjs");
     const calls = [];
     const fakeTags = { ok: true, tags: { latest: "0.0.0", next: "0.0.0" } };
     const flow = makeReleaseFlow({
@@ -421,6 +426,14 @@ const CHECKS = {
     if (!tagged) { report.fail("promote --execute 没有发出 dist-tag add —— 晋级路径断了"); return false; }
     if (real !== 0) { report.fail(`promote --execute 返回 ${real}(应为 0)`); return false; }
     report.pass("promote --execute 才会真的改标签(" + tagged.slice(2).join(" ") + ")");
+    // 发版:publish 必须钉 next。少了它,npm 默认落 latest —— 正式通道被顺手带走。
+    const pub = publishArgs();
+    const tagAt = pub.indexOf("--tag");
+    if (tagAt < 0 || pub[tagAt + 1] !== "next") {
+      report.fail(`发版的 publish 命令没钉 next(${JSON.stringify(pub)})—— latest 是给不想读文档的人的默认,发版不许把它带走(03-CONTEXT D-01)`);
+      return false;
+    }
+    report.pass("发版只落 next 通道,latest 不动(publish " + pub.join(" ") + ")");
     return true;
   },
 };

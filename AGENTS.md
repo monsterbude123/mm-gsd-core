@@ -40,7 +40,9 @@ discuss → plan → exec → verify    observe / inbox → issue
 - **预发布通道**:已填。两条 npm 标签:`next` = 刚发出来的那份(要新功能的人装它),
   `latest` = 给不想读文档的人的默认(必须指向最稳那条,不是最新那条)。
   `release` 发完自动把新版本钉到 `next`;`mmc promote <版本> --execute` 秒级晋级到 `latest`
-  (不重新构建、不重跑发布链)。**promote 默认只演练** —— 不加 `--execute` 一次 registry 都不碰:
+  (不重新构建、不重跑发布链)。**发版只落 `next`**:npm publish 默认落 `latest`,
+  那样「发个版」会把正式通道一起带走 —— 2026-10-22 真发 0.4.1 时就是这么发生的。
+  **promote 默认只演练** —— 不加 `--execute` 一次 registry 都不碰:
   改公开的 npm 标签是外部副作用,「批 promote」是人保留的动作,工具不该自己按下扳机(**R-20**)。
   **R-19** 盯着 `next` 不得比 `latest` 旧 —— 标签靠人维护就会自己腐烂,门禁要当场抓住。
 - **生效确认**:已填。闭环认的是「交付物被消费」,不是「问题消失」——

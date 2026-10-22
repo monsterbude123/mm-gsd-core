@@ -164,9 +164,9 @@
       "id": "R-20",
       "status": "active",
       "since": "0.4.4",
-      "statement": "改外部发布通道的标签(promote)必须显式 --execute —— 默认只演练,不动 registry。",
-      "check": "check-promote-safety",
-      "_note": "phase 03 验证时用隔离环境(假 npm registry)抓到:promote 的实现是「带 --dry-run 才演练」,于是默认路径直接改公开的 npm 标签。这与三处承诺冲突 —— 03-01-PLAN 的 Auto Decisions(「promote 默认带 --dry-run 语义」)、release-flow.mjs 自己的注释、03-CONTEXT D-04(「批 promote」是人保留的动作)。人保留的动作如果工具默认就按下扳机,那条保留就是假的。判据是行为不是源码:注入会记账的假 exec,断言默认路径一次 registry 都没碰,带 --execute 才发出 dist-tag add。",
+      "statement": "改外部发布通道必须显式:promote 默认只演练(要 --execute 才动 registry),发版(release)只落 next 通道 —— latest 只能由 promote 显式动。",
+      "check": "check-channel-safety",
+      "_note": "phase 03 验证时用隔离环境(假 npm registry)抓到:promote 的实现是「带 --dry-run 才演练」,于是默认路径直接改公开的 npm 标签。这与三处承诺冲突 —— 03-01-PLAN 的 Auto Decisions(「promote 默认带 --dry-run 语义」)、release-flow.mjs 自己的注释、03-CONTEXT D-04(「批 promote」是人保留的动作)。人保留的动作如果工具默认就按下扳机,那条保留就是假的。判据是行为不是源码:注入会记账的假 exec,断言默认路径一次 registry 都没碰,带 --execute 才发出 dist-tag add。2026-10-22 真发 0.4.1 时又抓到同一族的另一半:npm publish 默认落 latest,于是「发个版」把正式通道一起带走了(latest 0.4.0 → 0.4.1),而 03-CONTEXT D-01 写明 latest 必须指向最稳那条、release 只该落 next。判据是命令本身(publishArgs 必须带 --tag next),不是某句文案 —— 当时收尾文案还写着「latest 未动」,代码在照做、文案在撒谎。",
       "_候选顾虑回应": "不替代 R-19:R-19 管「通道有没有在腐烂」(标签新旧),本条管「谁有权按下改标签的扳机」;不替代 R-11:R-11 管包里该有的文件,本条管发布动作的副作用。"
     }
   ],

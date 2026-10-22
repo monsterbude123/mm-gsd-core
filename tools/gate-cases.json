@@ -32,10 +32,10 @@
     "gh-issues.mjs": "报修走不通(没装 gh / 证据文件不存在)→ check-report-fails-loud 判红",
     "budget.mjs": "把 check-budget 里的 fatAdvice 调用删掉或改成只报「超 N 行」→ budget 拦红时不再输出改造指引(门禁只判不导,等于把难题推回给读者)。三种形状(main / references / 散文)必须给出不同的指引,实测见 commit #4787 的 verify。phase 04 把 fat-advice.mjs 与 budget-collect.mjs 合成一份(两个都只服务 check-budget),导出名一个没改",
     "reference-map.mjs": "把 extractRefs 的正则改坏(如让它只认 .md)→ 抽不到 .cts 引用 → R-17 判红「一个路径引用都没抽到」;把 checkRefs 的 existsSync 判断去掉 → 失效路径不再报红",
-    "release-flow.mjs": "把 tagsVerdict 的比较方向改反 → 门禁自证那一行立刻判红「标签门禁自证失败:喂 next=0.0.1/latest=9.9.9 竟没判红」(门禁自己证明它会红,照 check-report-fails-loud 的先例);把 compareVersions 换成字符串比较 → 0.10.0 会被判成小于 0.9.0;把 promote 的默认改回真跑 → R-20 判红(见 check-promote-safety)"
+    "release-flow.mjs": "把 tagsVerdict 的比较方向改反 → 门禁自证那一行立刻判红「标签门禁自证失败:喂 next=0.0.1/latest=9.9.9 竟没判红」(门禁自己证明它会红,照 check-report-fails-loud 的先例);把 compareVersions 换成字符串比较 → 0.10.0 会被判成小于 0.9.0;把 promote 的默认改回真跑 → R-20 判红(见 check-channel-safety)"
   },
   "check-reference-map": "把 docs/reference-map.md 里某个路径改成 GSD Core 里不存在的文件名(如 src/gate-not-exist.cts)→ R-17 判红「路径在 GSD Core 里不存在」;把 GSD_CORE_ROOT 指到一个空目录 → 判「没核对」而不是判红",
   "check-artifact-ledger": "造一份 status=complete 但 commits: 0 的 SUMMARY → R-18 判红并指名缺什么;在 .planning/artifact-ledger.md 记一行指向真实存在的 commit → 转绿;把那行的 commit 改成不存在的 sha → 仍判红「记账指向的 commit 不存在」;再加一张零 D-NN 引用的纯实现票(commits 正常)→ 不该进问题清单(决策核销归 phase 级 union 门,D-03)",
   "check-release-tags": "npm 上的 next 指向的版本比 latest 旧 → R-19 判红并说清两个版本号;next 还不存在(通道还没建)→ 只警告不判红;查不到 npm 上的标签(离线)→ 判「没核对」不判红;把判定方向改反 → 门禁自证那一行当场判红",
-  "check-promote-safety": "把 promote 的默认改回「不带 --dry-run 就真跑」→ R-20 判红「默认必须只演练,改公开标签得显式 --execute」(注入记账的假 exec,断言默认路径一次 registry 都没碰);把 --execute 那条路删掉 → 判红「晋级路径断了」"
+  "check-channel-safety": "把 promote 的默认改回「不带 --dry-run 就真跑」→ R-20 判红「默认必须只演练,改公开标签得显式 --execute」(注入记账的假 exec,断言默认路径一次 registry 都没碰);把 --execute 那条路删掉 → 判红「晋级路径断了」;把发版的 publish 命令去掉 --tag next → R-20 判红「发版的 publish 命令没钉 next」(latest 是给不想读文档的人的默认,发版不许把它带走 —— 2026-10-22 真发 0.4.1 时就是这么被带走的)"
 }

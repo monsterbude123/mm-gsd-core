@@ -287,10 +287,14 @@ node tools/mmc.mjs promote 0.4.1 --execute  # 真晋级(改 npm 标签 —— �
 回退才有落脚点。**通道会自己腐烂**(标签靠人维护,忘了就静默指向历史版本),
 所以 `R-19` 门禁盯着:`next` 不得比 `latest` 旧,否则当场判红并说清两个版本号。
 
+**发版只落 `next`,`latest` 一点不动。** `mmc release` 发的版本先落在 `next` 上 ——
+要新功能的人 `npx mm-gsd-core@next` 就拿到;正式通道 `npx mm-gsd-core` 仍是上一条最稳版本,
+要让它跟上得显式跑 `mmc promote <版本> --execute`。
+
 **改 `latest` 标签默认只演练。** `mmc promote <版本>` 会打印它将要执行的那条命令,
 但**不碰 registry**;真要改得显式加 `--execute` —— 改公开的 npm 标签是外部副作用,
-「批 promote」是人保留的动作,工具不该自己按下扳机(`R-20` 门禁盯着这件事:
-默认路径一次 registry 都不许碰)。
+「批 promote」是人保留的动作,工具不该自己按下扳机(`R-20` 门禁盯着这两件事:
+发版的 publish 必须钉 `next`、promote 的默认路径一次 registry 都不许碰)。
 查不到 npm 上的标签时它判「没核对」而不是判红 —— 离线不该让整仓判红。
 
 ### 回退

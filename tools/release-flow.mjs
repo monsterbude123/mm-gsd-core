@@ -109,6 +109,22 @@ export function checkTags(report, readTags = readDistTags) {
 }
 
 /**
+ * 发版时用的 publish 命令。**只落 next** —— latest 是给不想读文档的人的默认,
+ * 必须指向最稳那条,而不是最新那条(03-CONTEXT D-01,拿 vue 的 latest=3.5.44
+ * 而 rc 已到 3.6.0-rc.12 做例证)。
+ *
+ * npm publish 默认落 latest —— 于是「发个版」顺手把正式通道也带走了。
+ * 2026-10-22 真发 0.4.1 时就是这样:latest 从 0.4.0 跳到了 0.4.1,
+ * 而这条通道自己的收尾文案还写着「latest 未动」。**文案在撒谎,代码在照做。**
+ *
+ * 单独导出是为了让门禁能断言这条命令 —— 命令构造与调用点是同一处,
+ * 不是「构造处一份、断言处另一份」的两处真相源。
+ */
+export function publishArgs() {
+  return ["publish", "--access", "public", "--tag", "next"];
+}
+
+/**
  * 造命令组。log 工具由调用方注入 —— 本模块不自己决定怎么显示。
  *
  * exec / readTags 只给 promote 用:门禁要能断言「默认路径真的没碰 registry」,
@@ -162,10 +178,10 @@ export function makeReleaseFlow({ log, ok, bad, warn, head, C, health, exec = ex
       try { execFileSync("git", ["tag", "-f", "v" + version], { cwd: ROOT, stdio: "pipe" }); log("      已打标签 v" + version); }
       catch { log("      标签 v" + version + " 已存在"); }
 
-      // 4) 发 npm
-      log("  4/7 发布到 npm");
+      // 4) 发 npm —— 只落 next。latest 是给不想读文档的人的默认,发版不许带走它。
+      log("  4/7 发布到 npm(预发布通道 next)");
       try {
-        const out = execFileSync("npm", ["publish", "--access", "public"], { cwd: ROOT, encoding: "utf8", stdio: "pipe", shell: process.platform === "win32" });
+        const out = execFileSync("npm", publishArgs(), { cwd: ROOT, encoding: "utf8", stdio: "pipe", shell: process.platform === "win32" });
         log("      " + out.split("\n").filter((l) => l.includes("+")).join(" ").trim());
       } catch (e) {
         bad("npm publish 失败:\n" + String(e.stdout || "") + String(e.stderr || e.message));
@@ -173,12 +189,12 @@ export function makeReleaseFlow({ log, ok, bad, warn, head, C, health, exec = ex
         return 1;
       }
 
-      // 5) 钉预发布通道 next —— 刚发出去的那份先落在 next 上:
+      // 5) 确认 next 真的钉上了 —— publish 已经带了 --tag next,这里是复核:
       //    要新功能的人装 next 就拿到,latest 一点不动(它是给不想读文档的人的默认)。
-      log("  5/7 钉到预发布通道 next");
+      log("  5/7 复核预发布通道 next");
       try {
         execFileSync("npm.cmd", ["dist-tag", "add", pkg.name + "@" + version, "next"], { encoding: "utf8", shell: true, stdio: "pipe" });
-        ok("next → " + version);
+        ok("next → " + version + "(latest 未动)");
       } catch (e) {
         bad("钉 next 失败:" + String(e.stderr || e.message).split("\n")[0]);
         log("      版本已经发出去了,但 next 没钉上 —— 补一次:mmc promote " + version + " --channel next --execute");
@@ -226,8 +242,9 @@ export function makeReleaseFlow({ log, ok, bad, warn, head, C, health, exec = ex
 
       log("");
       ok("v" + version + " 发布完成");
-      log("  npm:      npx mm-gsd-core@" + version);
-      log("  预发布:   npx mm-gsd-core@next(钉在 next 上,latest 未动)");
+      log("  预发布:   npx mm-gsd-core@next(" + version + ",已钉在 next 上)");
+      log("  正式通道: npx mm-gsd-core —— 仍是上一条最稳版本;要让它跟上,显式跑一次");
+      log("            mmc promote " + version + " --execute");
       log("  GitHub:   https://github.com/monsterbude123/mm-gsd-core/releases/tag/v" + version);
       log("");
       return 0;
