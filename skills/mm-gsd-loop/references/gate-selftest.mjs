@@ -68,6 +68,9 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(vt("passed", ["✓ VERIFIED", "✓ VERIFIED"], "- [ ] 视觉:导出按钮 hover 态 —— 期望:按钮变蓝"), 1, "模板实际的括号后缀标题要能触发人工项检查");
   // Artifacts 表第 3 格是 exists/substantive,内容是 ✓ 或「212 行」—— 不该被当成判定行
   eqN(vt("passed", ["✓ VERIFIED", "✓ VERIFIED"], "None", "| Artifact | exists | substantive | wired |\n|---|---|---|---|\n| src/a.ts | ✓ | ✓ 212 行 | ✓ |"), 0, "Artifacts 表不该被误判成判定行");
+  // 人工项清单不能把**粗体段落**当条目 —— 否则任何以 `**结论**` 收尾的 passed 报告
+  // 都会被误判成「有人工项」,被迫降级 human_needed(实测:本 phase 的验收报告就撞上了)
+  eqN(vt("passed", ["✓ VERIFIED", "✓ VERIFIED"], "None —— 全部由程序验证\n**结论**: 没有人工项"), 0, "粗体结论段落不算人工项");
   // decision-gates 的可逆性契约此前零自测覆盖 —— 改坏了没有任何东西能发现
   const dc = (md, refs) => { const errs = []; checkDecisions({ name: "t", ctxText: md, planDecisions: refs, e: (a) => errs.push(a) }); return errs.length; };
   eqN(dc("<decisions>\n### [D-01] 用 JWT,不用 session\n</decisions>", ["D-01"]), 1, "决策没标可逆性该判红");

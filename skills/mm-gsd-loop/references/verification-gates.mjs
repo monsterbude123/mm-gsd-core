@@ -47,6 +47,11 @@ function truthVerdicts(text) {
 /**
  * 人工验证小节里有几条真实条目(剔掉 <> 占位后仍有实质内容)。
  * 标题正则必须容得下模板自己写的括号后缀,否则这条纪律等于不存在。
+ *
+ * `(?!\*\*)` 是为了把**粗体段落**排除在清单之外:`*` 既是列表标记也是粗体标记,
+ * 于是 `**结论**:……` 会被当成一条人工项 —— 而任何以粗体结论收尾的 passed 报告
+ * 都会被误判成「有人工项」,被迫降级成 human_needed。只排除 `**` 开头的那种,
+ * `* 条目` / `- [ ] 条目` 照旧认(松手就会把真人工项漏成假绿,T-03)。
  */
 function humanItems(text) {
   const m = text.match(/^#{2,4}\s*[^\n]*\b(Human\s+Verification|人工验证|人工确认)\b[^\n]*$/im);
@@ -55,7 +60,7 @@ function humanItems(text) {
   const next = rest.search(/\n#{2,4}\s/);
   return (next < 0 ? rest : rest.slice(0, next))
     .split(/\r?\n/)
-    .filter((l) => /^\s*[-*]\s*(?:\[[ xX]?\])?\s*\S/.test(l) && l.replace(/<[^>]*>/g, "").replace(/[\s:：—。，,]/g, "").length >= 4)
+    .filter((l) => /^\s*(?!\*\*)[-*]\s*(?:\[[ xX]?\])?\s*\S/.test(l) && l.replace(/<[^>]*>/g, "").replace(/[\s:：—。，,]/g, "").length >= 4)
     .length;
 }
 
