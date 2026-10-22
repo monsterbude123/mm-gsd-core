@@ -151,7 +151,7 @@ const CHECKS = {
     const sandbox = join(tmpdir(), "mmc-smoke");
     mkdirSync(join(sandbox, ".planning"), { recursive: true });
     writeFileSync(join(sandbox, ".planning", "STATE.md"), "---\nstatus: discussing\nactive_phase: 01\n---\n");
-    const modes = ["", "--plan", "--phases", "--worktrees", "--stats", "--json"];
+    const modes = ["", "--plan", "--phases", "--worktrees", "--stats", "--json", "--routes"];
     for (const m of modes) {
       try {
         execFileSync(process.execPath, [CHECKER, m].filter(Boolean), { cwd: sandbox, env: { ...process.env, GSD_SANDBOX: "1" }, stdio: "pipe", timeout: 20000 });
@@ -163,7 +163,7 @@ const CHECKS = {
         }
       }
     }
-    if (pass) report.pass("六种模式全部能在未初始化项目里跑起来(冷启动沙盒)");
+    if (pass) report.pass("七种模式全部能在未初始化项目里跑起来(冷启动沙盒)");
     return pass;
   },
 
