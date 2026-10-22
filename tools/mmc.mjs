@@ -16,8 +16,7 @@ import { execFileSync } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
 import { missingRules, BASELINE_RULES } from "./rule-baseline.mjs";
 import { registryGaps, unregisteredModules, baselineDrift } from "./module-registry.mjs";
-import { fatAdvice } from "./fat-advice.mjs";
-import { collectFiles, countLines, collectScripts } from "./budget-collect.mjs";
+import { fatAdvice, collectFiles, countLines, collectScripts } from "./budget.mjs";
 import { fileURLToPath } from "node:url";
 import { makeInboxClose, clusterKey, readLocalIssues, findRecurrences, recurrenceRate } from "./gh-issues.mjs";
 import { makeReleaseFlow, checkTags } from "./release-flow.mjs";
@@ -117,7 +116,7 @@ const CHECKS = {
     }
     const b = readJSON(R("budget.json"), null);
     if (!b) { report.fail("读不到 budget.json"); return false; }
-    const { collectFiles, countLines } = await import("./budget-collect.mjs");
+    const { collectFiles, countLines } = await import("./budget.mjs");
     const files = collectFiles(ROOT, "skills", "tools");
     const { counts, total } = countLines(ROOT, files);
     let pass = true;

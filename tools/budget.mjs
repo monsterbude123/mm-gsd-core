@@ -1,12 +1,64 @@
+// 预算门禁的两半:数文件数行数(收集),以及超限时给什么建议(诊断)。
+//
+// 为什么合成一份:这两个文件都只服务 check-budget 一条门禁 ——
+// fat-advice 是「超了怎么办」,budget-collect 是「有多少」。
+// 拆成两个文件时,它们的关系只存在于 mmc.mjs 的两行 import 里;
+// phase 04 实施时文件数正好卡在 40/40(见 .planning/04-RESEARCH.md 4.2),
+// 要新增一个 references 模块就得先腾一个位置 —— 合并「本来就该是一份」的两半,
+// 比删掉其中一半功能、或让文件数超限,都更符合本仓「变胖必须有等量删除」的纪律。
+//
+// 导出名一个没改:调用方(mmc.mjs)只改 import 的路径,行为不变。
+
+import { readdirSync, readFileSync } from "node:fs";
+import { join, relative, sep } from "node:path";
+
+/** 收集目录下所有受管文件(用于预算统计),返回仓库相对路径 */
+export function collectFiles(root, skillsDir, toolsDir) {
+  const out = [];
+  const walk = (dir) => {
+    if (!dir) return;
+    let names;
+    try { names = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of names) {
+      if (e.name === ".git" || e.name === "node_modules") continue;
+      const p = join(dir, e.name);
+      if (e.isDirectory()) walk(p);
+      else if (/\.(md|mjs|ts|json)$/.test(e.name) || e.name === "pre-commit") out.push(p);
+    }
+  };
+  walk(join(root, skillsDir));
+  walk(join(root, toolsDir));
+  return out;
+}
+
+/** 找出 skills/ 与 tools/ 下所有 .mjs —— 语法检查与零依赖检查都要用 */
+export function collectScripts(root, skillsDir, toolsDir) {
+  return collectFiles(root, skillsDir, toolsDir).filter((p) => p.endsWith(".mjs"));
+}
+
+/** 每个文件的行数,以及总行数 */
+export function countLines(root, files) {
+  const counts = {};
+  let total = 0;
+  for (const f of files) {
+    let n = 0;
+    try { n = readFileSync(f, "utf8").split(/\r?\n/).length - 1; } catch { n = 0; }
+    total += n;
+    counts[relative(root, f).split(sep).join("/")] = n;
+  }
+  return { counts, total };
+}
+
+// ---------------------------------------------------------------------------
+// 以下是超限诊断(原 tools/fat-advice.mjs)
+// ---------------------------------------------------------------------------
+
 // 超预算时给什么建议 —— 只诊断不给药方的门禁等于把难题推回给读者。
 //
 // 为什么需要它:拦红时说「超 N 行,脂肪最容易堆的地方」只回答了「哪里错了」,
 // 没回答「那我该拆什么、拆去哪」。T-02 说散文纪律没有闸等于没写;反过来,
 // 闸只判不导,执行方就得自己重新发明改造方案,而多数人第一反应是抬上限或者硬删。
 // 本仓两种都吃过亏(T-11)。
-//
-// 为什么独立成文件:mmc.mjs 长期贴着 700 上限(历史峰值 714),按 budget.json
-// 自己的规矩与 gh-issues.mjs / rule-baseline.mjs / module-registry.mjs 的先例抽出。
 
 /** 一句话讲清 references 化:什么留骨架、什么进 references、怎么被引用 */
 const REFACTOR = {

@@ -154,82 +154,11 @@ function listPlanFiles(plDir) {
 }
 
 // ---- --worktrees:多工作树并发视图(必须早于 STATE 检查:主 worktree 可能根本没初始化)----
+// 判定逻辑在 references/worktree-view.mjs —— 搬出去的理由见那个文件头(phase 04 腾头寸)。
+// PLAN 的解析三件套在主脚本里,搬过来抄一份就是第二真相源,所以注入进去。
 if (process.argv.includes("--worktrees")) {
-  let raw = "";
-  try { raw = execSync("git worktree list --porcelain", { stdio: ["ignore", "pipe", "ignore"], encoding: "utf8" }); }
-  catch { die("不在 git 仓库中,无法列 worktree。", "在项目根跑,或先 git init"); }
-
-  const wts = [];
-  let cur = null;
-  for (const line of raw.split(/\r?\n/)) {
-    if (line.startsWith("worktree ")) { cur = { path: line.slice(9).trim(), branch: "(detached)", head: "" }; wts.push(cur); }
-    else if (cur && line.startsWith("branch ")) cur.branch = line.slice(7).replace("refs/heads/", "");
-    else if (cur && line.startsWith("HEAD ")) cur.head = line.slice(5).trim();
-  }
-
-  const readPlanInfo = (wtPath) => {
-    const plDir = join(wtPath, ".planning");
-    if (!existsSync(plDir)) return { state: null, files: [], reqs: [], hasPlanning: false };
-    const st = frontmatter(join(plDir, "STATE.md")) ?? {};
-    const files = new Set(), reqs = new Set();
-    for (const p of listPlanFiles(plDir)) {
-      const parsed = parsePlanFile(readFileSync(join(plDir, p), "utf8"));
-      parsed.files.forEach((f) => files.add(f));
-      parsed.reqs.forEach((r) => reqs.add(r));
-    }
-    // REQ-NN 是"这一份 REQUIREMENTS.md 里的局部编号",不是全局 ID。
-    // 记下它属于哪份需求清单,只有同源的才谈得上冲突。
-    const reqFile = join(plDir, "REQUIREMENTS.md");
-    const reqSrc = existsSync(reqFile) ? createHash("sha1").update(readFileSync(reqFile)).digest("hex").slice(0, 8) : null;
-    return { state: st, files: [...files], reqs: [...reqs], hasPlanning: true, reqSrc };
-  };
-
-  const info = wts.map((w) => ({ ...w, ...readPlanInfo(w.path) }));
-  // git 报的是正斜杠绝对路径,cwd 可能是反斜杠 —— 归一化后再做相对化
-  const norm = (p) => p.replace(/\\/g, "/");
-  const base = norm(process.cwd()).replace(/\/+$/, "");
-  const short = (p) => { const n = norm(p); return n === base ? "." : n.startsWith(base + "/") ? "." + n.slice(base.length) : n; };
-  const phOf = (w) => { const v = w.state?.active_phase; return v ? String(v).replace(/^["']|["']$/g, "") : "—"; };
-  const stOf = (w) => { const v = w.state?.status; return v ? String(v).replace(/^["']|["']$/g, "") : "—"; };
-
-  // 真实仓库动辄几十个 worktree,绝大多数没在跑 mm-gsd。全列出来等于没输出。
-  const live = info.filter((w) => w.hasPlanning);
-  const idle = info.length - live.length;
-  console.log("\n=== mm-gsd 多工作树视图(共 " + info.length + " 个," + live.length + " 个有 .planning) ===\n");
-  for (const w of live) {
-    const f = (w.files.length > 3 ? w.files.slice(0, 3).join(", ") + " …(" + w.files.length + ")" : w.files.join(", ")) || "—";
-    console.log("  " + short(w.path).padEnd(38) + w.branch.padEnd(14) + ("phase " + phOf(w)).padEnd(11) + stOf(w).padEnd(12) + f);
-  }
-  if (idle) console.log("  (另有 " + idle + " 个 worktree 没有 .planning,不参与 mm-gsd 并行判定)");
-
-  const conflicts = [];
-  for (let i = 0; i < live.length; i++) {
-    for (let j = i + 1; j < live.length; j++) {
-      const overlap = live[i].files.filter((f) => live[j].files.includes(f));
-      if (overlap.length) conflicts.push({ a: live[i], b: live[j], kind: "文件", items: overlap });
-      // 编号撞车不等于重复实现:只有共用同一份 REQUIREMENTS.md 时 REQ-NN 才指同一件事
-      const rq = live[i].reqs.filter((r) => live[j].reqs.includes(r));
-      if (rq.length) {
-        const same = live[i].reqSrc && live[i].reqSrc === live[j].reqSrc;
-        conflicts.push({ a: live[i], b: live[j], kind: same ? "REQ" : "REQ(不同源·仅编号撞车)", items: rq, soft: !same });
-      }
-    }
-  }
-  const hard = conflicts.filter((c) => !c.soft);
-  if (conflicts.length === 0) {
-    console.log("\n  ✓ 无 files_modified / REQ 冲突 —— 这几个 worktree 可以安全并行");
-  } else {
-    for (const c of conflicts) {
-      const mark = c.soft ? "i" : "⚠";
-      console.log(`\n  ${mark} ${c.kind}冲突:${c.items.join(", ")} 被 ${c.a.branch}(phase ${phOf(c.a)}) 与 ${c.b.branch}(phase ${phOf(c.b)}) 同时声明`);
-      if (c.soft) console.log("    → 两边 REQUIREMENTS.md 不是同一份,REQ-NN 是各自局部编号,编号相同不代表做同一件事 —— 不阻塞,确认分工即可");
-      else console.log("    → " + (c.kind === "文件" ? "并行必合并冲突:二选一先做,或把其中一个 phase 重新切到不碰这些文件的切片" : "需求重复实现风险:确认分工,或合并到一个 worktree"));
-    }
-  }
-  const busy = live.filter((w) => stOf(w) === "executing");
-  if (busy.length > 1) console.log("\n  ! " + busy.length + " 个 worktree 同时 executing —— 确认 dev server 端口 / 同一数据库 / 共享构建产物没打架(端口冲突不体现在 files_modified 里)");
-  console.log("");
-  process.exit(hard.length ? 1 : 0);
+  const { runWorktrees } = await import("../references/worktree-view.mjs");
+  process.exit(runWorktrees({ cwd: process.cwd(), plan: { frontmatter, parsePlanFile, listPlanFiles }, die }));
 }
 
 // ---- --plan:计划质量门禁(散文约定 → 可执行检查)----
