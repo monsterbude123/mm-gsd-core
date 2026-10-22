@@ -3,9 +3,8 @@
 // 为什么单独放:自测是"门禁对自己的检查",不是"对项目的检查";混在一起行数很快顶破 700 上限。
 // 跟 template-gates.mjs 一个套路:按需 import,主文件不胖。
 //
-// 为什么必须有:GitHub #6/#7/#8 三条都是"门禁看起来在跑、实际判错"(VAGUE_FILE 的 N\/A 无左右断言 /
-// depends_on 只认半角括号 / derived 只判 SHIP 文件存在不读 status)——三条都不是崩溃,是安静地给错答案。
-// T-03 说门禁上线前必须先证明它会红,而"会红"只能靠这些用例证明。
+// 为什么必须有:GitHub #6/#7/#8 三条都是"门禁看起来在跑、实际判错"(VAGUE_FILE 的 N\/A 无左右断言 / depends_on 只认半角括号 /
+// derived 只判 SHIP 文件存在不读 status)——三条都不是崩溃,是安静地给错答案,而"会红"只能靠这些用例证明。
 
 import { validateVerification } from "./verification-gates.mjs";
 import { checkDecisions, locateContexts, checkDrift, checkConclusionDrift } from "./decision-gates.mjs";
@@ -14,7 +13,7 @@ import { mkAssert, runArtifactCases, runCoverageCases, runLedgerGateCases, runPh
 import { researchRequired, researchCompliant } from "./research-gates.mjs";
 import { buildRouteBrief, pointerCard } from "./agent-routing.mjs";
 import { extractTemplateBlock } from "./template-gates.mjs";
-import { mkdtempSync, writeFileSync, rmSync, utimesSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, utimesSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -178,6 +177,8 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(br.quick.caps.length, 1, "单文件上限从 budget.json 读出");
   const card = pointerCard({ skill: "mm-gsd-plan", skillPath: join(sk2, "mm-gsd-plan", "SKILL.md"), routeCmd: "node x" });
   eqN(card.includes("追溯到 issue"), false, "指针卡里不许有规则原文(那是第二真相源)");
+  // 上一条只盯着**这一句**:塞进别的规则照样放行 —— 守的应是「不重复任何规则」这个不变式
+  eqN(/\bR-\d\d\b/.test(card) || JSON.parse(readFileSync(join(d2, ".agents", "rules", "ledger.json"), "utf8")).rules.some((r) => card.includes(r.statement)), false, "指针卡里不许出现台账里任何一条规则的原文或编号");
   const noT = buildRouteBrief({ stage: "plan", skillsRoot: sk2, projectRoot: join(d2, "none"), home: d2, activePhase: null });
   eqN(noT.quick.rules.length, 0, "项目没有台账 → 速查为空,不补写");
   eqN(noT.quick.notes.length, 2, "台账与预算都读不到时,各说一条「没有」");
