@@ -255,7 +255,8 @@ mm-gsd-core/
 
 ```bash
 node tools/mmc.mjs release --patch    # 完整流程
-node tools/mmc.mjs promote 0.4.1      # 把已发布的版本晋级到正式通道(秒级)
+node tools/mmc.mjs promote 0.4.1      # 演练:把已发布的版本晋级到正式通道(不动 registry)
+node tools/mmc.mjs promote 0.4.1 --execute  # 真晋级(改 npm 标签 —— 要人点头的那一下)
 ```
 
 七步,顺序是有讲究的:
@@ -278,11 +279,16 @@ node tools/mmc.mjs promote 0.4.1      # 把已发布的版本晋级到正式通�
 | 标签 | 给谁 | 谁来动 |
 |---|---|---|
 | `next` | 要新功能的人(`npx mm-gsd-core@next`) | `release` 发完自动钉上去 |
-| `latest` | 不想读文档的人(默认,必须指向**最稳**那条) | `mmc promote <版本>` 秒级晋级,不重新构建 |
+| `latest` | 不想读文档的人(默认,必须指向**最稳**那条) | `mmc promote <版本> --execute` 秒级晋级,不重新构建 |
 
 分开的好处:「发了但还没敢放出去」和「已经放出去了」是两件能分开的事 ——
 回退才有落脚点。**通道会自己腐烂**(标签靠人维护,忘了就静默指向历史版本),
 所以 `R-19` 门禁盯着:`next` 不得比 `latest` 旧,否则当场判红并说清两个版本号。
+
+**改 `latest` 标签默认只演练。** `mmc promote <版本>` 会打印它将要执行的那条命令,
+但**不碰 registry**;真要改得显式加 `--execute` —— 改公开的 npm 标签是外部副作用,
+「批 promote」是人保留的动作,工具不该自己按下扳机(`R-20` 门禁盯着这件事:
+默认路径一次 registry 都不许碰)。
 查不到 npm 上的标签时它判「没核对」而不是判红 —— 离线不该让整仓判红。
 
 ### 回退

@@ -108,8 +108,14 @@ export function checkTags(report, readTags = readDistTags) {
   return reportTags(report, pkg, readTags(pkg));
 }
 
-/** 造命令组。log 工具由调用方注入 —— 本模块不自己决定怎么显示 */
-export function makeReleaseFlow({ log, ok, bad, warn, head, C, health }) {
+/**
+ * 造命令组。log 工具由调用方注入 —— 本模块不自己决定怎么显示。
+ *
+ * exec / readTags 只给 promote 用:门禁要能断言「默认路径真的没碰 registry」,
+ * 而不碰 registry 正是可判事实(有没有发出过 dist-tag add)。不注入就没法在
+ * 隔离环境里证它 —— 只能拿真 registry 去试,那等于用公开标签做实验。
+ */
+export function makeReleaseFlow({ log, ok, bad, warn, head, C, health, exec = execFileSync, readTags = readDistTags }) {
   return {
     // 发版。顺序有讲究 —— 先发 npm,再从 npm 装回来,
     // 这样「装出去的那份」和「发出去的那份」是同一份,不会出现本地改了没发的情况。
@@ -175,7 +181,7 @@ export function makeReleaseFlow({ log, ok, bad, warn, head, C, health }) {
         ok("next → " + version);
       } catch (e) {
         bad("钉 next 失败:" + String(e.stderr || e.message).split("\n")[0]);
-        log("      版本已经发出去了,但 next 没钉上 —— 补一次:mmc promote " + version + " --channel next");
+        log("      版本已经发出去了,但 next 没钉上 —— 补一次:mmc promote " + version + " --channel next --execute");
         return 1;
       }
 
@@ -228,36 +234,39 @@ export function makeReleaseFlow({ log, ok, bad, warn, head, C, health }) {
     },
 
     // 晋级:把某个已发布版本钉到正式通道 latest。秒级 —— 不重新构建、不重跑发布链。
-    // --dry-run 是默认安全网:改 npm 的标签是外部副作用(拍板权第 3 类),
-    // 工具不该自己按下扳机;要真改就显式去掉 --dry-run。
+    //
+    // **默认只演练**:改 npm 的标签是外部副作用(拍板权第 3 类),工具不该自己按下扳机 ——
+    // 「批 promote」是人保留的动作(03-CONTEXT D-04)。真要改必须显式 --execute。
+    // (曾经写成「带 --dry-run 才演练」,于是默认路径直接改公开的 registry ——
+    //  探针在隔离环境里抓到:不带参数就真的发了 dist-tag add。计划里写的是默认演练。)
     async promote(args) {
       head("promote —— 把已发布版本晋级到正式通道(latest)");
       const version = args.find((a) => /^\d+\.\d+\.\d+/.test(a));
-      const dry = args.includes("--dry-run");
+      const really = args.includes("--execute") || args.includes("--yes");
       const channel = args.includes("--channel") ? "next" : "latest";
-      const junk = args.filter((a) => !["--dry-run", "--channel"].includes(a) && !/^\d+\.\d+\.\d+/.test(a));
-      if (junk.length) { bad("不认识的参数:" + junk.join(" ") + "\n      合法:<版本> [--dry-run] [--channel]"); return 1; }
-      if (!version) { bad("用法:mmc promote <版本> [--dry-run] [--channel]"); return 1; }
+      const junk = args.filter((a) => !["--dry-run", "--execute", "--yes", "--channel"].includes(a) && !/^\d+\.\d+\.\d+/.test(a));
+      if (junk.length) { bad("不认识的参数:" + junk.join(" ") + "\n      合法:<版本> [--execute] [--channel]"); return 1; }
+      if (!version) { bad("用法:mmc promote <版本> [--execute] [--channel]"); return 1; }
       const pkg = readJSON(join(ROOT, "package.json"), {});
       const spec = pkg.name + "@" + version;
       const cmd = `npm dist-tag add ${spec} ${channel}`;
-      if (dry) {
-        log(`  ${C.d}--dry-run:不碰 registry。真跑会执行:${C.x}`);
+      if (!really) {
+        log(`  ${C.d}默认只演练,不碰 registry。真要晋级加 --execute:${C.x}`);
         log(`  ${cmd}`);
         log(`  晋级后自测:npm install ${spec} → node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --templates`);
         return 0;
       }
       // 真跑之前先看现在的标签:晋级不该让通道往回退。
-      const live = readDistTags(pkg.name);
+      const live = readTags(pkg.name);
       if (live.ok && live.tags[channel] && compareVersions(version, live.tags[channel]) < 0) {
         bad(`${version} 比当前 ${channel}(${live.tags[channel]})旧 —— 晋级会让通道往回退`);
         return 1;
       }
       try {
-        execFileSync("npm.cmd", ["dist-tag", "add", spec, channel], { encoding: "utf8", shell: true, stdio: "pipe" });
+        exec("npm.cmd", ["dist-tag", "add", spec, channel], { encoding: "utf8", shell: true, stdio: "pipe" });
         ok(`${spec} 已晋级到 ${channel}`);
       } catch (e) { bad("晋级失败:" + String(e.stderr || e.message).split("\n")[0]); return 1; }
-      const after = readDistTags(pkg.name);
+      const after = readTags(pkg.name);
       if (after.ok) {
         const v = tagsVerdict({ next: after.tags.next, latest: after.tags.latest });
         log("  " + v.message);

@@ -39,9 +39,10 @@ discuss → plan → exec → verify    observe / inbox → issue
   没有「该不该退」的判据之前**不接自动回退** —— 那是拿一个不可靠的判断去保护不可逆的动作。
 - **预发布通道**:已填。两条 npm 标签:`next` = 刚发出来的那份(要新功能的人装它),
   `latest` = 给不想读文档的人的默认(必须指向最稳那条,不是最新那条)。
-  `release` 发完自动把新版本钉到 `next`;`mmc promote <版本>` 秒级晋级到 `latest`
-  (不重新构建、不重跑发布链)。**R-19** 盯着 `next` 不得比 `latest` 旧 ——
-  标签靠人维护就会自己腐烂,门禁要当场抓住。
+  `release` 发完自动把新版本钉到 `next`;`mmc promote <版本> --execute` 秒级晋级到 `latest`
+  (不重新构建、不重跑发布链)。**promote 默认只演练** —— 不加 `--execute` 一次 registry 都不碰:
+  改公开的 npm 标签是外部副作用,「批 promote」是人保留的动作,工具不该自己按下扳机(**R-20**)。
+  **R-19** 盯着 `next` 不得比 `latest` 旧 —— 标签靠人维护就会自己腐烂,门禁要当场抓住。
 - **生效确认**:已填。闭环认的是「交付物被消费」,不是「问题消失」——
   所以 **close 不是不可逆终态**:同一个根因又以同一把尺子出现,`observe` 会自动把那条 issue
   拉回未解决(GitHub 侧 `reopen`,本地状态改回 `reopened` 并记下复发日期)。
@@ -106,7 +107,7 @@ npx mm-gsd-core report "<标题>" --evidence "<复现命令或报错>"
 ```bash
 node tools/mmc.mjs sync            # 开发期:仓库 → ~/.agents/skills/
 node tools/mmc.mjs release --patch  # 发布:门禁 → 版本 → 提交/标签 → npm → 钉 next → 推 GitHub → 装回本机
-node tools/mmc.mjs promote 0.4.1    # 晋级:把已发布的版本钉到正式通道 latest(秒级)
+node tools/mmc.mjs promote 0.4.1    # 演练晋级(默认不碰 registry);真晋级加 --execute
 node tools/mmc.mjs doctor          # 看装的是哪一版、有没有漂移
 ```
 
@@ -123,6 +124,8 @@ node tools/mmc.mjs doctor          # 看装的是哪一版、有没有漂移
 
 **发布环上人只保留三个动作**:产品取舍、批 promote、异常升级(循环卡住 / 成本触顶 / 安全事件)。
 其余全部 agent 驱动 —— 每个版本必须能被一句话退掉,所以人的价值在快速否决,不在批准。
+「批 promote」是这三个动作里唯一会**立刻改到公开 registry** 的,所以 promote 默认只演练:
+agent 只能把命令摆出来,按下扳机得是人显式说「晋级」。
 
 ---
 

@@ -395,6 +395,35 @@ const CHECKS = {
   "check-release-tags"(report) {
     return checkTags(report);
   },
+
+  // R-20:改外部发布通道的标签必须显式 --execute —— 默认只演练。
+  // 为什么要有这条:改 npm 的 dist-tag 是外部副作用,「批 promote」是人保留的动作
+  // (03-CONTEXT D-04)。promote 一旦默认就真跑,agent 顺手敲一条命令就把公开标签改了。
+  // 这里不查源码,查行为:注入一个会记账的假 exec,断言默认路径一次 registry 都没碰。
+  async "check-promote-safety"(report) {
+    const { makeReleaseFlow } = await import("./release-flow.mjs");
+    const calls = [];
+    const fakeTags = { ok: true, tags: { latest: "0.0.0", next: "0.0.0" } };
+    const flow = makeReleaseFlow({
+      log: () => {}, ok: () => {}, bad: (m) => report.fail(m), warn: () => {}, head: () => {},
+      C: { d: "", x: "" }, health: async () => 0,
+      exec: (cmd, args) => { calls.push([cmd, ...(args ?? [])]); return ""; },
+      readTags: () => fakeTags,
+    });
+    const dry = await flow.promote(["9.9.9"]);
+    if (dry !== 0) { report.fail(`promote 默认演练返回 ${dry}(应为 0)—— 默认路径坏了`); return false; }
+    if (calls.length) {
+      report.fail(`promote 不带 --execute 竟然真的调了 ${JSON.stringify(calls[0])} —— 默认必须只演练,改公开标签得显式 --execute`);
+      return false;
+    }
+    report.pass("promote 默认只演练,不带 --execute 一次 registry 都没碰");
+    const real = await flow.promote(["9.9.9", "--execute"]);
+    const tagged = calls.find((c) => c[0] === "npm.cmd" && c[1] === "dist-tag" && c[2] === "add");
+    if (!tagged) { report.fail("promote --execute 没有发出 dist-tag add —— 晋级路径断了"); return false; }
+    if (real !== 0) { report.fail(`promote --execute 返回 ${real}(应为 0)`); return false; }
+    report.pass("promote --execute 才会真的改标签(" + tagged.slice(2).join(" ") + ")");
+    return true;
+  },
 };
 const pathBase = (p) => p.split("/").pop();
 
