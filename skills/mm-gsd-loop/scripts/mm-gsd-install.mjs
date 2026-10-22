@@ -42,7 +42,9 @@ const H = (...p) => join(HOME, ...p);
 const MASTER = H(".agents", "skills");
 const SKILLSDIR = dirname(dirname(dirname(fileURLToPath(import.meta.url))));
 const SKILLS = (() => {
-  try { return readdirSync(SKILLSDIR).filter((d) => d.startsWith("mm-gsd-")).sort(); }
+  // `.bak-mmgsd` 是本安装器自己留的旧版备份,名字同样以 mm-gsd- 开头 ——
+  // 只按前缀挑,备份目录会被当成技能:真机实测发过 12 张卡(6 个真技能 + 6 个备份)。
+  try { return readdirSync(SKILLSDIR).filter((d) => d.startsWith("mm-gsd-") && !d.endsWith(".bak-mmgsd")).sort(); }
   catch { return []; }
 })();
 const GUARD_SRC = join(MASTER, "mm-gsd-loop", "hooks", "guard-dangerous-git.mjs");

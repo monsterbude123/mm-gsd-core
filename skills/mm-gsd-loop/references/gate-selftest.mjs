@@ -11,7 +11,7 @@ import { checkDecisions, locateContexts, checkDrift, checkConclusionDrift } from
 import { ticketsCovered } from "./ticket-alive.mjs";
 import { mkAssert, runArtifactCases, runCoverageCases, runLedgerGateCases, runPhaseHealthCases, runRouteCases } from "./selftest-suite.mjs";
 import { researchRequired, researchCompliant } from "./research-gates.mjs";
-import { buildRouteBrief, pointerCard } from "./agent-routing.mjs";
+import { buildRouteBrief, pointerCard, listSkills } from "./agent-routing.mjs";
 import { extractTemplateBlock } from "./template-gates.mjs";
 import { mkdtempSync, writeFileSync, rmSync, utimesSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -38,11 +38,9 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqArr(splitDeps("无依赖"), [], "depends_on: 无依赖 应解析为空依赖");
   eqArr(splitDeps("none"), [], "depends_on: none 应解析为空依赖");
   eqArr(splitDeps("01, 03"), ["01", "03"], "多依赖应拆分");
-  // 验收结论一致性闸:一条证明会红,一条证明不误伤。
-  // 只测「会红」不够 —— 只会红的门禁等于把所有人都判死,没人会当它是对的。
-  // 小节标题逐字抄自 templates/verification.md —— 含那个括号后缀。第一版这里写的是裸标题,
-  // 于是自测永远绿,而真实报告(照模板写)永远不触发这条检查:测试与实现同时偏离了 spec,
-  // 而且互相印证,谁也发现不了。这正是本轮最大的那条教训。
+  // 验收结论一致性闸:一条证明会红,一条证明不误伤 —— 只测「会红」不够,只会红的门禁等于把所有人判死。
+  // 小节标题逐字抄自 templates/verification.md(含那个括号后缀):第一版这里写的是裸标题,于是自测永远绿,
+  // 真实报告(照模板写)永远不触发这条检查 —— 测试与实现同时偏离了 spec,还互相印证,谁也发现不了。
   const HUMAN_H = "## Human Verification Required(机器验不了,恒发不省略)";
   const vt = (status, rows, human, extra = "") => {
     const v = rows.filter((r) => r.startsWith("✓")).length;
@@ -182,6 +180,9 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   const noT = buildRouteBrief({ stage: "plan", skillsRoot: sk2, projectRoot: join(d2, "none"), home: d2, activePhase: null });
   eqN(noT.quick.rules.length, 0, "项目没有台账 → 速查为空,不补写");
   eqN(noT.quick.notes.length, 2, "台账与预算都读不到时,各说一条「没有」");
+  // 真机装卡时抓到的:安装器留的旧版备份目录 mm-gsd-xxx.bak-mmgsd 也以 mm-gsd- 开头,只按前缀挑会发 12 张卡
+  mkdirSync(join(sk2, "mm-gsd-plan.bak-mmgsd"), { recursive: true });
+  eqN(listSkills(sk2).length, 1, "备份目录(.bak-mmgsd)不算技能,否则指针卡会发 12 张");
   rmSync(d2, { recursive: true, force: true });
   // ---- 研究触发(D-03):触发条件必须可数 ----「总是触发」等于给每个 phase 都加一道必过的门(T-13);「agent 觉得不熟悉」恒真即恒红
   eqN(researchRequired({ files: ["a/x.ts"] }).required, false, "单文件 → 不触发研究");

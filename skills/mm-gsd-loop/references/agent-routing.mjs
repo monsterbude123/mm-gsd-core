@@ -45,7 +45,7 @@ export function checkRoutes(skillsRoot) {
   try { entries = readdirSync(skillsRoot, { withFileTypes: true }); } catch {
     return [{ skill: "(skills 目录)", problem: "读不到 skills 目录 —— 这等于没检查", fix: "确认 skills/ 目录在包里(打包清单漏了它)" }];
   }
-  const dirs = entries.filter((d) => d.isDirectory() && d.name.startsWith("mm-gsd-")).map((d) => d.name);
+  const dirs = entries.filter((d) => d.isDirectory() && d.name.startsWith("mm-gsd-") && !d.name.endsWith(".bak-mmgsd")).map((d) => d.name);
   for (const skill of dirs) {
     const f = join(skillsRoot, skill, "SKILL.md");
     if (!existsSync(f)) { problems.push({ skill, problem: "没有 SKILL.md", fix: "补一份 SKILL.md" }); continue; }
@@ -126,7 +126,7 @@ export function gateQuickRef(projectRoot) {
 export function listSkills(skillsRoot) {
   let dirs = [];
   try { dirs = readdirSync(skillsRoot, { withFileTypes: true }); } catch { return []; }
-  return dirs.filter((d) => d.isDirectory() && d.name.startsWith("mm-gsd-")).map((d) => d.name).sort();
+  return dirs.filter((d) => d.isDirectory() && d.name.startsWith("mm-gsd-") && !d.name.endsWith(".bak-mmgsd")).map((d) => d.name).sort();
 }
 
 /**
