@@ -37,11 +37,13 @@ GSD Core 的设计我很喜欢——五步成环、fresh-context 子代理、规
 | 并发 | worktree / orchestrator 能力协商 | `files_modified` + `--phases` 波次校验 |
 | 依赖 | npm 包 + Node | 零依赖（只有一个 node 脚本） |
 
-**没保留的**：多源研究审计（RESEARCH 工件）、上下文工程分档、模型路由与降级、完整 CLI 工具链、ship 归档体系。
+**没保留的**：多源研究审计（研究工件本身留了：跨目录或陌生领域的改动必须先有
+`.planning/<NN>-RESEARCH.md`，且带 `file:line` 引用）、上下文工程分档、模型路由与降级、完整 CLI 工具链。
 这些不是不好，是**在提示词里写它们会让每一步都变慢**，而收益要用很多轮才能兑现。
 
 **保留并强化的**：五步成环、拍板权五类白名单、规划期预授权、任务四件套 + fails_when 契约、
-决策保真 D-NN、缩水禁令、多 worktree 并发契约，以及一条 GSD 没有的**终态门禁**（见下）。
+决策保真 D-NN（核销按 phase 级并集）、缩水禁令、多 worktree 并发契约，
+以及一条 GSD 没有的**终态门禁**（见下）。
 
 ---
 
@@ -57,8 +59,8 @@ npx mm-gsd-core doctor          # 体检宿主环境与已装状态(只读)
 npx mm-gsd-core check --plan    # 直接跑状态检查器
 ```
 
-零依赖，Node ≥ 18，跨 Windows / macOS / Linux。装完 5 个技能就位：
-`mm-gsd-discuss` / `mm-gsd-plan` / `mm-gsd-exec` / `mm-gsd-verify` / `mm-gsd-loop`。
+零依赖，Node ≥ 18，跨 Windows / macOS / Linux。装完 6 个技能就位：
+`mm-gsd-discuss` / `mm-gsd-plan` / `mm-gsd-exec` / `mm-gsd-verify` / `mm-gsd-diagnose` / `mm-gsd-loop`。
 
 **npx 只需要一个 bin** —— 多个 bin 时 npx 会报 `could not determine executable to run`，
 所以本包只暴露 `mm-gsd` 一个入口，检查器通过 `mm-gsd check` 转发。
@@ -99,6 +101,9 @@ discuss ──→ plan ──→ execute ──→ verify ──→ ship
 | **verify** | 独立验证，证据驱动 | `<NN>-VERIFICATION.md` | 假设"任务完成了但目标落空"，逐条推翻 |
 | **ship** | 交付物**被消费** | `<NN-MM>-SHIP.md` | 写 `delivered` 前先核对 PR/合并/发布是真的 |
 
+每个技能还带一条「完成后」小节：跑完这一步，先确认什么、敲哪个 mm-gsd 技能、什么情况下不敲。
+环的完整顺序只有 `mm-gsd-loop` 一处持有，别处不复制那张表——`--routes` 门禁盯着这件事。
+
 **最后一环是本仓库相对 GSD 的一个增量**：GSD 的工件链止于 VERIFICATION，
 验证一通过就等于宣布 phase 完成，而合并/发布/文档同步没有任何工件管它。
 这里 VERIFICATION 通过只推出 `completed`，**只有 SHIP 落盘才推出 `shipped`**。
@@ -107,7 +112,7 @@ discuss ──→ plan ──→ execute ──→ verify ──→ ship
 
 ## 检查器
 
-整个仓库只有一个可执行文件，六个模式。它是"门禁"的实现。
+整个仓库只有一个可执行文件，七种模式。它是"门禁"的实现。
 
 ```bash
 CK=~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs
@@ -117,6 +122,7 @@ node $CK                      # 每步收尾:工件契约 + 状态推导 + 交�
 node $CK --plan               # PLAN 落盘后:四件套/失败方向/文件清单/任务预算
 node $CK --phases             # 规划前:算波次 + 同波次零重叠 + 环依赖
 node $CK --worktrees          # 并行前:跨 worktree 文件与 REQ 冲突
+node $CK --routes             # 技能门禁:每个技能都写清了自己的下一步
 node $CK --stats              # 诊断:读遥测,不用手工记
 ```
 
@@ -131,6 +137,9 @@ node $CK --stats              # 诊断:读遥测,不用手工记
   VERIFICATION 的三值 status、SHIP 的 `status` + `delivered` 证据
 - 交付缺口：验证过了却没有 SHIP → 警告"停在验证没走到交付"
 - 假完成信号：占位文本、`STATE.md` 超 100 行、paused 却没有 HANDOFF
+- **记账完整性**：SUMMARY 声称 `status: complete` 却 `commits: 0` → 判红"说做完了，
+  却拿不出一个 commit"。存量项目的老工件会当场变红，豁免台账 `.planning/artifact-ledger.md`
+  是随包件：记一行指向一个真实存在的 commit，原件不动（原件是审计痕迹）
 
 **`--plan`**
 
@@ -139,7 +148,15 @@ node $CK --stats              # 诊断:读遥测,不用手工记
 - `files_modified` 不许出现模糊措辞（会让并行保护整个失效）
 - `verify` 里不许 `|| true` 之类的"永远为真"写法
 - 任务数 ≤3、单任务文件 ≤5，超了是拆票不是缩内容
-- CONTEXT 里每条 D-NN 必须被至少一个任务引用（决策保真）
+- **决策核销按 phase 算**：本 phase 所有票的 `covers` 并集要覆盖 CONTEXT 的全部决策，
+  少一条指名报错。票只写自己真做的决策（正文里提到 D-NN 不算认领）
+- **反向核销**：票认领的决策已不在 CONTEXT 里 → 报"这张票实现的是已被推翻的决策"，
+  并给出 `stale_note` 批注格式；批注点名的接替票必须真实存在，否则免单不成立
+- **研究有条件必经**：改动跨 3 个顶层目录、碰到 git 历史里没改过的目录、或目标明写
+  "深入了解" → 必须有 `.planning/<NN>-RESEARCH.md`，且带 `file:line` 引用
+  （落在对话里的研究下一轮看不见，等于没做）
+- **过程健康三数**：顺带打印本 phase 的票数 / 受阻票数 / 缺口数（量取自工件，不是遥测）——
+  这是**过程健康**，不是质量分，别拿它当评分卡
 
 **`--phases`**
 
@@ -151,6 +168,13 @@ node $CK --stats              # 诊断:读遥测,不用手工记
 - 跨 worktree 的 `files_modified` 交集 → 冲突
 - REQ 编号只有**共用同一份 `REQUIREMENTS.md`** 时才谈得上冲突；
   否则只是各自局部编号撞车，降级为提示不阻塞
+
+**`--routes`**
+
+- 每个 mm-gsd 技能都要有「完成后」小节——跑完这个技能，人不知道下一步该敲什么
+- 小节点名的 mm-gsd 技能必须真实存在（点错名字当场判红）
+- 每条问题自带改法：缺小节要**补一段**，点错名字要**改名字或把技能补上**——
+  改法与问题对不上，等于没给下一步
 
 ---
 
@@ -184,11 +208,17 @@ mm-gsd-core/
 │   ├── mm-gsd-plan/      SKILL.md + templates/{context,plan}.md
 │   ├── mm-gsd-exec/      SKILL.md + templates/summary.md
 │   ├── mm-gsd-verify/    SKILL.md + templates/verification.md
+│   ├── mm-gsd-diagnose/  SKILL.md + templates/debug-session.md
 │   └── mm-gsd-loop/      SKILL.md
 │                         + scripts/{gsd-state-check,mm-gsd-install}.mjs
 │                         + hooks/{guard-dangerous-git.mjs,pre-commit}
 │                         + templates/{state,ship}.md
-│                         + references/template-gates.mjs   工件契约表(按需加载,不占主脚本)
+│                         + references/*.mjs   各门禁的判定内核(按需加载,不占主脚本)
+│                           decision-gates / ticket-alive   决策核销·可逆性·漂移
+│                           artifact-ledger                 历史工件三态 + 记账门
+│                           research-gates / verification-gates
+│                           skill-routing-gates             「完成后」路由门
+│                           template-gates / selftest-suite 模板契约 + 门禁自测
 └── workflows/
     └── mm-gsd-phase.dwf.ts    ZCode 动态工作流(7 阶段 + 模型路由)
 ```
@@ -317,8 +347,9 @@ npx mm-gsd-core report "<标题>" --evidence "<复现命令或报错>"
 
 写得很直白，因为这个仓库还年轻：
 
-1. **真实项目只跑过一轮**。五个 skill 里 discuss 在真项目上产出过一份 252 行、
-   带行号级代码引用的 CONTEXT（质量已验证）；plan/exec/verify/ship 的真实使用**尚未验证**。
+1. **真实项目只跑过一轮**。六个 skill 里 discuss 在真项目上产出过一份 252 行、
+   带行号级代码引用的 CONTEXT（质量已验证）；plan/exec/verify/ship 的真实使用**尚未在第三方项目验证**
+   ——本仓自己已跑完 3 个 phase（02/05/06）的完整五步环，但那是自举，不等于外部项目的使用。
    检查器在合成夹具上全模式通过，但那不等于在真实循环里能转绿。
 2. **还没接上 GSD 的研究成果沉淀**。原版有 `.learnings/`、intake 扫描、跨 phase 的学习回路，
    这里没有。
