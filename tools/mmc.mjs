@@ -465,14 +465,16 @@ const CMD = {
       log(`\n  ♻ 复发 ${recs.length} 条(关掉之后又以同一把尺子出现):`);
       for (const r of recs) {
         const num = r.issue.github;
-        if (!num) { log(`  ${r.issue.id}: 复发 ${r.count} 次 —— 但它没有 github: 行,拉不回远端,本地标记备查`); }
-        else if (!GH_BIN) { warn(`${r.issue.id}: 复发 ${r.count} 次 —— 没有 gh 命令,拉不回远端`); }
+        // 每条都要说清「因哪类失败被拉回来」—— 只给 issue 编号,人还得自己回去翻是哪类
+        const why = `因「${r.key}」复发 ${r.count} 次`;
+        if (!num) { log(`  ${r.issue.id}: ${why} —— 但它没有 github: 行,拉不回远端,本地标记备查`); }
+        else if (!GH_BIN) { warn(`${r.issue.id}: ${why} —— 没有 gh 命令,拉不回远端`); }
         else {
           try {
             execFileSync(GH_BIN, ["issue", "reopen", String(num), "--comment",
               `同一个根因又出现了(${r.count} 次,最近 ${String(r.lastSeen).slice(0, 10)})。按约定:close 不是终态,复发即拉回。\n\n---\n本条由 \`mmc observe\` 检测到复发 → 自动 reopen。对应本地 ${r.issue.id}。`],
               { encoding: "utf8", stdio: "pipe" });
-            ok(`GitHub #${num} 已拉回未解决(对应 ${r.issue.id},复发 ${r.count} 次)`);
+            ok(`GitHub #${num} 已拉回未解决(对应 ${r.issue.id},${why})`);
           } catch (e) { bad(`拉回 #${num} 失败:` + String(e.stderr || e.message).split("\n")[0]); }
         }
         // 本地状态也改回来 —— 两边状态不同步是常态,但本地不能还写着 closed
