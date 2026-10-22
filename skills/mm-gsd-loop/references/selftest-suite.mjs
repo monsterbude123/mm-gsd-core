@@ -2,10 +2,8 @@
 //
 // 为什么改名:它原本叫 selftest-helpers.mjs,只装断言工具(mkAssert);现在它同时装着用例组 —— 文件名要跟内容对上,文件名骗人比文件超限更难查。
 //
-// 为什么用例要从 gate-selftest.mjs 里搬出来:那个文件现 200/200 顶着 references/ 的上限,
-// 而门禁自测的用例只会继续长 —— 每加一条契约就要加用例。
-// 断言只有一份实现(mkAssert),用例可以分文件;抄一份断言就是抄一份会走偏的判据,
-// 而「判据走偏」正是自测存在的理由。
+// 为什么用例要从 gate-selftest.mjs 里搬出来:那个文件现 200/200 顶着 references/ 的上限,而用例只会继续长。
+// 断言只有一份实现(mkAssert),用例可以分文件;抄一份断言就是抄一份会走偏的判据 —— 而「判据走偏」正是自测存在的理由。
 //
 // 三种断言:eq(正则)、eqN(单值)、eqArr(数组)。全部把失败计入 st.bad。
 
@@ -126,14 +124,13 @@ export function runRouteCases({ eqN }) {
   const dir = mkdtempSync(join(tmpdir(), "mm-gsd-routes-"));
   const sk = join(dir, "skills");
   const mk = (n, b) => { mkdirSync(join(sk, n), { recursive: true }); writeFileSync(join(sk, n, "SKILL.md"), b); };
-  mk("mm-gsd-a", "# A\n\n## 完成后\n\n- 下一步:调用 `mm-gsd-b`\n");
-  mk("mm-gsd-b", "# B\n\n## 完成后\n\n- 下一步:调用 `mm-gsd-a`\n");
-  mk("mm-gsd-c", "# C\n\n## 干活\n\n- 没什么可说的\n");
-  mk("mm-gsd-d", "# D\n\n## 完成后\n\n- 下一步:调用 `mm-gsd-zzz`\n");
+  for (const [n, b] of [["mm-gsd-a", "# A\n\n## 完成后\n\n- 下一步:调用 `mm-gsd-b`\n"], ["mm-gsd-b", "# B\n\n## 完成后\n\n- 下一步:调用 `mm-gsd-a`\n"],
+    ["mm-gsd-c", "# C\n\n## 干活\n\n- 没什么可说的\n"], ["mm-gsd-d", "# D\n\n## 完成后\n\n- 下一步:调用 `mm-gsd-zzz`\n"]]) mk(n, b);
   const ps = checkRoutes(sk);
   eqN(ps.length, 2, "缺「完成后」小节与点名不存在的技能,各报一条");
   eqN(ps.some((p) => p.skill === "mm-gsd-c"), true, "缺小节要指名是哪个技能");
   eqN(ps.some((p) => p.problem.includes("mm-gsd-zzz")), true, "点名不存在的技能要打出那个名字");
+  eqN(ps.every((p) => p.fix && p.fix.length > 8), true, "每条问题都要带改法(三种问题要改的东西不一样)");
   eqN(ps.some((p) => p.skill === "mm-gsd-a"), false, "齐全的技能不该被报");
   eqN(routeSection("## 完成后\n- x\n\n## 别的\n- mm-gsd-zzz\n").includes("mm-gsd-zzz"), false, "「完成后」只到下一个标题为止");
   rmSync(dir, { recursive: true, force: true });

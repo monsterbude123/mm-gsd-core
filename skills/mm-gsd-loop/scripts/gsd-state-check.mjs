@@ -459,10 +459,10 @@ if (process.argv.includes("--routes")) {
   const { checkRoutes } = await import("../references/skill-routing-gates.mjs");
   const problems = checkRoutes(join(SKILL_DIR, ".."));
   console.log("\n=== mm-gsd 技能路由门禁 ===");
-  for (const p of problems) console.log(`  ✗ ${p.skill}: ${p.problem}`);
+  for (const p of problems) console.log(`  ✗ ${p.skill}: ${p.problem}\n      → ${p.fix}`);
   if (problems.length) {
-    console.log("  " + problems.length + " 处没写清下一步 —— 补一段「## 完成后」,写明做完这一步调哪个 mm-gsd 技能。");
-    die(problems.length + " 个技能的「完成后」没写清", "每条上面都写了缺什么,补完重跑即可。");
+    console.log("  " + problems.length + " 处没写清下一步 —— 每条上面都写了怎么改,改完重跑即可。");
+    die(new Set(problems.map((p) => p.skill)).size + " 个技能的「完成后」没写清", "每条上面都写了缺什么和怎么改,补完重跑即可。");
   }
   console.log("  ✓ 每个技能都说清了自己的下一步");
   process.exit(0);

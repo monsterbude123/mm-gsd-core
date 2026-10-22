@@ -39,30 +39,38 @@ export function namedSkills(section) {
 /**
  * 路由门禁本体:遍历 skills/ 下每个 mm-gsd-* 技能,查两件事。
  *
+ * 每条问题自带改法(fix)。三种问题要改的东西不一样:缺小节要**补一段**,
+ * 点名不存在要**改名字或补技能** —— 早先只有一句统一的「补一段「## 完成后」」,
+ * 碰上后一种问题时,照做的人会补出第二段重复的小节(2026-10-22 复核发现)。
+ *
  * @param skillsRoot skills/ 目录
- * @returns [{skill, problem}] —— 空数组 = 全绿
+ * @returns [{skill, problem, fix}] —— 空数组 = 全绿
  */
 export function checkRoutes(skillsRoot) {
   const problems = [];
   let entries = [];
   try { entries = readdirSync(skillsRoot, { withFileTypes: true }); } catch {
-    return [{ skill: "(skills 目录)", problem: "读不到 skills 目录 —— 这等于没检查" }];
+    return [{ skill: "(skills 目录)", problem: "读不到 skills 目录 —— 这等于没检查", fix: "确认 skills/ 目录在包里(打包清单漏了它)" }];
   }
   const dirs = entries.filter((d) => d.isDirectory() && d.name.startsWith("mm-gsd-")).map((d) => d.name);
   for (const skill of dirs) {
     const f = join(skillsRoot, skill, "SKILL.md");
-    if (!existsSync(f)) { problems.push({ skill, problem: "没有 SKILL.md" }); continue; }
+    if (!existsSync(f)) { problems.push({ skill, problem: "没有 SKILL.md", fix: "补一份 SKILL.md" }); continue; }
     const section = routeSection(readFileSync(f, "utf8"));
     if (section === null) {
-      problems.push({ skill, problem: "没有「完成后」小节 —— 跑完这个技能,人不知道下一步该敲什么" });
+      problems.push({ skill, problem: "没有「完成后」小节 —— 跑完这个技能,人不知道下一步该敲什么",
+        fix: "补一段「## 完成后」,写明做完这一步调哪个 mm-gsd 技能" });
       continue;
     }
     const named = namedSkills(section);
     if (!named.length) {
-      problems.push({ skill, problem: "「完成后」小节没点名任何 mm-gsd 技能 —— 只写「继续」等于没写" });
+      problems.push({ skill, problem: "「完成后」小节没点名任何 mm-gsd 技能 —— 只写「继续」等于没写",
+        fix: "在小节里点名下一个 mm-gsd 技能(如「下一步:调用 `mm-gsd-exec`」)" });
       continue;
     }
-    for (const n of named) if (!dirs.includes(n)) problems.push({ skill, problem: `「完成后」点名了不存在的技能 ${n}` });
+    for (const n of named) if (!dirs.includes(n))
+      problems.push({ skill, problem: `「完成后」点名了不存在的技能 ${n}`,
+        fix: `把 ${n} 改成真实存在的 mm-gsd 技能;或把那个技能补上` });
   }
   return problems;
 }
