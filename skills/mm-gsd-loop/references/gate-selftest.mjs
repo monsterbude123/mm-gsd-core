@@ -168,12 +168,13 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   writeFileSync(join(d2, ".agents", "rules", "ledger.json"), JSON.stringify({ rules: [{ id: "R-01", status: "active", statement: "进 main 的改变必须能追溯到 issue" }, { id: "R-02", status: "candidate", statement: "还没生效" }] }));
   writeFileSync(join(d2, "budget.json"), JSON.stringify({ fileCaps: [{ pattern: "skills/**/*.mjs", max: 700 }] }));
   const sk2 = join(d2, "skills"); mkdirSync(join(sk2, "mm-gsd-plan"), { recursive: true });
-  writeFileSync(join(sk2, "mm-gsd-plan", "SKILL.md"), "# plan\n");
+  writeFileSync(join(sk2, "mm-gsd-plan", "SKILL.md"), "---\ndescription: \"探针用规划技能的简介\"\n---\n# plan\n");
   const br = buildRouteBrief({ stage: "plan", skillsRoot: sk2, projectRoot: d2, home: d2, activePhase: null });
   eqN(br.quick.rules.length, 1, "速查只列 active 规则,条数与台账一致");
   eqN(br.quick.rules[0].text.includes("追溯到 issue"), true, "速查的规则文本来自台账,不是手写");
   eqN(br.quick.caps.length, 1, "单文件上限从 budget.json 读出");
   const card = pointerCard({ skill: "mm-gsd-plan", skillPath: join(sk2, "mm-gsd-plan", "SKILL.md"), routeCmd: "node x" });
+  eqN(card.includes("探针用规划技能的简介"), true, "卡片的 description 现读自该技能 SKILL.md —— 派发器靠它决定派不派");
   eqN(card.includes("追溯到 issue"), false, "指针卡里不许有规则原文(那是第二真相源)");
   // 上一条只盯着**这一句**:塞进别的规则照样放行 —— 守的应是「不重复任何规则」这个不变式
   eqN(/\bR-\d\d\b/.test(card) || JSON.parse(readFileSync(join(d2, ".agents", "rules", "ledger.json"), "utf8")).rules.some((r) => card.includes(r.statement)), false, "指针卡里不许出现台账里任何一条规则的原文或编号");

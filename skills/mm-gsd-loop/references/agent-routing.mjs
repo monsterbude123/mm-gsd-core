@@ -2,11 +2,9 @@
 //
 // 一个文件放两件事:两者都是「下一步该干什么」的判定,拆开会变成两份会分叉的真相。
 // 原来叫 skill-routing-gates.mjs(只有门禁)—— phase 04 加进宿主路由提示后「gates」不再准确。
-// 两条纪律贯穿本文件:
-//   1. **不手写技能清单**:技能从 skills/ 目录派生(同 phase 06 的路由门禁)。
-//      写死一份数组,加技能时就会漏 —— 而漏了没人知道。
-//   2. **不手写门禁速查**:速查从当前项目的 ledger.json 与 budget.json 读出。
-//      手写版本必然与台账分叉,而分叉后没人会发现(D-03)。读不到就说读不到。
+// 两条纪律贯穿本文件:**不手写技能清单**(技能从 skills/ 目录派生,写死必漏且没人知道)、
+// **不手写门禁速查**(速查从当前项目的 ledger.json 与 budget.json 读出,手写必与台账分叉且没人会发现 ——
+// D-03;读不到就说读不到)。
 // 这里只出**数据**(该读什么、速查是什么、卡里写什么);排版在检查器那一侧。
 
 import { readdirSync, readFileSync, existsSync } from "node:fs";
@@ -174,12 +172,15 @@ export function buildRouteBrief({ stage, skillsRoot, projectRoot, home, activePh
 /**
  * 造一张指针卡:只写「读哪个文件」「边界是什么」「速查怎么拿」,不写任何规则原文 ——
  * 卡里出现规则原文 = 第二真相源(本 phase 要消灭的正是那个东西)。规则在 SKILL.md 里。
+ * description 从该技能 SKILL.md 现读 —— 派发器挑卡看的就是这一行,
+ * 写成「这是张指针卡」的自指描述,主会话不知道什么时候该派它(2026-10-23 实测教训)。
  */
 export function pointerCard({ skill, skillPath, routeCmd }) {
   const stage = skill.replace("mm-gsd-", "");
+  const desc = readFileSync(skillPath, "utf8").match(/^description:\s*"([^"]*)"/m)?.[1] ?? `mm-gsd 的 ${stage} 阶段`;
   return `---
 name: "${skill}"
-description: "mm-gsd 的 ${stage} 阶段 —— 指针卡:角色定义在 SKILL.md 里,这里不重复"
+description: "mm-gsd 的 ${stage} 子代理:${desc}"
 ---
 
 ## 你的任务
