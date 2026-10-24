@@ -66,6 +66,42 @@ export async function unregisteredModules(refDir, registered) {
 }
 
 /**
+ * 门禁**活着吗** —— 每个门禁都得有失败路径。
+ *
+ * 挖出来的洞(2026-10-23,phase 07):把任意门禁的体换成 `return true;`,
+ * `mmc health` 照常全绿 —— 门禁被静默掏空了,而 R-16 那条
+ * 「每个门禁都登记了会红用例」只查**登记**,不查**实现还有没有红的能力**。
+ * 自测也抓不到:自测直接调 references 里的函数,不经 mmc 的接线。
+ *
+ * 判据(结构事实,可机判):门禁的实现里必须出现「会判红」的痕迹 ——
+ * `report.fail`、`return false`,或调用一个会判红的下游(委托型门禁)。
+ * 掏空后的体里三样都没有,当场判红。
+ *
+ * 为什么用结构判据而不是真跑一遍:真跑一遍要造每条门禁的违规输入,
+ * 那是 gate-cases.json 登记的内容(人写的散文),不是可执行的东西。
+ * 结构判据抓的是「整个体被掏空」这一族 —— 实测能抓住记账门与研究消费门两个实例。
+ *
+ * @param src       mmc.mjs 的源码
+ * @param checkNames CHECKS 里的门禁名
+ * @returns 没有失败路径的门禁名数组;空数组表示全都活着
+ */
+export function deadGates(src, checkNames) {
+  const dead = [];
+  for (const name of checkNames) {
+    const at = src.indexOf(`"${name}"(report)`);
+    if (at < 0) { dead.push(name); continue; }              // 找不到体 → 当死
+    // 体到下一个顶层 "check- 为止
+    const end = src.indexOf('\n  },', at);
+    const body = src.slice(at, end < 0 ? at + 4000 : end);
+    // 三种「会红」的痕迹:直接判红 / 返回 false / 委托给会判红的下游
+    const alive = /report\.fail/.test(body) || /return false/.test(body)
+      || /\b(check|run|validate)[A-Z]\w*\(/.test(body);
+    if (!alive) dead.push(name);
+  }
+  return dead;
+}
+
+/**
  * 基线与台账必须**双向**一致。
  *
  * 单向(`基线 ⊆ 台账`)能把「删台账」堵住,但把洞挪到了基线那一层(G-02):

@@ -168,6 +168,15 @@
       "check": "check-channel-safety",
       "_note": "phase 03 验证时用隔离环境(假 npm registry)抓到:promote 的实现是「带 --dry-run 才演练」,于是默认路径直接改公开的 npm 标签。这与三处承诺冲突 —— 03-01-PLAN 的 Auto Decisions(「promote 默认带 --dry-run 语义」)、release-flow.mjs 自己的注释、03-CONTEXT D-04(「批 promote」是人保留的动作)。人保留的动作如果工具默认就按下扳机,那条保留就是假的。判据是行为不是源码:注入会记账的假 exec,断言默认路径一次 registry 都没碰,带 --execute 才发出 dist-tag add。2026-10-22 真发 0.4.1 时又抓到同一族的另一半:npm publish 默认落 latest,于是「发个版」把正式通道一起带走了(latest 0.4.0 → 0.4.1),而 03-CONTEXT D-01 写明 latest 必须指向最稳那条、release 只该落 next。判据是命令本身(publishArgs 必须带 --tag next),不是某句文案 —— 当时收尾文案还写着「latest 未动」,代码在照做、文案在撒谎。",
       "_候选顾虑回应": "不替代 R-19:R-19 管「通道有没有在腐烂」(标签新旧),本条管「谁有权按下改标签的扳机」;不替代 R-11:R-11 管包里该有的文件,本条管发布动作的副作用。"
+    },
+    {
+      "id": "R-21",
+      "status": "active",
+      "since": "0.4.5",
+      "statement": "执行端只照施工图施工:已调研的结论不重查,审批与验收不归执行端 —— 执行端只判「我落的与图纸对不对得上」。",
+      "check": "check-research-consumed",
+      "_note": "2026-10-23 用户反馈:「mm-gsd 的 exec 很慢的原因是它不相信 plan 给的内容,它要自己再去从零开始走一遍理解路径,还有 research 导致大量时间实在重复的理解」。审计定位到三处可判事实:① `RESEARCH` 一词在 mm-gsd-exec/SKILL.md 里出现 0 次 —— 研究产物落盘了却没有任何角色被要求读它,执行端不知道「哪些结论已经查过」,只能自己重查一遍;② exec 的判疑标准写着「技术细节拿不准就去查项目事实(代码/文档/既有模式)」,在执行期等于再做一次研究;③ 同一批真理来源文件被 plan/research 读一遍、exec 又通读一遍。对照原版 GSD:它**也没有**一条「执行者不得重新理解」的明文纪律 —— 忠实性靠架构涌现(计划即 prompt、planner 预抽 interfaces、executor 无 Agent 工具、checker 只读);但它有一条 mm-gsd 没有的 `<interfaces>` 条款:「do NOT re-read the source files to discover types. The planner already extracted what you need.」—— 施工图要有料。本条判的是**可机判的另一半**:phase 有研究产物 + 活票没引用它 = 没人读它 = 执行端会重查一遍。只对活票判(存量工件恒红就是墙,T-13)。",
+      "_候选顾虑回应": "不替代 R-15/R-16(那两条管自测与门禁登记);不替代 R-02(那条管「规则要挂门禁」,本条是挂在门禁上的具体纪律);不替代 R-09(那条管「门禁要先证明自己会红」,本条提供会红用例的判据)。它与 R-16 不重叠:R-16 判「每个门禁都登记了会红用例」,本条判「研究产物有没有被下游消费」。"
     }
   ],
   "candidates": [

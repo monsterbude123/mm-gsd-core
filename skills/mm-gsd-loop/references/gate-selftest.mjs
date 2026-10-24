@@ -3,14 +3,14 @@
 // 为什么单独放:自测是"门禁对自己的检查",不是"对项目的检查";混在一起行数很快顶破 700 上限。
 // 跟 template-gates.mjs 一个套路:按需 import,主文件不胖。
 //
-// 为什么必须有:GitHub #6/#7/#8 三条都是"门禁看起来在跑、实际判错"(VAGUE_FILE 的 N\/A 无左右断言 / depends_on 只认半角括号 /
-// derived 只判 SHIP 文件存在不读 status)——三条都不是崩溃,是安静地给错答案,而"会红"只能靠这些用例证明。
+// 为什么必须有:GitHub #6/#7/#8 三条都是"门禁看起来在跑、实际判错"(VAGUE_FILE 的 N\/A 无左右断言 /
+// depends_on 只认半角括号 / derived 只判 SHIP 文件存在不读 status)——不是崩溃,是安静地给错答案,而"会红"只能靠用例证明。
 
 import { validateVerification } from "./verification-gates.mjs";
 import { checkDecisions, locateContexts, checkDrift, checkConclusionDrift } from "./decision-gates.mjs";
 import { ticketsCovered } from "./ticket-alive.mjs";
 import { mkAssert, runArtifactCases, runCoverageCases, runLedgerGateCases, runPhaseHealthCases, runRouteCases } from "./selftest-suite.mjs";
-import { researchRequired, researchCompliant } from "./research-gates.mjs";
+import { researchRequired, researchCompliant, checkResearchConsumed } from "./research-gates.mjs";
 import { buildRouteBrief, pointerCard, listSkills } from "./agent-routing.mjs";
 import { extractTemplateBlock } from "./template-gates.mjs";
 import { mkdtempSync, writeFileSync, rmSync, utimesSync, mkdirSync, readFileSync } from "node:fs";
@@ -39,8 +39,7 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqArr(splitDeps("none"), [], "depends_on: none 应解析为空依赖");
   eqArr(splitDeps("01, 03"), ["01", "03"], "多依赖应拆分");
   // 验收结论一致性闸:一条证明会红,一条证明不误伤 —— 只测「会红」不够,只会红的门禁等于把所有人判死。
-  // 小节标题逐字抄自 templates/verification.md(含那个括号后缀):第一版这里写的是裸标题,于是自测永远绿,
-  // 真实报告(照模板写)永远不触发这条检查 —— 测试与实现同时偏离了 spec,还互相印证,谁也发现不了。
+  // 小节标题逐字抄自 templates/verification.md(含括号后缀):第一版写的是裸标题,自测永远绿而真实报告永远不触发这条检查。
   const HUMAN_H = "## Human Verification Required(机器验不了,恒发不省略)";
   const vt = (status, rows, human, extra = "") => {
     const v = rows.filter((r) => r.startsWith("✓")).length;
@@ -53,17 +52,14 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(vt("passed", ["✓ VERIFIED", "✓ VERIFIED"], "None"), 0, "全 VERIFIED + 无人工项不应误伤");
   // 下面四条用「闸作者模板之外」的输入(2026-10-20 教训):第一版自测的 fixture 是我自己
   // 照模板写的,于是模板与闸互不兼容这件事永远暴露不出来 —— 两者会一起错,谁也发现不了。
-  // 标题逐字取自 templates/verification.md,符号取自评审给的绕过输入。
   eqN(vt("passed", ["✓ VERIFIED", "❌ FAILED"], "None"), 1, "emoji ❌ FAILED 也该判红(第一版整行丢弃)");
   eqN(vt("passed", ["✓ VERIFIED", "FAILED"], "None"), 1, "裸 FAILED 也该判红");
   eqN(vt("passed", ["✓ VERIFIED", "✓ VERIFIED"], "- [ ] 视觉:导出按钮 hover 态 —— 期望:按钮变蓝"), 1, "模板实际的括号后缀标题要能触发人工项检查");
   // Artifacts 表第 3 格是 exists/substantive,内容是 ✓ 或「212 行」—— 不该被当成判定行
   eqN(vt("passed", ["✓ VERIFIED", "✓ VERIFIED"], "None", "| Artifact | exists | substantive | wired |\n|---|---|---|---|\n| src/a.ts | ✓ | ✓ 212 行 | ✓ |"), 0, "Artifacts 表不该被误判成判定行");
-  // 人工项清单不能把**粗体段落**当条目 —— 否则任何以 `**结论**` 收尾的 passed 报告
-  // 都会被误判成「有人工项」,被迫降级 human_needed(实测:本 phase 的验收报告就撞上了)
+  // 人工项清单不能把**粗体段落**当条目 —— 否则以 `**结论**` 收尾的 passed 报告会被误判成「有人工项」
   eqN(vt("passed", ["✓ VERIFIED", "✓ VERIFIED"], "None —— 全部由程序验证\n**结论**: 没有人工项"), 0, "粗体结论段落不算人工项");
-  // decision-gates 的可逆性契约此前零自测覆盖 —— 改坏了没有任何东西能发现
-  // coveredIds 是本 phase 全部票的 covers 并集(D-03 的核销输入),不是单张票的
+  // decision-gates 的可逆性契约此前零自测覆盖。coveredIds 是本 phase 全部票的 covers 并集
   const dc = (md, refs) => { const errs = []; checkDecisions({ name: "t", ctxText: md, coveredIds: refs, e: (a) => errs.push(a) }); return errs.length; };
   eqN(dc("<decisions>\n### [D-01] 用 JWT,不用 session\n</decisions>", ["D-01"]), 1, "决策没标可逆性该判红");
   eqN(dc("<decisions>\n### [D-01] one-way — 改成新架构\n</decisions>", ["D-01"]), 1, "one-way 没举证该判红");
@@ -125,9 +121,8 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(dr(), 0, "工件不早于 CONTEXT 不该判红");
   set(ctxF, 3);
   eqN(dr(), 0, "mtime 相等不算漂移(同一次写入)");
-  // 结论件漂移(D-04 要求四类工件)。这条用例存在的直接原因:
-  // checkConclusionDrift 里少 import 了 readFileSync,health 全绿而该分支从未被执行 ——
-  // 「主流程不经过的分支不会被 R-04 的语法检查抓到」。没有用例就还会再漏一次。
+  // 结论件漂移(D-04 要求四类工件)。这条用例存在的直接原因:checkConclusionDrift 里少 import
+  // 了 readFileSync,health 全绿而该分支从未被执行 —— 主流程不经过的分支,语法检查抓不到。
   const cF = join(dDir, "02-VERIFICATION.md"), cS = join(dDir, "02-SHIP.md"), cC = join(dDir, "02-CONTEXT.md");
   writeFileSync(cF, '---\nstatus: passed\n---\n'); writeFileSync(cS, '---\nstatus: shipped\n---\n'); writeFileSync(cC, "y");
   // 时间戳要拉得开:Windows 上 NTFS 的 mtime 精度较粗,相差几百毫秒会被量化到同一档,
@@ -157,8 +152,8 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   runLedgerGateCases({ eqN });
   runPhaseHealthCases({ eqN });
   runRouteCases({ eqN });
-  // 模板块必须认 CRLF:Git for Windows 的**系统级** core.autocrlf=true(在安装目录的 etc/gitconfig,不在仓库里)
-  // 让 Windows 的新克隆全是 CRLF —— 只认 \n 的正则会让六份模板在每个 Windows 用户机器上一起假红。
+  // 模板块必须认 CRLF:Git for Windows 的系统级 core.autocrlf=true(不在仓库里)让新克隆全是 CRLF
+  // —— 只认 \n 的正则会让六份模板在每个 Windows 用户机器上一起假红。
   eqN(extractTemplateBlock("```markdown\r\nx\r\n```") !== null, true, "CRLF 模板也抽得出 ```markdown 块");
   eqN(extractTemplateBlock("```markdown\nx\n```") !== null, true, "LF 模板照抽");
   eqN(extractTemplateBlock("没有代码块") !== null, false, "没有块就老实说没有");
@@ -183,9 +178,8 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(noT.quick.notes.length, 2, "台账与预算都读不到时,各说一条「没有」");
   // 真机装卡时抓到的:安装器留的旧版备份目录 mm-gsd-xxx.bak-mmgsd 也以 mm-gsd- 开头,只按前缀挑会发 12 张卡
   mkdirSync(join(sk2, "mm-gsd-plan.bak-mmgsd"), { recursive: true });
-  eqN(listSkills(sk2).length, 1, "备份目录(.bak-mmgsd)不算技能,否则指针卡会发 12 张");
-  rmSync(d2, { recursive: true, force: true });
-  // ---- 研究触发(D-03):触发条件必须可数 ----「总是触发」等于给每个 phase 都加一道必过的门(T-13);「agent 觉得不熟悉」恒真即恒红
+  eqN(listSkills(sk2).length, 1, "备份目录(.bak-mmgsd)不算技能,否则指针卡会发 12 张"); rmSync(d2, { recursive: true, force: true });
+  // ---- 研究触发(D-03):触发条件必须可数 ——「总是触发」等于给每个 phase 加一道必过的门(T-13) ----
   eqN(researchRequired({ files: ["a/x.ts"] }).required, false, "单文件 → 不触发研究");
   eqN(researchRequired({ files: ["a/x.ts", "b/y.ts", "c/z.ts"] }).required, true, "跨 3 个顶层目录 → 触发研究");
   eqN(researchRequired({ files: ["a/x.ts"], unseenDirs: ["a"] }).required, true, "git 历史里没有的目录 → 触发研究");
@@ -195,6 +189,12 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(researchCompliant("读了很多文件,收获很大").ok, false, "空洞研究不算合规(读了很多文件不能自证读对了)");
   eqN(researchCompliant("见 src/gate-evidence.cts:6 的三态定义").ok, true, "带 file:line 引用的研究算合规");
   eqN(researchCompliant("详见 https://example.com:8080/x").ok, false, "URL 里的端口号不算引用");
+  // ---- 研究消费门(phase 07 D-02):研究落盘了没人读 = 执行端会自己重查一遍 ----
+  const d3 = mkdtempSync(join(tmpdir(), "mm-gsd-rcons-"));
+  mkdirSync(join(d3, ".planning"), { recursive: true }); writeFileSync(join(d3, ".planning", "08-RESEARCH.md"), "见 src/a.cts:3 的结论\n");
+  const rc = (txt) => { const errs = []; checkResearchConsumed({ name: "08-01-PLAN.md", phase: "08", root: d3, text: txt, e: (m) => errs.push(m), w: () => {} }); return errs; };
+  eqN(rc("read_first: src/a.mjs").length, 1, "有研究产物 + 票没引用它 → 判红(研究落盘了没人读)");
+  eqN(rc("read_first: .planning/08-RESEARCH.md, src/a.mjs").length, 0, "票里点名了研究产物 → 转绿"); rmSync(d3, { recursive: true, force: true });
   console.log(st.bad ? `\n${st.bad} 项自测不过 —— 门禁本身是坏的,先修门禁` : "\n✓ 门禁自测全过");
   return st.bad;
 }

@@ -15,7 +15,7 @@ import { join, dirname, relative, resolve, sep } from "node:path";
 import { execFileSync } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
 import { missingRules, BASELINE_RULES } from "./rule-baseline.mjs";
-import { registryGaps, unregisteredModules, baselineDrift } from "./module-registry.mjs";
+import { registryGaps, unregisteredModules, baselineDrift, deadGates } from "./module-registry.mjs";
 import { fatAdvice, collectFiles, countLines, collectScripts } from "./budget.mjs";
 import { fileURLToPath } from "node:url";
 import { makeInboxClose, clusterKey, readLocalIssues, findRecurrences, recurrenceRate } from "./gh-issues.mjs";
@@ -334,7 +334,12 @@ const CHECKS = {
     // 这条核对让「新模块忘了登记」变成可判的,而不是靠人记得。实现见 module-registry.mjs。
     const unreg = await unregisteredModules(R("skills", "mm-gsd-loop", "references"), Object.keys(reg._modules ?? {}));
     for (const f of unreg) { report.fail(`${f} 是门禁模块但没在 gate-cases.json 的 _modules 登记 —— 改坏了没人知道`); pass = false; }
-    if (pass) report.pass(`${Object.keys(CHECKS).length} 个门禁全部登记了会红用例、被 active 规则驱动,模块区与实现一致`);
+    // 门禁**活着吗**:登记了不代表还能判红。把体掏空成 `return true` 的门禁,登记照样在、health 照样绿
+    // (phase 07 挖出来的洞:记账门与研究消费门都试过)。判据是结构事实 —— 体里得有失败路径。
+    for (const d of deadGates(readFileSync(R("tools", "mmc.mjs"), "utf8"), Object.keys(CHECKS))) {
+      report.fail(`门禁 ${d} 的实现里没有失败路径(既不 report.fail 也不 return false 也不委托)—— 整个体被掏空了,这条门禁现在永远绿`); pass = false;
+    }
+    if (pass) report.pass(`${Object.keys(CHECKS).length} 个门禁全部登记了会红用例、被 active 规则驱动,且都还活着(有失败路径)`);
     return pass;
   },
 
@@ -393,6 +398,14 @@ const CHECKS = {
   // R-19:预发布通道时效 —— next 不得比 latest 旧(通道腐烂的唯一方式)
   "check-release-tags"(report) {
     return checkTags(report);
+  },
+
+  // R-21:执行端只照施工图施工 —— 研究落盘了没人读 = 执行端会自己重查一遍。
+  // 判据是工件事实不是散文:phase 有 *-RESEARCH.md + 活票没引用它 → 判红。
+  // 实现放在 references/(mmc 只剩十几行头寸),这里只接线。
+  async "check-research-consumed"(report) {
+    const { checkResearchConsumedAll } = await import("../skills/mm-gsd-loop/references/research-gates.mjs");
+    return checkResearchConsumedAll({ root: ROOT, report });
   },
 
   // R-20:改外部发布通道必须显式 —— promote 默认只演练;发版只落 next,latest 只能由 promote 显式动。

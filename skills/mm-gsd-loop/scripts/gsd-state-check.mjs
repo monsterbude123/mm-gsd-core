@@ -260,7 +260,10 @@ if (process.argv.includes("--plan")) {
       name, planPath: path, ctxs, root,
       readFile: (p) => readFileSync(p, "utf8"), check: dg, e, w,
     });
-    rg.checkResearch({ name, goal: fm.goal ?? "", files: parsed.files, phase: unquote(String(fm.phase ?? name.slice(0, 2))), root, planDir: dirname(path), e, w });
+    const phaseNo = unquote(String(fm.phase ?? name.slice(0, 2)));
+    rg.checkResearch({ name, goal: fm.goal ?? "", files: parsed.files, phase: phaseNo, root, planDir: dirname(path), e, w });
+    // 研究消费门(phase 07 D-02):研究落盘了却没有票引用它 = 没人读 = 执行端重查一遍
+    rg.checkResearchConsumed({ name, phase: phaseNo, root, planDir: dirname(path), text: txt, e, w });
   }
 
   console.log("\n=== mm-gsd 计划门禁(" + targets.length + " 份) ===");
