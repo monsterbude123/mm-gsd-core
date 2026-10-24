@@ -175,7 +175,11 @@ export function makeReleaseFlow({ log, ok, bad, warn, head, C, health, exec = ex
           log("      已提交改动");
         } catch (e) { bad("提交失败:" + String(e.stderr || e.message).split("\n")[0]); return 1; }
       } else log("      工作区干净");
-      try { execFileSync("git", ["tag", "-f", "v" + version], { cwd: ROOT, stdio: "pipe" }); log("      已打标签 v" + version); }
+      // 标签要打**附注标签**(annotated):`git push --follow-tags` 只推附注标签,
+      // 轻量标签留在本地 —— 远端从 v0.2.0 起就没有任何版本标签,发版末尾给的
+      // GitHub release 链接全是 404(实测:本地 v0.4.0…v0.4.3,远端只有
+      // v0.1.0/v0.1.1/v0.2.0)。附注标签顺带带上发版说明。
+      try { execFileSync("git", ["tag", "-a", "-f", "-m", "release v" + version, "v" + version], { cwd: ROOT, stdio: "pipe" }); log("      已打标签 v" + version); }
       catch { log("      标签 v" + version + " 已存在"); }
 
       // 4) 发 npm —— 只落 next。latest 是给不想读文档的人的默认,发版不许带走它。
@@ -207,6 +211,16 @@ export function makeReleaseFlow({ log, ok, bad, warn, head, C, health, exec = ex
         execFileSync("git", ["push", "origin", "main", "--follow-tags"], { cwd: ROOT, stdio: "pipe" });
         ok("已推送 main 与标签");
       } catch (e) { bad("git push 失败:" + String(e.stderr || e.message).split("\n")[0]); return 1; }
+      // 标签**真的**到远端了吗 —— push 返回 0 不代表标签在远端:`--follow-tags` 只推附注标签,
+      // 轻量标签会被静默留在本地。实测:远端从 v0.2.0 起一个版本标签都没有,
+      // 每次发版末尾给的 GitHub release 链接全是 404,而发版当时报的是「已推送」。
+      try {
+        const remoteTags = execFileSync("git", ["ls-remote", "--tags", "origin"], { cwd: ROOT, encoding: "utf8", stdio: "pipe" });
+        if (!remoteTags.includes("refs/tags/v" + version)) { bad(`标签 v${version} 不在远端 —— GitHub release 链接会 404`); return 1; }
+        ok("标签 v" + version + " 已在远端");
+      } catch (e) {
+        warn("查不到远端标签(可能是网络问题,也可能标签没推上去):" + String(e.stderr || e.message).split("\n")[0]);
+      }
 
       // 7) 从 npm 装回来 —— 必须是 registry 上那一份,不是仓库里那份
       //    npm publish 返回 ≠ 版本已可装:npm 有传播延迟,而且 staged publish 会留占位。
