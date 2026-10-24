@@ -88,19 +88,35 @@ export async function unregisteredModules(refDir, registered) {
  * @returns 没有失败路径的门禁名数组;空数组表示全都活着
  */
 export function deadGates(src, checkNames) {
+  const scan = (s, names) => {
+    const dead = [];
+    for (const name of names) {
+      const at = s.indexOf(`"${name}"(report)`);
+      if (at < 0) { dead.push(name); continue; }              // 找不到体 → 当死
+      // 体只到**这条门禁自己**为止。原来的判据是「到下一个 `\n  },`」——
+      // 单行门禁(`"x"(report) { ... },`)后面根本没有 `\n  },`,于是体一路贪到
+      // 下一条门禁,拿下一条的门禁名替这一条证明它还活着。
+      // 实测(2026-10-24):把单行的 check-card-claims 掏成 `return true;`,
+      // deadGates 判它还活着 —— 抓掏空的那条门禁自己漏了单行门禁。
+      const rest = s.slice(at);
+      const nextEntry = rest.match(/^\s{2}"[^"]+"\(report\)/m);   // 下一条门禁起头
+      const objEnd = rest.indexOf("\n};");                        // CHECKS 对象收尾
+      const stops = [nextEntry?.index, objEnd >= 0 ? objEnd : undefined].filter((x) => x !== undefined);
+      const body = rest.slice(0, stops.length ? Math.min(...stops) : 4000);
+      // 三种「会红」的痕迹:直接判红 / 返回 false / 委托给会判红的下游
+      const alive = /report\.fail/.test(body) || /return false/.test(body)
+        || /\b(check|run|validate)[A-Z]\w*\(/.test(body);
+      if (!alive) dead.push(name);
+    }
+    return dead;
+  };
+  // 自证:判据本身也得会红。用一份假的 CHECKS 源码试两种形态 ——
+  // 掏空的**单行**门禁必须被判死,完好的不能。不自证的话,判据一失灵
+  // 就静默放行(和它要抓的那族洞同型)。自证不过 → 整条判据当死。
+  const fake = `const CHECKS = {\n  "one"(report) { return true; },\n  "two"(report) { return checkTwo(report); },\n};`;
   const dead = [];
-  for (const name of checkNames) {
-    const at = src.indexOf(`"${name}"(report)`);
-    if (at < 0) { dead.push(name); continue; }              // 找不到体 → 当死
-    // 体到下一个顶层 "check- 为止
-    const end = src.indexOf('\n  },', at);
-    const body = src.slice(at, end < 0 ? at + 4000 : end);
-    // 三种「会红」的痕迹:直接判红 / 返回 false / 委托给会判红的下游
-    const alive = /report\.fail/.test(body) || /return false/.test(body)
-      || /\b(check|run|validate)[A-Z]\w*\(/.test(body);
-    if (!alive) dead.push(name);
-  }
-  return dead;
+  if (scan(fake, ["one"]).length !== 1 || scan(fake, ["two"]).length !== 0) dead.push("__selfcheck__");
+  return [...dead, ...scan(src, checkNames)];
 }
 
 /**

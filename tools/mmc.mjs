@@ -337,7 +337,7 @@ const CHECKS = {
     // 门禁**活着吗**:登记了不代表还能判红。把体掏空成 `return true` 的门禁,登记照样在、health 照样绿
     // (phase 07 挖出来的洞:记账门与研究消费门都试过)。判据是结构事实 —— 体里得有失败路径。
     for (const d of deadGates(readFileSync(R("tools", "mmc.mjs"), "utf8"), Object.keys(CHECKS))) {
-      report.fail(`门禁 ${d} 的实现里没有失败路径(既不 report.fail 也不 return false 也不委托)—— 整个体被掏空了,这条门禁现在永远绿`); pass = false;
+      report.fail(d === "__selfcheck__" ? "门禁存活判据自证失败:掏空的单行门禁没被判死 —— 这条判据自己不灵,判红" : `门禁 ${d} 的实现里没有失败路径(既不 report.fail 也不 return false 也不委托)—— 整个体被掏空了,这条门禁现在永远绿`); pass = false;
     }
     if (pass) report.pass(`${Object.keys(CHECKS).length} 个门禁全部登记了会红用例、被 active 规则驱动,且都还活着(有失败路径)`);
     return pass;
