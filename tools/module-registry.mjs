@@ -7,7 +7,7 @@
 // 这里放的是**登记类核对**:它们要读别的文件的导出、要比对两份记录,
 // 而这三件事共同点是「判定依据在别的文件里」,所以天然住在一起。
 
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -124,3 +124,85 @@ export function baselineDrift(baseline, ledger) {
     missingInLedger: baseline.filter((id) => !active.has(id)),
   };
 }
+
+/**
+ * 角色卡的描述只许写正文里真有的机制。
+ *
+ * 挖出来的洞(2026-10-23,phase 07 收尾):实派 mm-gsd-exec 子代理时核对卡面,
+ * 发现 exec 的描述写着「SUMMARY 原子块(写后即提交)」和「auth-as-gate」——
+ * 前者与正文「SUMMARY 不 commit」**正好相反**,后者在本仓任何文件里都不存在。
+ * 卡是路由器和子代理读到的第一手描述:卡错了,子代理就按错的规则开工,
+ * 而正文是对的,所以没有任何东西会报红(T-08 的老形状,只是长在散文里)。
+ *
+ * 判据(结构事实,可机判):描述里每一个**带连字符的拉丁词**
+ * (`R1-R4`、`goal-backward`、`auth-as-gate`)都必须在该技能正文里出现过 ——
+ * 卡能点名的机制,正文得真写。
+ *
+ * 为什么只查带连字符的词:描述是摘要,不是引用 —— 中文措辞与正文不同是正常的,
+ * 逐词对齐会天天误报。带连字符的拉丁词是**机制的专名**,摘要里出现它就是在
+ * 指认一个具体机制,那个机制要么在正文里,要么不在。
+ *
+ * 放宽一格:整词在正文里出现算过;整词不在,但每一段(连字符切开)都在,
+ * 也算过 —— `R1-R4` 在正文里是 `R1`…`R4` 两行,不是连写的。
+ */
+export function cardClaimGaps(cards) {
+  const gaps = [];
+  for (const { skill, description, body } of cards) {
+    const tokens = description.match(/[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)+/g) ?? [];
+    const low = body.toLowerCase();
+    for (const t of tokens) {
+      if (low.includes(t.toLowerCase())) continue;
+      const parts = t.split("-");
+      if (parts.every((p) => low.includes(p.toLowerCase()))) continue;
+      gaps.push(`${skill}: 描述里写了「${t}」,但正文里没有这个机制 —— 卡面在宣传一个不存在的东西`);
+    }
+  }
+  return gaps;
+}
+
+/**
+ * 扫 skills/ 下的角色卡,产出「卡面 ↔ 正文」的不一致。
+ *
+ * @returns {skill, description, body}[] 供 cardClaimGaps 判
+ */
+export function readSkillCards(skillsDir) {
+  const cards = [];
+  let dirs = [];
+  try { dirs = readdirSync(skillsDir, { withFileTypes: true }); } catch { return cards; }
+  for (const d of dirs) {
+    if (!d.isDirectory() || !d.name.startsWith("mm-gsd-") || d.name.endsWith(".bak-mmgsd")) continue;
+    const p = join(skillsDir, d.name, "SKILL.md");
+    let text;
+    try { text = readFileSync(p, "utf8"); } catch { continue; }
+    const desc = text.match(/^description:\s*"([^"]*)"/m)?.[1] ?? "";
+    if (!desc) continue;
+    // 正文 = 去掉 frontmatter 那一行(description 自己不算证据)
+    const body = text.replace(/^description:.*$/m, "");
+    cards.push({ skill: d.name, description: desc, body });
+  }
+  return cards;
+}
+
+/**
+ * R-22 门禁:卡面描述不得宣传正文没有的机制。
+ *
+ * 自证:先用两个内存里的假卡跑一遍 —— 一张诚实的(描述里的机制正文有)、
+ * 一张撒谎的(描述里的机制正文没有)—— 断言**只有撒谎那张被判红**。
+ * 不自证的门禁等于没跑:一个恒绿的实现照样能让 health 绿(见 deadGates)。
+ */
+export function checkCardClaims(report, root) {
+  const honest = cardClaimGaps([{ skill: "fake-ok", description: "机制 alpha-beta", body: "正文写了 alpha-beta" }]);
+  const liar = cardClaimGaps([{ skill: "fake-bad", description: "机制 ghost-mech", body: "正文什么都没写" }]);
+  if (honest.length !== 0 || liar.length !== 1) {
+    report.fail(`卡面核对自证失败:诚实的假卡判了 ${honest.length} 条(应 0),撒谎的假卡判了 ${liar.length} 条(应 1)—— 这条门禁现在不可信`);
+    return false;
+  }
+  const gaps = cardClaimGaps(readSkillCards(join(root, "skills")));
+  if (gaps.length) {
+    for (const g of gaps) report.fail(g);
+    return false;
+  }
+  report.pass("每张角色卡的描述都只写正文里真有的机制");
+  return true;
+}
+

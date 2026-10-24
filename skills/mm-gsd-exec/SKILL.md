@@ -1,6 +1,6 @@
 ---
 name: mm-gsd-exec
-description: "极简 GSD 执行:偏差规则 R1-R4、git 纪律(逐文件staging/禁clean/禁stash)、SUMMARY 原子块(写后即提交、commits 实测)、auth-as-gate、analysis-paralysis 守卫、TDD。"
+description: "极简 GSD 执行:施工方身份 —— 照 PLAN 施工,不重做调研、不审批图纸;偏差规则 R1-R4、git 纪律(逐文件staging/禁clean/禁stash)、SUMMARY 原子块(落盘不 commit、commits 实测)、analysis-paralysis 守卫、TDD。"
 ---
 
 # MM-GSD 执行

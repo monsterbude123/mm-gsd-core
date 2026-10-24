@@ -10,7 +10,7 @@ description: "极简 GSD 验证:goal-backward 三层倒推(TRUE→EXIST→WIRED)
 - **SUMMARY 不是证据**。自评盲区:执行 agent 在自己的上下文里会可靠地报告 PASSED,即使交付物合并后会失败。验证必须独立进行。
 - **任务完成 ≠ 目标达成**。起始假设:任务都完成了但目标落空;逐条拿证据推翻这个假设。
 
-## 三层倒推
+## 三层倒推(goal-backward)
 
 什么必须 **TRUE**(可观察 truths,来自目标与 PLAN)→ 什么必须 **EXIST**(工件)→ 什么必须 **WIRED**(连线)。
 **80% 的 stub 藏在连线处**——文件都在、各自能跑,但没人把 A 接到 B。

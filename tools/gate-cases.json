@@ -38,5 +38,6 @@
   "check-artifact-ledger": "造一份 status=complete 但 commits: 0 的 SUMMARY → R-18 判红并指名缺什么;在 .planning/artifact-ledger.md 记一行指向真实存在的 commit → 转绿;把那行的 commit 改成不存在的 sha → 仍判红「记账指向的 commit 不存在」;再加一张零 D-NN 引用的纯实现票(commits 正常)→ 不该进问题清单(决策核销归 phase 级 union 门,D-03)",
   "check-release-tags": "npm 上的 next 指向的版本比 latest 旧 → R-19 判红并说清两个版本号;next 还不存在(通道还没建)→ 只警告不判红;查不到 npm 上的标签(离线)→ 判「没核对」不判红;把判定方向改反 → 门禁自证那一行当场判红",
   "check-channel-safety": "把 promote 的默认改回「不带 --dry-run 就真跑」→ R-20 判红「默认必须只演练,改公开标签得显式 --execute」(注入记账的假 exec,断言默认路径一次 registry 都没碰);把 --execute 那条路删掉 → 判红「晋级路径断了」;把发版的 publish 命令去掉 --tag next → R-20 判红「发版的 publish 命令没钉 next」(latest 是给不想读文档的人的默认,发版不许把它带走 —— 2026-10-22 真发 0.4.1 时就是这么被带走的)",
-  "check-research-consumed": "造一个 phase:有 .planning/<NN>-RESEARCH.md + 一张活票,但票的 read_first/action 都没点名那个研究文件 → R-21 判红「研究落盘了没人读,执行端会自己重查一遍」;在票的 read_first 里点名研究文件 → 转绿;把研究文件删掉 → 不判红(没有研究产物就无从消费);给票补一份 SUMMARY(已成历史工件)→ 不判红(存量工件恒红就是墙,T-13)"
+  "check-research-consumed": "造一个 phase:有 .planning/<NN>-RESEARCH.md + 一张活票,但票的 read_first/action 都没点名那个研究文件 → R-21 判红「研究落盘了没人读,执行端会自己重查一遍」;在票的 read_first 里点名研究文件 → 转绿;把研究文件删掉 → 不判红(没有研究产物就无从消费);给票补一份 SUMMARY(已成历史工件)→ 不判红(存量工件恒红就是墙,T-13)",
+  "check-card-claims": "造一张撒谎的卡:把某个技能的 description 改成一个正文里根本不存在的机制名(如给 mm-gsd-verify 的描述加上 ghost-mech)→ R-22 判红「描述里写了 ghost-mech,但正文里没有这个机制 —— 卡面在宣传一个不存在的东西」;把那个机制名补进该技能正文 → 转绿;描述里只写正文真有的机制(如 goal-backward、tracer-first)→ 不判红;整词不在但连字符切开的每一段都在(如 R1-R4 对应正文两行 R1…R4)→ 不判红;自证:诚实的假卡必须判 0 条、撒谎的假卡必须判 1 条,否则这条门禁自己就不可信(恒绿实现照样能把 health 骗绿)。"
 }
