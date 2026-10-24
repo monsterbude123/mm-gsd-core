@@ -15,7 +15,7 @@ import { join, dirname, relative, resolve, sep } from "node:path";
 import { execFileSync } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
 import { missingRules, BASELINE_RULES } from "./rule-baseline.mjs";
-import { registryGaps, unregisteredModules, baselineDrift, deadGates, checkCardClaims } from "./module-registry.mjs";
+import { registryGaps, unregisteredModules, baselineDrift, deadGates, checkCardClaims, checkCardRefresh } from "./module-registry.mjs";
 import { fatAdvice, collectFiles, countLines, collectScripts } from "./budget.mjs";
 import { fileURLToPath } from "node:url";
 import { makeInboxClose, clusterKey, readLocalIssues, findRecurrences, recurrenceRate } from "./gh-issues.mjs";
@@ -408,6 +408,7 @@ const CHECKS = {
 
   // R-22:卡面只许写正文真有的机制(实现见 module-registry.mjs)
   "check-card-claims"(report) { return checkCardClaims(report, ROOT); },
+  "check-card-refresh"(report) { return checkCardRefresh(report, ROOT); },
 
   // R-20:改外部发布通道必须显式 —— promote 默认只演练;发版只落 next,latest 只能由 promote 显式动。
   // 为什么要有这条:改 npm 的 dist-tag 是外部副作用,「批 promote」是人保留的动作

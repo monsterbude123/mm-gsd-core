@@ -7,8 +7,10 @@
 // 这里放的是**登记类核对**:它们要读别的文件的导出、要比对两份记录,
 // 而这三件事共同点是「判定依据在别的文件里」,所以天然住在一起。
 
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, rmSync, mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
 /**
@@ -205,4 +207,59 @@ export function checkCardClaims(report, root) {
   report.pass("每张角色卡的描述都只写正文里真有的机制");
   return true;
 }
+
+/**
+ * R-23 门禁:指针卡必须跟着技能走 —— 技能改了而卡没改,卡就在撒谎。
+ *
+ * 挖出来的洞(2026-10-23,phase 07 收尾):安装器对已存在的卡一律跳过
+ * (「不接管用户的卡」)。但 mm-gsd **自己发的**卡也在跳过之列:
+ * exec 的 SKILL.md 修好了,~/.zcode/agents/mm-gsd-exec.md 还写着
+ * 「写后即提交」与正文相反的话,还宣传了一个本仓没有的机制。
+ * 卡正是路由器与子代理读到的第一手描述 —— 卡错了,派发就错,
+ * 而正文是对的,所以没有任何门禁会红。
+ *
+ * 这条门禁跑一个真沙盒证明三件事(不是看代码,是真的装一遍):
+ *   1. 装完 mm-gsd 的卡确实在宿主卡目录里;
+ *   2. 改技能描述 → 再装 → 卡跟着改(刷新);
+ *   3. 用户自己写的同名卡 → 再装 → 一个字都不动(不接管用户已有的卡)。
+ * 三件都成立才算过。沙箱装在临时目录里,cwd 也指沙箱 ——
+ * 免得体检顺手改掉真仓库的 git hooksPath。
+ */
+export function checkCardRefresh(report, root) {
+  const sb = join(tmpdir(), "mmc-cardrefresh");
+  const run = (args) => execFileSync(process.execPath, args, { stdio: "pipe", timeout: 60000, cwd: sb });
+  const cardDir = join(sb, ".zcode", "agents");
+  const card = join(cardDir, "mm-gsd-exec.md");
+  const skill = join(sb, ".agents", "skills", "mm-gsd-exec", "SKILL.md");
+  const inst = join(sb, ".agents", "skills", "mm-gsd-loop", "scripts", "mm-gsd-install.mjs");
+  rmSync(sb, { recursive: true, force: true });
+  try {
+    mkdirSync(cardDir, { recursive: true });
+    run([join(root, "bin", "mm-gsd.mjs"), "install", "--home", sb]);
+    run([inst, "--yes", "--home", sb]);
+    if (!existsSync(card)) { report.fail("装完没有 mm-gsd-exec 指针卡 —— 派发器看不到这个技能"); return false; }
+    // 用户自己的卡:同名,但没有 mm-gsd 的指纹 —— 装完必须一个字都不动
+    const mine = join(cardDir, "mm-gsd-plan.md");
+    writeFileSync(mine, "---\nname: \"mm-gsd-plan\"\n---\n\n我自己写的卡\n");
+    // 改技能描述 → 再装 → 卡必须跟着改
+    const before = readFileSync(card, "utf8");
+    writeFileSync(skill, readFileSync(skill, "utf8").replace(/^description:.*$/m, 'description: "变了。"'));
+    run([inst, "--yes", "--home", sb]);
+    const after = readFileSync(card, "utf8");
+    if (after === before) { report.fail("技能描述改了,指针卡没跟着改 —— 卡面在宣传旧规则"); return false; }
+    if (!after.includes("变了。")) { report.fail("指针卡刷新了但没带上新描述 —— 刷新逻辑本身坏了"); return false; }
+    if (readFileSync(mine, "utf8") !== "---\nname: \"mm-gsd-plan\"\n---\n\n我自己写的卡\n") {
+      report.fail("安装器覆盖了用户自己写的同名卡 —— 违反「不接管用户已有的卡」");
+      return false;
+    }
+    report.pass("指针卡跟着技能刷新,且用户自己的卡一个字不动");
+    return true;
+  } catch (e) {
+    report.fail("指针卡刷新自证失败:" + String(e.stderr || e.message).split("\n")[0]);
+    return false;
+  } finally {
+    rmSync(sb, { recursive: true, force: true });
+  }
+}
+
 

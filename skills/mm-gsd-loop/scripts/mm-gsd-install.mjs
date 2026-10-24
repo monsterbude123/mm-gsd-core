@@ -106,10 +106,32 @@ for (const [name, v] of targets) {
   console.log("  " + name.padEnd(8) + "已链接 " + linked.length + "/" + inMaster.length + (SKILLS.length < inMaster.length ? " (主仓共 " + SKILLS.length + " 个技能)" : ""));
 }
 
+// 指针卡漂移体检:卡面是路由器与子代理读到的第一手描述 —— 卡跟不上技能,
+// 卡就在撒谎(实测:技能修好了,卡还写着旧规则)。只判 mm-gsd 自己发的卡。
+const staleCards = [];
+{
+  const routeCmd = `node "${join(MASTER, "mm-gsd-loop", "scripts", "gsd-state-check.mjs")}"`;
+  for (const [name, v] of targets) {
+    if (!v.agents) continue;
+    const dir = H(v.agents);
+    if (!existsSync(dir)) continue;
+    for (const s of SKILLS.filter((x) => existsSync(join(MASTER, x, "SKILL.md")))) {
+      const f = join(dir, s + ".md");
+      if (!existsSync(f)) continue;
+      const prev = readFileSync(f, "utf8");
+      if (!prev.includes("别在本卡里找规则")) continue;    // 用户自己的卡,不判
+      if (prev !== pointerCard({ skill: s, skillPath: join(MASTER, s, "SKILL.md"), routeCmd })) staleCards.push(name + "/" + s);
+    }
+  }
+}
+if (staleCards.length) console.log("指针卡:    " + staleCards.length + " 张过期(" + staleCards.join(", ") + ")—— 技能改了卡没改,跑一次 install 刷新");
+else console.log("指针卡:    无过期");
+
 if (CHECK_ONLY) {
   console.log("\n(--check:仅体检,未做任何修改)");
   if (stateCheck?.errors?.length) { console.log("\n待修:"); for (const e of stateCheck.errors) console.log("  ✗ " + e.message + (e.fix ? "  → " + e.fix : "")); }
-  process.exit(stateCheck?.errors?.length ? 1 : 0);
+  if (staleCards.length) console.log("  ✗ 指针卡过期:" + staleCards.join(", ") + " —— 跑一次 install 刷新(卡面在宣传旧规则)");
+  process.exit(stateCheck?.errors?.length || staleCards.length ? 1 : 0);
 }
 
 // ---------- 动作 1:技能软链分发 ----------
@@ -209,15 +231,28 @@ if (!SKILLS_ONLY && !HOOKS_ONLY) {
       skips.push(name + " 指针卡:没装");
       continue;
     }
-    let made = 0, kept = 0;
+    let made = 0, kept = 0, refreshed = 0;
     for (const s of cards) {
       const f = join(dir, s + ".md");
-      if (existsSync(f)) { kept++; continue; }        // 不接管、不覆盖既有的卡
-      writeFileSync(f, pointerCard({ skill: s, skillPath: join(MASTER, s, "SKILL.md"), routeCmd }));
-      made++;
+      const body = pointerCard({ skill: s, skillPath: join(MASTER, s, "SKILL.md"), routeCmd });
+      if (!existsSync(f)) { writeFileSync(f, body); made++; continue; }
+      const prev = readFileSync(f, "utf8");
+      // **自己发的卡要跟着技能走**。技能改了而卡没改 = 卡在宣传旧规则。
+      // 实测(2026-10-24):exec 的 SKILL.md 修好了,~/.zcode/agents/mm-gsd-exec.md
+      // 还写着「写后即提交」与正文相反的话,还宣传了一个本仓根本没有的机制 ——
+      // 而卡正是路由器和子代理读到的第一手描述。原来的写法是「已存在就跳过」。
+      //
+      // 怎么认出「自己的卡」:两道指纹 —— 卡里那句「别在本卡里找规则」,以及
+      // frontmatter 的 name 与技能同名。用户自己写的同名卡两道都没有,不动它
+      // (04-CONTEXT D-02:不接管用户已有的卡)。
+      const mine = prev.includes("别在本卡里找规则") && new RegExp(`^name:\\s*"${s}"`, "m").test(prev);
+      if (!mine) { kept++; continue; }               // 用户自己的卡:不接管
+      if (prev === body) { kept++; continue; }        // 已是最新
+      writeFileSync(f, body); refreshed++;
     }
     if (made) changes.push(name + ":指针卡 " + made + " 张 → " + dir + (kept ? "(" + kept + " 张已存在,没动)" : ""));
-    else oks.push(name + ":指针卡已齐全(" + kept + " 张,没动已有的)");
+    if (refreshed) changes.push(name + ":指针卡刷新 " + refreshed + " 张 → " + dir + "(技能改了,卡跟着改)");
+    if (!made && !refreshed) oks.push(name + ":指针卡已齐全(" + kept + " 张,没动已有的)");
   }
 }
 
