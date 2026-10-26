@@ -27,6 +27,7 @@ discuss → plan → exec → verify    observe / inbox → issue
 | 环上的格子 | 谁填 | 纪律挂在哪 |
 |---|---|---|
 | 改动的方案 / 计划 / 开发 / 验证 | `.planning/` 五步环 | 各 SKILL.md;PLAN 有 `--plan` 门禁 |
+| 显式校验一份计划(能不能开工) | `mm-gsd-plan-check` 技能 | 机器判据(`--plan-check`)+ 独立预审 → 结论与退出码 |
 | 问题从哪来 | `observe` / `inbox` | R-04 遥测门禁 |
 | 修复 | `fix` | R-01 证据;R-13/R-14 报修不假绿 |
 | 沉淀 | `distill` | R-02(挂不上门禁不许 active) |

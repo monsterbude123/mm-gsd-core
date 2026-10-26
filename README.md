@@ -61,8 +61,10 @@ npx mm-gsd-core doctor          # 体检宿主环境与已装状态(只读)
 npx mm-gsd-core check --plan    # 直接跑状态检查器
 ```
 
-零依赖，Node ≥ 18，跨 Windows / macOS / Linux。装完 6 个技能就位：
-`mm-gsd-discuss` / `mm-gsd-plan` / `mm-gsd-exec` / `mm-gsd-verify` / `mm-gsd-diagnose` / `mm-gsd-loop`。
+零依赖，Node ≥ 18，跨 Windows / macOS / Linux。装完 7 个技能就位：
+`mm-gsd-discuss` / `mm-gsd-plan` / `mm-gsd-exec` / `mm-gsd-verify` / `mm-gsd-plan-check` / `mm-gsd-diagnose` / `mm-gsd-loop`。
+其中 **`mm-gsd-plan-check` 是显式校验计划的操作**：用户问「这份计划能开工吗」时直接调它 ——
+跑机器判据、按需派只读子代理独立复核、给出「能不能开工」的结论与退出码,不等流程自己走到那一步。
 
 **npx 只需要一个 bin** —— 多个 bin 时 npx 会报 `could not determine executable to run`，
 所以本包只暴露 `mm-gsd` 一个入口，检查器通过 `mm-gsd check` 转发。
@@ -267,6 +269,7 @@ mm-gsd-core/
 │   ├── mm-gsd-plan/      SKILL.md + templates/{context,plan}.md
 │   ├── mm-gsd-exec/      SKILL.md + templates/summary.md
 │   ├── mm-gsd-verify/    SKILL.md + templates/verification.md
+│   ├── mm-gsd-plan-check/ SKILL.md   显式校验:这份计划现在能不能开工
 │   ├── mm-gsd-diagnose/  SKILL.md + templates/debug-session.md
 │   └── mm-gsd-loop/      SKILL.md
 │                         + scripts/{gsd-state-check,mm-gsd-install}.mjs
