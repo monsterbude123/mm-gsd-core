@@ -57,6 +57,9 @@ discuss → plan → exec → verify    observe / inbox → issue
 
 本仓自己跑这套五步环,所以分工对自己也一样生效:
 
+- **计划也要被复核**:写计划的人不自己审 —— 预审派一个**全新上下文的只读子代理**做(照 mm-gsd-verify 的
+  「执行前预审」节),产出 `.planning/<NN-MM>-PLAN-CHECK.md`;`status` 不是 `passed` 就不许进执行。
+  机械判据(`--plan`:前提存在性、载量、批图、决策核销)与判断层(预审)各管一半。
 - **执行端(execute)是施工方,不是设计师**。照 PLAN 那张票施工,只核对自己落的与图纸对不对得上;
   **不审批** —— 图纸对不对是 verify 的活;**不重做调研** —— 本 phase 的 `*-RESEARCH.md`
   存在就先读它,调研过的结论不重查;**不重新理解项目** —— read_first 里的真理来源文件是
