@@ -31,9 +31,8 @@ node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --init "<一句话
 
 它建好 `.planning/STATE.md`,并告诉你下一步该做什么(检测到已有 CONTEXT.md 会提示讨论已完成的部分不必重来)。
 
-**为什么必须是命令而不是纪律**:门禁要求 STATE 存在,但建 STATE 是 loop 的职责、不是 discuss 的。
-agent 在 discuss 结束时跑门禁 → 报"未初始化" → 按"转绿才准继续"卡住 → 而它站在这一步造不出 STATE。
-**门禁要的东西,执行方做不到,那它就不是门禁,是死锁。** 任何门禁都必须自带解法。
+**为什么必须是命令而不是纪律**:门禁要求 STATE 存在,但建 STATE 是 loop 的职责、不是 discuss 的 —— agent 在 discuss
+结束时跑门禁会报"未初始化"并卡住,而它站在这一步造不出 STATE。**门禁要的东西,执行方做不到,那它就不是门禁,是死锁。**
 
 - **新项目**:一句话目标 → 建 STATE + `REQUIREMENTS.md`(REQ-N 是 verify 逐条对 verdict 的对象,没有它闭环断裂)→ 第一个 phase 定为 walking skeleton:最薄可运行骨架,选型集中在这个 phase 的 CONTEXT 里定(D-NN)。
 - **现存项目**:先读 README / AGENTS.md / CLAUDE.md / package.json 再建 STATE(Project Reference 从现有代码提炼,**不装作绿地**),从 issue tracker 倒推 REQ。第一个 phase 挑小而有价值的改动,不上大重构;项目已有约定优先于本技能默认,冲突记为偏差。
@@ -72,21 +71,18 @@ agent 在 discuss 结束时跑门禁 → 报"未初始化" → 按"转绿才准�
 
 1. **discuss** → 调用 mm-gsd-discuss。**灵魂环节**:执行期的一切偏差,源头多半是讨论期没捕获的隐含期望;捕获标准是"下游不再需要追问用户"。纯基础设施、实现路径清晰、或决策已全在 CONTEXT → 可跳过,不硬凑问题。
 2. **plan** → 调用 mm-gsd-plan。**PLAN 落盘后必须跑 `--plan` 转绿再进下一步**(见「门禁接线」)。
-3. **execute** → 调用 mm-gsd-exec。**施工方,不是设计师**:照 PLAN 那张票施工,只核对自己落的与图纸对不对得上;
-   不重做调研(研究产物在规划期就落好了,先读它)、不重新理解项目、**不审批**(图纸对不对是 verify 的活)。
-4. **verify** → 调用 mm-gsd-verify。**验证不过 → 回 execute 修 → 重 verify;每条 REQ 拿到证据才准进 ship。修复预算 2 次,超了升级到人。**
-   (执行侧「同一根因自动修 ≤2 次」与验证侧「重验 2 轮」是**两件事**:前者管一次施工里能自己修几回,后者管 gap 修完能重验几轮。别当成同一个数。)
-5. **ship** → 交付物**被消费**才算完成(PR 已开/已合并/已发布),用户可见变更同步文档,STATE 更新位置,
-   并落 `.planning/<NN>-MM-SHIP.md`(模板见 templates/ship.md)。**验证通过不等于交付**:没有 SHIP 工件,
-   状态机停在 `completed`,检查器会警告"停在验证没走到交付"。STATE 勾掉本 phase 的时点 = SHIP 落盘之后。
+3. **execute** → 调用 mm-gsd-exec。**施工方,不是设计师**:照 PLAN 那张票施工,只核对自己落的与图纸对不对得上;不重做调研、不重新理解项目、**不审批**(图纸对不对是 verify 的活)。
+4. **verify** → 调用 mm-gsd-verify。**验证不过 → 回 execute 修 → 重 verify;每条 REQ 拿到证据才准进 ship。修复预算 2 次,超了升级到人。**(执行侧「同一根因自动修 ≤2 次」与验证侧「重验 2 轮」是**两件事**:前者管一次施工里能自己修几回,后者管 gap 修完能重验几轮。)
+5. **ship** → 交付物**被消费**才算完成(PR 已开/已合并/已发布),用户可见变更同步文档,并落
+   `.planning/<NN>-MM-SHIP.md`(模板见 templates/ship.md)。**验证通过不等于交付**:没有 SHIP 工件,状态机停在 `completed`,
+   检查器会警告"停在验证没走到交付"。STATE 勾掉本 phase 的时点 = SHIP 落盘之后。
 
-**ship 步的硬要求**:写 `delivered` 之前先核对东西真的被消费了(PR 无阻断 / 已合并 / 已发布),并把证据写具体。
-受阻就写 `status: held` 并说明阻碍——蒙混成 shipped 会让状态机把整个 phase 判成终态,而其实什么都没落到用户手里。
-涉及删数据、force push、动生产、发布,属于拍板权第 2/3 类,**先问用户**。
+**ship 步的硬要求**:写 `delivered` 之前先核对东西真的被消费了(PR 无阻断 / 已合并 / 已发布),证据写具体;受阻就写
+`status: held` 并说明阻碍(蒙混成 shipped 会让状态机把整个 phase 判成终态)。涉及删数据、force push、动生产、发布,属于拍板权第 2/3 类,**先问用户**。
 
 ## 完成后
 
-- 这个 phase 走完五步环(SHIP 落盘、交付物被消费)→ **下一步是下一个 phase**:回到 `mm-gsd-discuss` 或 `mm-gsd-plan`;环没走完就按上面「五步成环」接着走,每一步的出口由那个技能自己的「完成后」节写着。
+这个 phase 走完五步环(SHIP 落盘、交付物被消费)→ **下一步是下一个 phase**:回到 `mm-gsd-discuss` 或 `mm-gsd-plan`;环没走完就按上面「五步成环」接着走。
 
 ## 门禁接线(每步跑哪个模式,不是"想起来才跑")
 
@@ -109,6 +105,18 @@ agent 在 discuss 结束时跑门禁 → 报"未初始化" → 按"转绿才准�
 **`--plan` 顺带打印本 phase 的过程健康三数**(票数 / 受阻票数 / 缺口数):量来自工件历史,
 不是遥测(遥测不记 phase 维度);它测的是**过程健康,不是质量分**——别拿它当评分卡用。
 
+**门禁分层采样(贵的门禁别放在每一步)**:
+
+| 层 | 什么时候跑 | 跑什么 |
+|---|---|---|
+| 票级 | 每张票做完 | **本票的便宜检查**(具名测试 / 单文件 / 单入口)—— 票级 verify **不许**是全量套件 |
+| 批级 | 一批票全做完 | 批级检查**跑一次**;失败**一次修完**,再跑一次(≤2 轮) |
+| 全量 | phase 收尾 | 全量套件 + 全量 health(仓库自己的 `mmc health`) |
+
+**批量收尾**:一批实施完 → 跑一次批级检查 → 全部失败一起修 → 再跑一次(≤2 轮)。
+**不做**「改一处 → 修一次 → 测一次 → 提交一次」:逐次循环里的重复检查没有新证据,只吃上下文。
+逐次提交可以(提交很便宜),但**贵的门禁不在票里跑**。
+
 ## 拿不准就去查参考系(概念模糊时的动作)
 
 > **概念模糊、不知道该怎么做时,先查参考系,别凭印象造。**
@@ -124,18 +132,25 @@ mm-gsd 是从更大的项目蒸馏出来的。被丢掉的部分往往不是功�
 | 被明确排除的做法 + 重开条件 | `docs/theory.md`「明确排除的做法」一节 |
 | 原始参考项目 | 本机的 gsd-core 仓(路径随机器不同,不在分发包里) |
 
-**动作**:查表 → 读对应文件 → 结论**落盘**进 CONTEXT 或提交描述。
-没落盘的参考等于没参考 —— 下一轮 agent 看不到对话里的结论。
+**动作**:查表 → 读对应文件 → 结论**落盘**进 CONTEXT 或提交描述(没落盘的参考等于没参考)。
 
-**不是照抄**。参考系的项目规模是 mm-gsd 的十倍以上,很多机制在 mm-gsd 里
-没有对应场景。参考的是**判据与理由**,不是实现。
+**不是照抄**:参考系规模是 mm-gsd 的十倍以上,很多机制在 mm-gsd 里没有对应场景 —— 参考的是**判据与理由**,不是实现。
 
 **查完发现 mm-gsd 缺了什么,记下来** —— 对照表里的「已知差距」是活的。
+
+## 派活纪律(编排层的硬边界)
+
+- **探索一律外包**:摸清现状、调研、搜代码、读实现文件 —— 一律派子代理。主上下文只拿**摘要 + 落盘路径**,
+  不读实现文件本身,也不把探查结果灌进自己的上下文。(读 mm-gsd 自己的参考系不算探索 —— 那是几个短文件。)
+- **实施也要外包**:施工交给子代理,你只给路径与目标。(原来这条只列了「研究、批量重写、验证」,漏了实施。)
+- **一批 = 一张 PLAN,一票 = 一个子代理**:一次只派一批;同批零文件重叠才可并行;不要把多张票塞给一个子代理。
+- **单票有硬预算**:一张票 = 一个子代理 **20 分钟**能做完的量(≤5 文件、≤1 条 verify);超量或超时 → **停下升级**,不静默续做、不接着往下堆活。
+- **主上下文只管 todo 与进度**:todo 只记「票 → 状态 → 结论」,不记实现细节;进度靠 STATE digest。
 
 ## 黄金纪律
 
 - 每步产出**落盘**(STATE/CONTEXT/PLAN/SUMMARY/VERIFICATION),不留在对话里;落盘位置按上方「工件归属边界」分流。
-- 主会话只做编排与验收(上下文占比 ≤15%);重活(研究、批量重写、验证)开新上下文/子代理做,只传**路径**不传内容,结论摘要传回。用全新 agent 续做,不做进程内 resume。
+- 主会话只做编排与验收(上下文占比 ≤15%),只传**路径**不传内容,结论摘要传回。用全新 agent 续做,不做进程内 resume。
 - 卡住或依赖缺失:记 blockers,跳过该任务继续无依赖任务,不空转重试。
 - **正在工作的执行者不被催促**:等子代理/长任务时,进度看提交活动与文件变化——有近期活动就继续等;不注入"快点收尾/立即完成"类催促,那会把正确的运行截断(#4218 的教训)。
 
@@ -181,13 +196,10 @@ mm-gsd 是从更大的项目蒸馏出来的。被丢掉的部分往往不是功�
 node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --stats
 ```
 
-它报三样最有用的东西:**门禁失败率**、**同一项目反复失败的次数**(≥3 次 = 死锁嫌疑,不是内容质量差)、
-**高频报错类型排行**(最该修的地方)。单行字段的含义跑 `--help` 看。
+它报三样最有用的东西:**门禁失败率**、**同一项目反复失败的次数**(≥3 次 = 死锁嫌疑)、**高频报错类型排行**。字段含义跑 `--help` 看。
 
-**每次安装 mm-gsd 后,手动清一次这个日志文件**(`~/.agents/mm-gsd-runs.jsonl`):它记的是
-**上一次安装之前**的使用历史,装新版本后那些记录对应的是旧版本的门禁语义,继续留着会让
-`--stats` 混进已经改掉的行为。自动清会让「到底清过没有」不可追溯 —— 所以程序里**刻意没有**
-这个开关,安装时也不自动截断。要清就手动删那个文件。
+**每次安装 mm-gsd 后手动清一次这个日志文件**:它记的是上次安装前的使用历史,旧语义混进 `--stats` 会误导;自动清
+不可追溯,所以程序里刻意没这个开关 —— 要清就手动删。
 
 ## 报修(卡住时把坑报回去,不要自己将就)
 
@@ -200,14 +212,9 @@ node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --stats
 npx mm-gsd-core report "<一句话说清什么坏了>" --evidence "<你跑了什么 + 它报了什么>"
 ```
 
-**批量:同类问题合成一条**,多个 `--evidence`;**不同类问题分开报** —— 合成一条反而看不出哪个先修。
-理由:维护方按 issue 排队修,三条合成是一次修复,拆成三条是三次上下文切换。
-没有证据的抱怨不算 issue,`--evidence` 必填。
-
-**报完记下 URL** —— 命令打印的 issue 地址才是闭环凭据。没装 `gh` 或没登录时它会**非零退出**
-让你手动贴,那是真的没发出去,别当成已经报了。
-
-展开用法(`--evidence-file`、批量多条、dry-run)跑 `mm-gsd-report.mjs --help`。
+**批量:同类问题合成一条**,多个 `--evidence`;**不同类问题分开报** —— 合成一条反而看不出哪个先修(维护方按 issue 排队修)。
+没有证据的抱怨不算 issue,`--evidence` 必填。**报完记下 URL** —— 命令打印的 issue 地址才是闭环凭据;没装 `gh` 或没登录时它会
+**非零退出**让你手动贴,那是真的没发出去。展开用法(`--evidence-file`、dry-run)跑 `mm-gsd-report.mjs --help`。
 
 ## 编排层失效模式(你会怎么偷懒,逐条自查)
 
@@ -218,7 +225,8 @@ npx mm-gsd-core report "<一句话说清什么坏了>" --evidence "<你跑了什
 5. fast 通道做到一半发现是大事,硬着头皮降级做完(应该停下转完整循环)。
 6. 修复回路超预算还继续盲修(2 轮不成就该找根因)。
 7. 派活时替子代理把活想一遍 —— 那是它的工作,不是你的。你只给路径与目标。
-7. 把流程记忆 commit 进业务目录、或对被 exclude 的 `.planning/` 硬 `git add -f` —— 越权污染共享契约。
+8. 把流程记忆 commit 进业务目录、或对被 exclude 的 `.planning/` 硬 `git add -f` —— 越权污染共享契约。
+9. 逐次循环:改一处 → 修一次 → 测一次 → 提交一次,贵的门禁插在每次改动里 —— 那是重复检查、没有新证据、只吃上下文。
 
 ## 状态机 = 工件存在性(可查询,不是散文约定)
 
@@ -233,24 +241,18 @@ npx mm-gsd-core report "<一句话说清什么坏了>" --evidence "<你跑了什
 
 ## 多 worktree 并发(一个 phase 一个 worktree)
 
-**默认不做多 worktree。** 一个项目一个 worktree、串行走完五步环,是绝大多数项目的正解。多 worktree 只在这两种情况下开:phase 之间真能零重叠,或同一 phase 内有大片可并行的独立任务。**没有理由就多开 worktree,换来的是合并冲突和 STATE 基线过期,不是速度。**
-确要开,按顺序做这五件事:
+**默认不做多 worktree。** 一个项目一个 worktree、串行走完五步环,是绝大多数项目的正解;多开换来的
+是合并冲突和 STATE 基线过期,不是速度。只在 phase 之间真能零重叠、或同一 phase 内有大片可并行的
+独立任务时才开。
 
-**1. 每个 worktree 独占一个 phase**(或同一 phase 内一组 `files_modified` 零重叠的任务)。不要让一个 phase 横跨两个 worktree——它的 SUMMARY/VERIFICATION 只有一个落点。
-
-**2. 动手前先跑冲突检查**(在**任意** worktree 里跑,它读的是全局 worktree 列表):
-
-```bash
-node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --worktrees
-```
-
-它输出每个 worktree 的分支 / phase / status / `files_modified` 清单,并两两比对 `files_modified` 与 REQ 交集。有冲突退出码 1,**这时候不要开工**——先二选一先做,或回去改 phase 的切分边界。检查器只看已落盘的 PLAN:**PLAN 没写完就等于没检查**,所以顺序是"plan 落盘 → 跑检查 → 才建 worktree 并派活"。
-
-**3. `files_modified` 是跨 worktree 的唯一安全契约。** 它必须精确到路径:共享入口(路由表、schema、类型索引、公共 util)只要被两个 phase 碰到,并行必冲突,这个成本必须在 plan 阶段暴露,而不是在合并时发现。删掉一个"看起来没用"的中间文件去凑零重叠,通常是把成本推到后面而不是消除。
-
-**4. `files_modified` 管不到的资源,自己分配。** 端口、数据库/迁移、共享构建产物、`node_modules` 之外的单例服务、测试用的固定端口 fixture——这些不会出现在文件清单里。多个 worktree 同时 `executing` 时检查器会提醒一句,但具体分配要执行者自己声明(常见做法:每个 worktree 用 `PORT=3000+N` 与独立测试库名,写进 plan 的前置条件)。
-
-**5. 合并一个 worktree 后,立刻在剩余 worktree 里重跑检查器并重读 STATE。** 剩下的 worktree 还停在旧基线上:`STATE.md` 里没记录的那个 phase 可能已经完成,`files_modified` 的零重叠结论也可能是基于已经不成立的前提算出来的。**合并是唯一会全局改变并行安全性的事件**,必须在它之后重新验证,而不是等下一个 phase 开始才发现。
+确要开,五件事:①每个 worktree 独占一个 phase(同一 phase 内一组 `files_modified` 零重叠的任务);
+②动手前先跑 `--worktrees` 冲突检查(在**任意** worktree 里跑,它读全局列表),有冲突就回去改 phase
+切分边界 —— PLAN 没落盘就等于没检查,顺序是"plan 落盘 → 跑检查 → 才建 worktree 并派活";
+③`files_modified` 是跨 worktree 的唯一安全契约,必须精确到路径:共享入口(路由表、schema、类型索引、
+公共 util)被两个 phase 碰到,并行必冲突,这个成本要在 plan 阶段暴露,不是合并时才发现;
+④`files_modified` 管不到的资源(端口、数据库/迁移、共享构建产物、单例服务、测试固定端口)自己分配,
+写进 plan 的前置条件;⑤合并一个 worktree 后**立刻**在剩余 worktree 里重跑检查器并重读 STATE ——
+合并是唯一会全局改变并行安全性的事件。
 
 `.planning/` 是每个 worktree 各自的工作记忆(见上文「工件归属边界」),不跨 worktree 同步;跨 worktree 的事实来源只有一个——git commit history。
 
@@ -258,9 +260,8 @@ node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --worktrees
 
 占位文本("To be filled"/"placeholder"/"TBD")= 未完成;SUMMARY 缺失或无对应提交 = 未完成。完成判定要 SUMMARY + 提交双证(提交指代码提交,与 SUMMARY 是否入库无关)。
 
-**旧 PLAN 怎么办**看 `references/historical-artifacts.md`:历史工件分三态(未完成 / 没记账 / 过时),
-判据只取可机器判定的事实。**认出第三种比认出前两种重要** —— 把「做完了却没记账」
-当成「未完成」而重做一遍,是最贵的处理:它把已验证的成果变成未验证的。
+**旧 PLAN 怎么办**看 `references/historical-artifacts.md`:历史工件分三态(未完成 / 没记账 / 过时),判据只取
+可机器判定的事实。**认出第三种比认出前两种重要** —— 把「做完了却没记账」当成「未完成」重做一遍最贵。
 
 ## 引导安装/体检(第一次用,或怀疑哪里没对时)
 
@@ -269,9 +270,8 @@ node ~/.agents/skills/mm-gsd-loop/scripts/mm-gsd-install.mjs            # 交互
 node ~/.agents/skills/mm-gsd-loop/scripts/mm-gsd-install.mjs --check    # 只体检,不改任何东西
 ```
 
-它做:检测项目现状(是否 git 仓库 / 有无现有 hooks 体系 / 有无 .planning)+ 跑一遍状态机检查器列出待修项 + 按需安装宿主 hook(危险 git 拦截)+ 在**没有**现有 hooks 体系时**询问**是否装 git pre-commit(默认否,因为检查器已覆盖其阻断项)。
-**不负责冷启动**——建 STATE 是 mm-gsd-loop 的活(见上面「冷启动」节),不重复造第二条路径。
-已实测:幂等(重跑不重复安装)、合并不覆盖既有配置、备份只留最初原件、`--config` 可指向任意文件(测试用假配置,从不碰真配置)。
+它做:检测项目现状 + 跑一遍检查器列出待修项 + 按需装宿主 hook(危险 git 拦截)+ 询问是否装 pre-commit(默认否,检查器已覆盖其阻断项)。
+**不负责冷启动**(建 STATE 是 mm-gsd-loop 的活)。已实测:幂等、合并不覆盖既有配置、备份只留最初原件。
 
 ## 三层门禁(各管一段,互不替代)
 
@@ -292,13 +292,13 @@ node ~/.agents/skills/mm-gsd-loop/scripts/mm-gsd-install.mjs   # 自动探测宿
 
 安装器已适配的宿主与 hooks 落点:
 
-| 宿主 | 技能 | 危险 git 拦截 | 说明 |
-|---|---|---|---|
-| ZCode | 主仓原生(`~/.agents/skills/`) | ✅ `~/.zcode/cli/config.json` → `hooks.events.PreToolUse`(需 `hooks.enabled: true`) | |
-| Claude Code | ✅ 链接到 `~/.claude/skills/` | ✅ `~/.claude/settings.json` → `hooks.PreToolUse` | |
-| Codex | ✅ 链接到 `~/.codex/skills/` | ❌ 跳过 | 它的 hooks 由插件(`claude-codex-hooks.json`)托管,直装会与插件冲突 |
-| Trae / Cursor | ✅ 链接到各自 `skills/` | ❌ 跳过 | 未验证 hooks 机制,只装技能 |
-| MiniMax | — | ❌ 跳过 | 未发现 skills 目录约定 |
+| 宿主 | 技能 | 危险 git 拦截 |
+|---|---|---|
+| ZCode | 主仓原生(`~/.agents/skills/`) | ✅ `~/.zcode/cli/config.json` → `hooks.events.PreToolUse`(需 `hooks.enabled: true`) |
+| Claude Code | ✅ → `~/.claude/skills/` | ✅ `~/.claude/settings.json` → `hooks.PreToolUse` |
+| Codex | ✅ → `~/.codex/skills/` | ❌ 跳过(hooks 由插件托管,直装会与插件冲突) |
+| Trae / Cursor | ✅ → 各自 `skills/` | ❌ 跳过(未验证 hooks 机制) |
+| MiniMax | — | ❌ 跳过(未发现 skills 目录约定) |
 
 用别的宿主?只要它读 `SKILL.md`,把 `~/.agents/skills/mm-gsd-*` 链到它的技能目录即可;hooks 那层对照它的文档手动加一条 PreToolUse(Bash)即可(守卫脚本本身是宿主无关的 node)。
 

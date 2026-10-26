@@ -6,6 +6,8 @@ phase: 01
 status: complete
 commits: 3
 requirements-completed: [REQ-3, REQ-4]
+batch: "01-02"                 <!-- 本批 PLAN 编号:同批的票一起落地、一起检查 -->
+batch-check-rounds: 1          <!-- 批级检查实测跑了几轮(一次修完再跑一次,最多 2);不许填「无」 -->
 ---
 
 <!-- status 只有两个合法值:complete | halted。halted = 有阻碍目标的缺口,不算完成,
@@ -24,6 +26,12 @@ JWT 认证含刷新令牌轮换,用 jose 库 —— 禁止 "认证已实现" 这
 ## Files
 - created: <path...>
 - modified: <path...>
+
+## 批级检查(整批一次)
+
+- **批级检查命令**:<PLAN 的 batch_verify —— 这一批跑的那条命令>
+- **跑了几轮**:<实测数字;一次修完再跑一次,最多 2 轮>
+- **这一轮修了什么**:<本批全部失败一起修的清单;没有就写 None>
 
 ## Deviations from Plan
 - [R1 - bug] Found during / Issue / Fix / Files / Commit
@@ -55,4 +63,5 @@ JWT 认证含刷新令牌轮换,用 jose 库 —— 禁止 "认证已实现" 这
 - commits=0 但有代码变更 = 非法,HALT。
 - 占位文本("To be filled"/"TBD")会被判假完成。
 - 验证方只认本文件 + git 双证;`## Self-Check: PASSED/FAILED` 必须写。
+- `batch-check-rounds` 写**实测数**:批级检查一轮就够就写 1;不要为了好看写成 0,也不要为凑轮数多跑。
 - 修复预算用尽时:**Deferred Issues 不可省**——那是"诚实记录没做完"的唯一出口。

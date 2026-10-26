@@ -86,14 +86,19 @@ description: "极简 GSD 执行:施工方身份 —— 照 PLAN 施工,不重做
 
 ## TDD(适用时)
 
-能先写 `expect(fn(input)).toBe(output)` 的任务 → RED(失败测试先行)→ GREEN → REFACTOR,各阶段独立提交。测试必须含**反例**(改实现看它会不会红);禁空洞断言(doesNotThrow 充数)。
+能先写 `expect(fn(input)).toBe(output)` 的任务 → RED(失败测试先行)→ GREEN → REFACTOR,各阶段可独立提交。测试必须含**反例**(改实现看它会不会红);禁空洞断言(doesNotThrow 充数)。
+**阶段里不跑贵的门禁**:提交很便宜,全量套件与全量 health 是**批级**的事(见下「批量收尾」)。
 
 ## SUMMARY 原子块(模板见 templates/summary.md)
 
 - **两类提交严格分开**:代码/测试/文档照常进 git(逐文件 staging,`type(phase-plan): 描述`);**SUMMARY 写进 `.planning/` 不 commit、不 push** —— 流程记忆属本地工件。
-- **verify 转绿才准提交**:本任务 `<verify>` 跑一遍、退出码 0 才 commit。跳过它等于把未验证的东西写进历史,后续每一步都在替它背书 —— 这条压过「写完立即提交」。
+- **本票 `<verify>` 转绿,这票才算做完**:它是**本票的便宜检查**(具名测试/单文件/单入口),退出码 0 才算这票落地。
+  但**票级 verify 不许是全量套件** —— 全量套件写在 PLAN 的 `batch_verify` 里,一批跑一次(见「批量收尾」)。
+- **批量收尾(一批一次)**:本批所有票落地后,跑**一次**批级检查(`batch_verify`);失败**一次修完**(这一批的全部失败一起修,
+  不是发现一条修一条),再跑一次(≤2 轮)。**不做**「改一处 → 修一次 → 测一次 → 提交一次」:逐次循环里的重复检查没有新证据,只吃上下文。
+  逐次提交可以(提交很便宜),但**贵的门禁不在票里跑**。
 - Write → commit 之间零叙述输出(截断是已知失败模式)。
-- frontmatter:`status: complete | halted`(halted 会阻塞下游,如实写)+ `commits:`(用 `git rev-parse`/`rev-list` **实测**,不手填;有代码变更但 commits=0 = 非法)+ requirements 完成清单。
+- frontmatter:`status: complete | halted`(halted 会阻塞下游,如实写)+ `commits:`(用 `git rev-parse`/`rev-list` **实测**,不手填;有代码变更但 commits=0 = 非法)+ requirements 完成清单 + `batch:`(本批 PLAN 编号)+ `batch-check-rounds:`(批级检查**实测**跑了几轮,不许填「无」)。
 - 一行摘要必须具体("JWT 认证含刷新轮换,用 jose 库"✓ / "认证已实现"✗)。
 - Deviations 按 `[Rule N - 类型]` 记录;无偏差也要写 "None — plan executed exactly as written"。
 - **Known Stubs**:写 SUMMARY 前扫一遍**你这次落地里**的占位/硬编码空值/无数据源组件,列 file+line+原因,不隐瞒。**「这个 stub 阻不阻碍目标」的判定归 mm-gsd-verify** —— 你只报事实,不下结论;你写的东西自己知道是占位,就别标成 complete。
@@ -102,7 +107,8 @@ description: "极简 GSD 执行:施工方身份 —— 照 PLAN 施工,不重做
 
 ## 完成后
 
-- 这一步做完的判据:SUMMARY 落盘在 `.planning/`,每个提交都在当前分支的历史里(`git rev-list` 实测,不手填),且本任务的 `<verify>` 退出码 0。
+- 这一步做完的判据:SUMMARY 落盘在 `.planning/`,每个提交都在当前分支的历史里(`git rev-list` 实测,不手填),且本任务的 `<verify>` 退出码 0;
+  整批落地后再跑一次批级检查(`batch_verify`),失败一次修完。
 - **下一步:调用 `mm-gsd-verify`** —— 验证独立读证据,不接受 SUMMARY 的自述。
 - 例外:`status: halted` 就如实写 halted 并说明阻碍 —— 那是给下游看的信号,不是失败;受阻时**不要**停在「等我再想想」。
 - 环的完整顺序只有 mm-gsd-loop 持有,这里只写自己这一步的出口。
