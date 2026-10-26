@@ -135,9 +135,20 @@ CONTEXT.md 每条 D-NN 决策必须被本 phase **至少一张票认领**并精�
 6. 决策保真偷懒:D-NN 只提一句不复述精确语义,执行时按自己的理解实现。
 7. 依赖/文件重叠没算清,并行计划互相踩文件(同 wave 零重叠是硬约束)。
 
+## 执行前预审(写完不等于能开工)
+
+机械合规过了(**`--plan` 退出码 0**)不代表这份计划成立 —— 所以执行前还有一道判断层的复核:
+
+1. **派一个全新上下文的只读子代理**做预审,照 `mm-gsd-verify` 的「执行前预审」节做。
+   **自己写自己审不算数** —— 写的人看不见自己漏了什么。子代理只读 CONTEXT / PLAN / REQ,不看你的规划过程。
+2. 预审产出 `.planning/<NN-MM>-PLAN-CHECK.md`(`status: passed|blocked` + 发现清单)。
+3. **BLOCKER 不清零就不许进执行**:退回你自己修(要改决策才回 `mm-gsd-discuss`),修完复审一次(≤2 轮);
+   复审还不降 → 停下升级到人。预审报的问题由**你**修 —— 预审只报不处方。
+
 ## 完成后
 
-- 这一步做完的判据:PLAN 落盘在 `.planning/<NN>-<MM>-PLAN.md`,且 `node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --plan <你的文件>` 退出码 0。
-- **下一步:调用 `mm-gsd-exec`** —— 按 PLAN 里的任务四件套动手,别临场重解需求。
+- 这一步做完的判据:PLAN 落盘在 `.planning/<NN>-<MM>-PLAN.md`,`node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --plan <你的文件>` 退出码 0,
+  **且** `.planning/<NN-MM>-PLAN-CHECK.md` 的 `status` 是 `passed`。
+- **下一步:调用 `mm-gsd-exec`** —— 按 PLAN 里的任务四件套动手,别临场重解需求。预审没过就不许进这一步。
 - 例外:`--plan` 没转绿就进执行,是拿一份执行者猜不出来的契约开工。报错里都写着该改什么,先改;真要改决策才回 mm-gsd-discuss。
 - 环的完整顺序只有 mm-gsd-loop 持有,这里只写自己这一步的出口。

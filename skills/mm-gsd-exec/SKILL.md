@@ -37,6 +37,9 @@ description: "极简 GSD 执行:施工方身份 —— 照 PLAN 施工,不重做
 - **analysis-paralysis 守卫**:连续 5+ 次读/搜无任何写/执行 → 停下,一句话说明,要么动手要么报 blocked。
 - 声明要改的文件与 PLAN 的 files_modified 不一致 → 记入 SUMMARY 偏差区,不静默扩大。
 - 项目已初始化(有 STATE.md)时,AGENTS.md / CLAUDE.md 之类约定文件**冷启动时已读过**,不必重读;只在你的改动会碰到它时再回来核验。
+- **开工前查预审结论**:读本票 PLAN 对应的 `.planning/<NN-MM>-PLAN-CHECK.md`,`status` 不是 `passed` → **停下升级**
+  (不自己开工、也不替 plan 修计划)。预审没做 = 这份计划没人独立看过 —— 机械合规过了不等于计划成立。
+  `passed` 也**只**表示「有人复核过」,不表示后面任何一道门禁可以免。
 
 ## 偏差规则(遇到计划外情况)
 

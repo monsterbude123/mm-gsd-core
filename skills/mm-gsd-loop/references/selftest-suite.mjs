@@ -1,15 +1,11 @@
-// 自测套件 —— 断言工具 + 长到塞不进 gate-selftest.mjs 的用例组。
-//
-// 为什么改名:它原本叫 selftest-helpers.mjs,只装断言工具(mkAssert);现在它同时装着用例组 —— 文件名要跟内容对上,文件名骗人比文件超限更难查。
-//
-// 为什么用例要从 gate-selftest.mjs 里搬出来:那个文件现 200/200 顶着 references/ 的上限,而用例只会继续长。
-// 断言只有一份实现(mkAssert),用例可以分文件;抄一份断言就是抄一份会走偏的判据 —— 而「判据走偏」正是自测存在的理由。
-//
+// 自测套件 —— 断言工具 + 长到塞不进 gate-selftest.mjs 的用例组(原名 selftest-helpers.mjs,只装断言工具;
+// 文件名要跟内容对上,文件名骗人比文件超限更难查)。用例从 gate-selftest.mjs 搬来是因为那儿 200/200 顶着上限,
+// 而用例只会继续长:断言只有一份实现(mkAssert),用例可以分文件 —— 抄一份断言就是抄一份会走偏的判据。
 // 三种断言:eq(正则)、eqN(单值)、eqArr(数组)。全部把失败计入 st.bad。
 
 import { classifyArtifact, parseAccounting, commitExists, checkArtifactLedger } from "./artifact-ledger.mjs";
 import { checkPhaseCoverage } from "./decision-gates.mjs";
-import { staleDecisions, coveredDecisions, phaseCovered, staleNote, planExists, runDecisionContracts } from "./ticket-alive.mjs";
+import { staleDecisions, coveredDecisions, phaseCovered, staleNote, planExists, runDecisionContracts, checkPlanCheckArtifacts } from "./ticket-alive.mjs";
 import { phaseHealth } from "./telemetry-aggregate.mjs";
 import { checkRoutes, routeSection } from "./agent-routing.mjs";
 import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, rmSync } from "node:fs";
@@ -179,8 +175,11 @@ export function runLedgerGateCases({ eqN }) {
     return out;
   };
   eqN(problems().length, 1, "零 commit 的 complete SUMMARY 判红");
-  // 退役回归(2026-10-22):纯实现票(covers: 无、什么都不认领)不再是「没记账」。
-  // D-03 之后核销由 phase 级 union 门判 —— 记账门若还按 per-plan 判,这里会是 2 条。
+  // 预审工件契约(phase 09 D-08):开工了却没预审结论 → 判红(不许静默跳过);还没开工 → 不判红
+  const pre = (plans, summaries) => checkPlanCheckArtifacts({ dir: pl, plans, summaries, frontmatter: () => ({ status: "passed" }) });
+  eqN(pre(["06-01-PLAN.md"], ["06-01-SUMMARY.md"]).length, 1, "开工却没有 PLAN-CHECK → 判红"); eqN(pre(["06-01-PLAN.md"], []).length, 0, "还没开工 → 不判红");
+  writeFileSync(join(pl, "06-01-PLAN-CHECK.md"), '---\nstatus: passed\n---\n'); eqN(pre(["06-01-PLAN.md"], ["06-01-SUMMARY.md"]).length, 0, "预审工件在且 passed → 转绿");
+  // 退役回归(2026-10-22):纯实现票(covers: 无)不再是「没记账」—— D-03 之后核销由 phase 级 union 门判,记账门若还按 per-plan 判这里会是 2 条。
   writeFileSync(join(pl, "06-02-PLAN.md"), '---\nphase: "06"\nplan: "02"\n---\n\n### T1 干活\n- **covers**: 无\n');
   writeFileSync(join(pl, "06-02-SUMMARY.md"), '---\nphase: "06"\nplan: "02"\nstatus: complete\ncommits: 2\n---\n');
   eqN(problems().length, 1, "纯实现票(零 D-NN 引用)不进问题清单 —— 核销归 phase 级 union");

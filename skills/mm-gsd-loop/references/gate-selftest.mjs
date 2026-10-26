@@ -1,12 +1,8 @@
-// 门禁自测 —— 独立成文件,不塞进 gsd-state-check.mjs。
-//
-// 为什么单独放:自测是"门禁对自己的检查",不是"对项目的检查";混在一起行数很快顶破 700 上限。
-// 跟 template-gates.mjs 一个套路:按需 import,主文件不胖。
-//
+// 门禁自测 —— 独立成文件,不塞进 gsd-state-check.mjs(自测是"门禁对自己的检查",不是"对项目的检查";混在一起行数很快顶破 700 上限)。跟 template-gates.mjs 一个套路:按需 import,主文件不胖。
 // 为什么必须有:GitHub #6/#7/#8 三条都是"门禁看起来在跑、实际判错"(VAGUE_FILE 的 N\/A 无左右断言 /
-// depends_on 只认半角括号 / derived 只判 SHIP 文件存在不读 status)——不是崩溃,是安静地给错答案,而"会红"只能靠用例证明。
+// depends_on 只认半角括号 / derived 只判 SHIP 文件存在不读 status)—— 不是崩溃,是安静地给错答案。
 
-import { validateVerification } from "./verification-gates.mjs";
+import { validateVerification, checkTicketPremises, checkTicketLoad, checkReqClaims } from "./verification-gates.mjs";
 import { checkDecisions, locateContexts, checkDrift, checkConclusionDrift } from "./decision-gates.mjs";
 import { ticketsCovered } from "./ticket-alive.mjs";
 import { mkAssert, runArtifactCases, runCoverageCases, runLedgerGateCases, runPhaseHealthCases, runRouteCases } from "./selftest-suite.mjs";
@@ -39,7 +35,7 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqArr(splitDeps("无依赖"), [], "depends_on: 无依赖 应解析为空依赖");
   eqArr(splitDeps("none"), [], "depends_on: none 应解析为空依赖");
   eqArr(splitDeps("01, 03"), ["01", "03"], "多依赖应拆分");
-  // 验收结论一致性闸:一条证明会红,一条证明不误伤 —— 只测「会红」不够。小节标题逐字抄自 templates/verification.md(含括号后缀):第一版写的是裸标题,自测永远绿而真实报告永远不触发。
+  // 验收结论一致性闸:一条证明会红,一条证明不误伤。小节标题逐字抄自 templates/verification.md(含括号后缀):第一版写的是裸标题,自测永远绿而真实报告永远不触发。
   const HUMAN_H = "## Human Verification Required(机器验不了,恒发不省略)";
   const vt = (status, rows, human, extra = "") => {
     const v = rows.filter((r) => r.startsWith("✓")).length;
@@ -50,7 +46,7 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   };
   eqN(vt("passed", ["✓ VERIFIED", "✗ FAILED"], "None"), 1, "正文有 FAILED 却写 passed 应判红");
   eqN(vt("passed", ["✓ VERIFIED", "✓ VERIFIED"], "None"), 0, "全 VERIFIED + 无人工项不应误伤");
-  // 下面四条用「闸作者模板之外」的输入(2026-10-20 教训):第一版 fixture 是照模板写的,模板与闸互不兼容永远暴露不出来。
+  // 下面四条用「闸作者模板之外」的输入(2026-10-20 教训):第一版 fixture 照模板写,模板与闸互不兼容永远暴露不出来。
   eqN(vt("passed", ["✓ VERIFIED", "❌ FAILED"], "None"), 1, "emoji ❌ FAILED 也该判红(第一版整行丢弃)");
   eqN(vt("passed", ["✓ VERIFIED", "FAILED"], "None"), 1, "裸 FAILED 也该判红");
   eqN(vt("passed", ["✓ VERIFIED", "✓ VERIFIED"], "- [ ] 视觉:导出按钮 hover 态 —— 期望:按钮变蓝"), 1, "模板实际的括号后缀标题要能触发人工项检查");
@@ -63,7 +59,7 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(dc("<decisions>\n### [D-01] 用 JWT,不用 session\n</decisions>", ["D-01"]), 1, "决策没标可逆性该判红");
   eqN(dc("<decisions>\n### [D-01] one-way — 改成新架构\n</decisions>", ["D-01"]), 1, "one-way 没举证该判红");
   eqN(dc("<decisions>\n### [D-01] reversible — 用 JWT\n### [D-02] costly — 引入 X,撤销需要 migration\n</decisions>", ["D-01", "D-02"]), 0, "标记齐全不该误伤");
-  // 02-03:四种书写形态都要被「认出」—— 认不出的决策既不核销也不过可逆性门,是最坏的隐形
+  // 02-03:四种书写形态都要被「认出」—— 认不出的决策既不核销也不过可逆性门
   eqN(dc("<decisions>\n**[D-01]** 用 JWT\n</decisions>", ["D-01"]), 1, "粗体 ** 决策也要被认");
   eqN(dc("<decisions>\n### [d-01] 用 JWT\n</decisions>", ["D-01"]), 1, "小写 ID 也要被认");
   eqN(dc("<decisions>\n- [D-01] 用 JWT\n</decisions>", ["D-01"]), 1, "列表项决策也要被认");
@@ -74,8 +70,7 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(dc("<decisions>\n### [D-01] one-way — 换掉存储层\n\n撤销需要 migration 03 重写全部数据。\n</decisions>", ["D-01"]), 0, "真举证不该误伤");
   // 标题行自带载体词但正文零举证 → 该红(G-01)。上面这条的对照:同样载体词,写在正文里就过。
   eqN(dc("<decisions>\n### [D-01] one-way — 换掉存储层\n\n这个决定改动不大。\n</decisions>", ["D-01"]), 1, "标题提到代价不算举证,正文零举证该红");
-  // G-01(02-06,fixture 来自独立对抗评审):举证区此前从**标题行本身**起算,把载体词从正文挪到标题就绕过 —— 本仓自己引入的假绿。
-  // 头一条是对照:标题中性时同样内容必须红,证明这不是措辞问题而是取样范围问题。
+  // G-01(02-06,fixture 来自独立对抗评审):举证区此前从**标题行本身**起算,把载体词挪到标题就绕过(本仓自己引入的假绿);头一条是对照:标题中性时同样内容必须红。
   eqN(dc("<decisions>\n## [D-01] 调整存储方案 (one-way)\n\n执行者照做即可。\n</decisions>", ["D-01"]), 1, "对照:标题中性+正文零举证该红");
   eqN(dc("<decisions>\n## [D-01] 采用一次性迁移 (one-way)\n\n执行者照做即可。\n</decisions>", ["D-01"]), 1, "载体词写在标题里不算举证");
   eqN(dc("<decisions>\n## [D-01] 调整 schema (one-way)\n\n执行者照做即可。\n</decisions>", ["D-01"]), 1, "标题里的 schema 不算举证");
@@ -92,8 +87,7 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   const dup = locateContexts([ctxDir, ctxDir]).length;
   eqN(dup, found.length, "同一目录重复传入不得产生重复条目");
   rmSync(ctxDir, { recursive: true, force: true });
-  // ---- 漂移门此前**零会红用例**,而 gate-cases.json 声称三条各有用例 —— 台账登记是假的(R-16 存在意义就是拦这种事,T-03)。
-  // fixture 用本仓真实工件格式:phase 与 plan 分两个字段,plan 存票号后缀。
+  // ---- 漂移门此前**零会红用例**,而 gate-cases.json 声称三条各有用例 —— 台账登记是假的(R-16 就是拦这种事,T-03)。
   const tck = (text, ticket) => ticketsCovered([{ file: "x-SUMMARY.md", text }], ticket);
   eqN(tck('---\nphase: "02"\nplan: "01"\n---\n', "02-01"), true, "SUMMARY 的 plan 后缀匹配该票该判已完成");
   eqN(tck('---\nphase: "02"\nplan: "03,04,05"\n---\n', "02-03"), true, "一份 SUMMARY 覆盖多票时前三票都算完成(本仓真实格式)");
@@ -126,8 +120,7 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(cd3([{ kind: "交付", file: "02-SHIP.md", path: cS }])[0]?.level, "warn", "已 shipped 的交付件同理只警告");
   writeFileSync(cS, '---\nstatus: draft\n---\n'); pin();
   eqN(cd3([{ kind: "交付", file: "02-SHIP.md", path: cS }])[0]?.level, "error", "未定稿的结论件早于 CONTEXT 该拦红");
-  // 反向:CONTEXT 被更新到比结论件更晚之后,旧结论件**仍然**该报漂移 —— 它确实过时了。
-  // 这里原写成「不该报」,是把方向搞反了:更新 CONTEXT 不是让结论件变新鲜,是让它更旧。
+  // 反向:CONTEXT 被更新到比结论件更晚之后,旧结论件**仍然**该报漂移(它确实过时了)—— 更新 CONTEXT 不是让它变新鲜,是让它更旧。
   writeFileSync(cS, '---\nstatus: shipped\n---\n');   // 复位:上一条把它改成 draft 了,未定稿会走 error
   set(cC, 3); pin();
   eqN(cd3([{ kind: "验收", file: "02-VERIFICATION.md", path: cF }])[0]?.level, "warn", "CONTEXT 更新后旧验收件该报漂移(它确实过时了)");
@@ -137,8 +130,7 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(cd3([{ kind: "验收", file: "02-VERIFICATION.md", path: cF }]).length, 0, "重跑过的验收件不比 CONTEXT 早时不该报");
   eqN(cd3([{ kind: "交付", file: "02-SHIP.md", path: cS }]).length, 0, "重新交付过的 SHIP 不该报");
   rmSync(dDir, { recursive: true, force: true });
-  // ---- 工件三态 + 记账台账 + 决策核销 + 分发包记账门:在 selftest-suite.mjs 里 ----
-  // 搬出去是因为本文件 200/200 顶着上限,而门禁自测的用例只会继续长。
+  // ---- 工件三态 + 记账台账 + 决策核销 + 分发包记账门:在 selftest-suite.mjs 里(本文件 200/200 顶格,用例只会继续长)。
   runArtifactCases({ eqN, eqArr });
   runCoverageCases({ eqN, eqArr });
   runLedgerGateCases({ eqN });
@@ -195,6 +187,14 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(checkTicketBudget([{ id: "T1", verify: "node --test test/x.test.mjs" }]).length, 0, "票级 verify 是单文件 → 转绿");
   eqN(checkResearchSummary("## 摘要\n" + Array.from({ length: 20 }, (_, i) => "- 第" + (i + 1) + "行").join("\n")).length, 1, "研究摘要 20 行 → 判红(主上下文会被灌)");
   eqN(checkResearchSummary("## 摘要\n- 一句话结论\n\n## 正文\n细节").length, 0, "研究摘要够短 → 转绿");
+  // ---- 计划可信度(phase 09 D-07):前提存在性 / 载量 / 需求反核销 ----
+  const d4 = mkdtempSync(join(tmpdir(), "mm-gsd-prem-"));
+  mkdirSync(join(d4, "src"), { recursive: true }); writeFileSync(join(d4, "src", "a.mjs"), "x"); mkdirSync(join(d4, ".planning"), { recursive: true }); writeFileSync(join(d4, ".planning", "REQUIREMENTS.md"), "- REQ-1: 真需求\n");
+  eqN(checkTicketPremises([{ id: "T1", files: [], readFirst: ["src/a.mjs"], verify: "node --test t.test.mjs" }], d4).length, 1, "票引用不存在的文件 → 判红(假前提 = 执行者空转)");
+  eqN(checkTicketPremises([{ id: "T1", files: ["t.test.mjs"], readFirst: ["src/a.mjs"], verify: "node --test t.test.mjs" }], d4).length, 0, "存在 + 这票自己产出 → 转绿");
+  eqN(checkTicketLoad([{ id: "T1", readFirst: Array.from({ length: 9 }, (_, i) => "f" + i) }]).length, 1, "read_first 9 条 → 判红(一个子代理读不完这一张票)");
+  eqN(checkReqClaims([{ id: "T1", covers: ["REQ-99"] }], d4).length, 1, "认领不存在的 REQ → 判红(凭空认领)");
+  eqN(checkReqClaims([{ id: "T1", covers: ["REQ-1"] }], d4).length, 0, "认领真实存在的 REQ → 转绿"); rmSync(d4, { recursive: true, force: true });
   console.log(st.bad ? `\n${st.bad} 项自测不过 —— 门禁本身是坏的,先修门禁` : "\n✓ 门禁自测全过");
   return st.bad;
 }

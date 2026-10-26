@@ -168,3 +168,32 @@ export function ticketsCovered(summaries, ticket) {
   }
   return false;
 }
+
+/**
+ * 预审工件(PLAN-CHECK)的契约门禁(phase 09 D-08)。
+ *
+ * 预审是判断层的复核:机械合规(`--plan` 绿)不代表这份计划成立。这条门禁管两件能判的事实:
+ * **形状**(status 必须是 passed|blocked,缺了或写了认不出的值 → 判红)与
+ * **不许静默跳过**(票已经开工、有 SUMMARY,却找不到对应的预审工件 → 判红;还没开工的不报 ——
+ * 预审本来就发生在执行之前)。它**不判预审结论的对错**(判不了):passed 只意味着「有人复核过」。
+ * @param dir 工件目录;@param plans/summaries 本 phase 的 PLAN/SUMMARY 文件名数组
+ * @param frontmatter 解析 frontmatter 的函数(调用方注入,避免抄第二份实现)
+ * @returns 问题串数组;空数组 = 契约齐
+ */
+export function checkPlanCheckArtifacts({ dir, plans = [], summaries = [], frontmatter }) {
+  const problems = [];
+  const names = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith("-PLAN-CHECK.md")) : [];
+  for (const p of plans) {
+    const base = p.replace(/-PLAN\.md$/, "");
+    const cf = `${base}-PLAN-CHECK.md`;
+    if (!names.includes(cf)) {
+      if (summaries.includes(`${base}-SUMMARY.md`))
+        problems.push(`${base}: 已经开工却没有预审结论(缺 ${cf}) —— 机械合规过了不等于这份计划成立`);
+      continue;
+    }
+    const st = frontmatter?.(join(dir, cf))?.status;
+    if (!["passed", "blocked"].includes(st))
+      problems.push(`${cf}: status 非法或缺失("${st ?? "缺"}") —— 预审结论只能写 passed(零 BLOCKER 且零 WARNING)或 blocked`);
+  }
+  return problems;
+}

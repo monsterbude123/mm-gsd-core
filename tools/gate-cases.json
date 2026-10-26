@@ -24,7 +24,8 @@
     "artifact-ledger.mjs": "由 R-18 的 check-artifact-ledger 驱动(它真读 .planning/ 判红),判定内核由 R-15 的 --selfcheck 覆盖:三态判定互斥、记账行解析、commit 存在性核对、纯实现票(零 D-NN 引用)不判红(退役回归)",
     "research-gates.mjs": "由 --plan 的研究触发检查驱动(触发条件成立又没有合规研究产物 → 判红),判定内核由 R-15 的 --selfcheck 覆盖:跨目录触发、单文件不触发、空洞研究不算合规、URL 端口号不算 file:line 引用",
     "agent-routing.mjs": "由 --routes 模式驱动(每个 mm-gsd 技能都要有「完成后」小节、小节点名的技能必须真实存在),判定内核由 R-15 的 --selfcheck 覆盖:缺小节判红、点名不存在的技能判红、小节边界只到下一个标题。phase 04 加进来的宿主路由提示也在同一组用例里:速查只列 active 规则且文本来自台账、读不到台账时速查为空不补写、指针卡里不许出现规则原文",
-    "worktree-view.mjs": "批图门与票预算门(phase 08):同批可并行的票撞文件 → 判红;票级 verify 是全量套件 → 判红;两条都有 --selfcheck 用例覆盖。"
+    "worktree-view.mjs": "批图门与票预算门(phase 08):同批可并行的票撞文件 → 判红;票级 verify 是全量套件 → 判红;两条都有 --selfcheck 用例覆盖。",
+    "ticket-alive.mjs": "预审工件契约门(phase 09 D-08):开工了却没有 PLAN-CHECK → 判红;status 非法 → 判红。有 --selfcheck 用例覆盖。"
   },
   "_tools": {
     "_why": "tools/ 下的模块不在 references/ 里,但同样是判定逻辑。按 T-02(散文没闸等于没写),它们也必须有会红的用例,否则改坏了没人知道。",

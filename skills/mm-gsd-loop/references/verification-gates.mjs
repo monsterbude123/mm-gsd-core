@@ -109,3 +109,78 @@ export function validateVerification(text, status) {
     add(`score 分母写 ${s.d},正文只有 ${total} 行判定`, "score 是 VERIFIED 数 / 总数,总数就是正文的判定行数 —— 少写几条 truth 不会让验收更真", "warn");
   return out;
 }
+
+/* ================= 计划的可信度:票站在什么前提上(phase 09 D-07) =================
+ *
+ * 为什么放这里:本模块管「工件说的话可不可信」—— 验收结论件说「做到了」,要问可不可信;
+ * 计划说「要改这个文件、这条验证跑得起来」,同样要问可不可信。票站在假前提上,
+ * 执行端要么卡住反复找,要么自己编 —— 那就是「任务有幻觉,agent 在空转」。
+ *
+ * 只取工件事实(路径在不在、条数多少、REQ 认不认得),不猜作者是不是故意的。
+ * 判不出就判不出:REQUIREMENTS.md 不存在 → 需求反核销跳过,不猜。
+ */
+
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { splitCommands } from "./worktree-view.mjs";
+
+/**
+ * 前提存在性:票里引用的路径,要么真实存在,要么是这张票自己要产出的。
+ *
+ * 例外(原版 `verify-command-path-resolvability.md:38` 的 pending_creation):票的 `files`
+ * 里列着的路径是**它自己会产出的**,不判 —— 判了就等于逼人先造文件再写票。
+ */
+export function checkTicketPremises(tickets, root) {
+  const problems = [];
+  const PATHY = /[\w./\-]+\.(?:mjs|cjs|js|ts|mts|cts|jsx|tsx|json|md|ya?ml|py|sh|html|css)\b/g;
+  for (const t of tickets) {
+    const own = new Set((t.files ?? []).map((f) => String(f).replace(/^\.\//, "")));
+    const seen = new Set();
+    const missing = (p) => {
+      const rel = String(p).replace(/^\.\//, "");
+      if (own.has(rel) || seen.has(rel)) return;      // 这票自己产出 / 重复引用
+      seen.add(rel);
+      if (!existsSync(join(root, rel))) problems.push(`${t.id}: 引用的 "${rel}" 不存在 —— 票站在一个假前提上,执行者会照着编或反复找`);
+    };
+    for (const p of t.readFirst ?? []) missing(p);
+    for (const c of splitCommands(String(t.verify ?? ""))) for (const m of c.matchAll(PATHY)) missing(m[0]);
+  }
+  return problems;
+}
+
+/**
+ * 载量:一张票的 `read_first` 不得超过 8 条。
+ *
+ * `read_first` 是执行前**要全部读完**的文件(exec 的纪律:任务列出的文件全部读完再写第一行)。
+ * 8 个已经是全读完的量;再多,执行者要么读不完就动手(后面全靠猜),要么上下文被吃光。
+ * 原版的对应阈值是「单任务 >10 文件 → 阻断」(`gsd-plan-checker.md:326-330`);
+ * mm-gsd 这里按 read_first 单独计,因为它是执行端的**必读**清单。
+ */
+export function checkTicketLoad(tickets) {
+  const problems = [];
+  for (const t of tickets) {
+    const n = (t.readFirst ?? []).length;
+    if (n > 8) problems.push(`${t.id}: read_first 有 ${n} 条(>8) —— 一个子代理读不完这一张票;砍掉真理来源文件或拆票`);
+  }
+  return problems;
+}
+
+/**
+ * 需求反核销:票 `covers` 里认领的 REQ 必须在 REQUIREMENTS.md 里真实存在。
+ *
+ * 只判**反**方向(凭空认领)。正方向(每条需求都要有票)要先给 REQUIREMENTS.md 定格式
+ * —— 它现在没有模板也没有格式约定,那是另一件事。文件不存在 → 判不了,不猜。
+ */
+export function checkReqClaims(tickets, root) {
+  const reqFile = join(root, ".planning", "REQUIREMENTS.md");
+  if (!existsSync(reqFile)) return [];
+  const known = new Set([...readFileSync(reqFile, "utf8").matchAll(/REQ-\d+/gi)].map((m) => m[0].toUpperCase()));
+  const problems = [];
+  for (const t of tickets) {
+    for (const r of t.covers ?? []) {
+      if (!/^REQ-/i.test(r)) continue;
+      if (!known.has(r.toUpperCase())) problems.push(`${t.id}: covers 认领了 "${r}",但 REQUIREMENTS.md 里没有这条需求 —— 凭空认领`);
+    }
+  }
+  return problems;
+}

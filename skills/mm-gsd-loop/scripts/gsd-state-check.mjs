@@ -231,6 +231,7 @@ if (process.argv.includes("--plan")) {
 
     if (!tasks.length) { e(`${name}: 没有 T1/T2 任务节 —— 计划无票可执行`, "至少写一个 '### T1 <任务名>'"); continue; }
     if (tasks.length > 3) e(`${name}: ${tasks.length} 个任务(>3) —— 超出单执行上下文预算`, "拆成多张票(每张 ≤3 任务);超预算的正解是拆票,不是缩内容");
+    const tickets = [];
 
     for (const t of tasks) {
       for (const key of ["files", "read_first", "action", "verify", "done"]) {
@@ -252,6 +253,7 @@ if (process.argv.includes("--plan")) {
       // 票预算(phase 08 D-03/D-04):一票只接一条 verify,且它不许是全量套件
       for (const p of checkTicketBudget([{ id: `${name} ${t.id}`, verify: v }]))
         e(p, "票级只跑本票的便宜检查(具名测试/单文件/单入口);全量套件写进 PLAN 的 batch_verify,一批跑一次");
+      tickets.push({ id: `${name} ${t.id}`, files: tf, readFirst: (field(t, "read_first") ?? "").split(/[,\s]+/).filter(Boolean), verify: v, covers: (field(t, "covers") ?? "").split(/[,\s]+/).filter(Boolean) });
     }
 
     // ---- 全文级:缩水与范围承诺 ----
@@ -260,7 +262,7 @@ if (process.argv.includes("--plan")) {
     else if (SHRINK_WEAK.test(body)) w(`${name}: 正文含 v1`, "确认这是版本号命名而不是范围缩水");
 
     // ---- 决策契约:实现在 references/,主脚本只留接线(作用域差异见 runDecisionContracts 注释)----
-    const dg = await import("../references/decision-gates.mjs"), { runDecisionContracts } = await import("../references/ticket-alive.mjs"), rg = await import("../references/research-gates.mjs");
+    const dg = await import("../references/decision-gates.mjs"), { runDecisionContracts } = await import("../references/ticket-alive.mjs"), rg = await import("../references/research-gates.mjs"), vg = await import("../references/verification-gates.mjs");
     const ctxs = dg.locateContexts([relForCtx, P(".")], root);   // root 必须传:否则 cwd ≠ 项目根时会读别人的 CONTEXT
     runDecisionContracts({
       name, planPath: path, ctxs, root,
@@ -270,6 +272,10 @@ if (process.argv.includes("--plan")) {
     rg.checkResearch({ name, goal: fm.goal ?? "", files: parsed.files, phase: phaseNo, root, planDir: dirname(path), e, w });
     // 研究消费门(phase 07 D-02):研究落盘了却没有票引用它 = 没人读 = 执行端重查一遍
     rg.checkResearchConsumed({ name, phase: phaseNo, root, planDir: dirname(path), text: txt, e, w });
+    // 计划可信度(phase 09 D-07):前提存在性 / 载量 / 需求反核销 —— 坏票在规划期就红,到不了执行端
+    for (const p of vg.checkTicketPremises(tickets, root)) e(p, "把路径改成真实存在的;这张票要产出的新文件写进 <files>,别在 read_first 里凭空引一个");
+    for (const p of vg.checkTicketLoad(tickets)) e(p, "砍掉真理来源文件或拆票 —— read_first 是执行前要全部读完的清单");
+    for (const p of vg.checkReqClaims(tickets, root)) e(p, "covers 只写真有的 REQ;要新需求就回 discuss 补进 REQUIREMENTS.md");
     // 批图(phase 08 D-02):同 phase 内可并行的票不许撞文件、依赖不许成环
     batchPlans.push({ id: name.replace(/-PLAN\.md$/, ""), phase: phaseNo, files: parsed.files, depends: depList(fm.depends_on) });
   }
@@ -623,6 +629,10 @@ const artifactInfo = { context: null, plans: [], summaries: [], verification: nu
   {
     const { checkArtifactLedger } = await import("../references/artifact-ledger.mjs");
     checkArtifactLedger({ root, report: { pass: () => {}, fail: (m) => err(m), info: (m) => warn(m) } });
+    const { checkPlanCheckArtifacts } = await import("../references/ticket-alive.mjs");
+    // 预审工件契约(phase 09 D-08):形状要对;已经开工却没有预审结论 → 不许静默跳过
+    for (const m of checkPlanCheckArtifacts({ dir: P("."), plans: artifactInfo.plans, summaries: artifactInfo.summaries, frontmatter }))
+      err(m, "先派一个全新上下文的只读子代理做预审(见 mm-gsd-verify「执行前预审」),产出 .planning/<NN-MM>-PLAN-CHECK.md");
   }
   if (artifactInfo.verification) {
     const vfm = frontmatter(J(artifactInfo.verification));
