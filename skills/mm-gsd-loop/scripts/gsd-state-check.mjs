@@ -189,6 +189,9 @@ if (process.argv.includes("--plan")) {
     die("未找到任何 *-PLAN.md —— 先按 templates/plan.md 落盘,再跑本检查。");
   }
 
+  const batchPlans = [];
+  const depList = (v) => String(v ?? "").replace(/[[\]"'\s]/g, "").split(/[,、]/).filter(Boolean);
+  const { checkTicketBudget } = await import("../references/worktree-view.mjs");
   for (const rel of targets) {
     const path = resolve(rel);
     if (!existsSync(path)) { e(`${rel}: 文件不存在`, "路径写错,或 PLAN 还没落盘"); continue; }
@@ -246,6 +249,9 @@ if (process.argv.includes("--plan")) {
       for (const f of tf) if (VAGUE_FILE.test(f)) e(`${name} ${t.id}: <files> 模糊项 "${f}"`, "改成精确路径");
       const dn = field(t, "done") ?? "";
       if (/looks correct|works properly|完成该功能|应该没问题/i.test(dn)) e(`${name} ${t.id}: done 是主观语`, "换成可度量判据(测试名/命令输出/CLI 结果)");
+      // 票预算(phase 08 D-03/D-04):一票只接一条 verify,且它不许是全量套件
+      for (const p of checkTicketBudget([{ id: `${name} ${t.id}`, verify: v }]))
+        e(p, "票级只跑本票的便宜检查(具名测试/单文件/单入口);全量套件写进 PLAN 的 batch_verify,一批跑一次");
     }
 
     // ---- 全文级:缩水与范围承诺 ----
@@ -264,6 +270,15 @@ if (process.argv.includes("--plan")) {
     rg.checkResearch({ name, goal: fm.goal ?? "", files: parsed.files, phase: phaseNo, root, planDir: dirname(path), e, w });
     // 研究消费门(phase 07 D-02):研究落盘了却没有票引用它 = 没人读 = 执行端重查一遍
     rg.checkResearchConsumed({ name, phase: phaseNo, root, planDir: dirname(path), text: txt, e, w });
+    // 批图(phase 08 D-02):同 phase 内可并行的票不许撞文件、依赖不许成环
+    batchPlans.push({ id: name.replace(/-PLAN\.md$/, ""), phase: phaseNo, files: parsed.files, depends: depList(fm.depends_on) });
+  }
+  {
+    const wv = await import("../references/worktree-view.mjs");
+    for (const ph of [...new Set(batchPlans.map((b) => b.phase))]) {
+      for (const p of wv.checkBatchGraph(batchPlans.filter((b) => b.phase === ph)))
+        e(p, "同 phase 内互不依赖的票就是可并行的 —— 撞了文件就必须拆批或补依赖");
+    }
   }
 
   console.log("\n=== mm-gsd 计划门禁(" + targets.length + " 份) ===");

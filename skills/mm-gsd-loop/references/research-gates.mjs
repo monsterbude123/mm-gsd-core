@@ -1,15 +1,11 @@
-// 研究触发与研究产物合规(D-03)。
+// 研究触发与研究产物合规(D-03)。独立成文件:decision-gates.mjs 已 183/200 塞不下,
+// 而且「研究」是另一种关注面 —— 那边管「决策有没有被执行」,这边管「动手前有没有先搞懂」。
 //
-// 为什么独立成文件:decision-gates.mjs 已经 183/200 行,塞不下;而且「研究」是另一种
-// 关注面 —— 那边管「决策有没有被执行」,这边管「动手之前有没有先搞懂」。
+// 为什么要有这道门:D-03 之前研究是**可选**的 —— 六个 skill 里没有一处有主动研究动作,
+// plan 模板的四源表连 RESEARCH 这一格都没有(只写「如做了」)。「可以不做」的后果由别人承担。
 //
-// 为什么要有这道门:D-03 之前的流程里,研究是**可选**的 —— 六个 skill 里没有一处有
-// 主动研究动作,plan 模板的四源表甚至连 RESEARCH 这一格都没有(只写「如做了」)。
-// 「可以不做」的后果由别人承担:内容做浅、完成度 60%。
-//
-// 触发条件必须**机器可判**:恒真即恒红(T-13),而恒红的门要么被绕过,要么被忽略。
-// 不合格的触发条件还有两个:「agent 觉得不熟悉」(主观、每次都成立)与
-// 「全文字段里出现研究二字」(每个提到研究的 PLAN 都触发)。
+// 触发条件必须**机器可判**:恒真即恒红(T-13)。不合格的触发条件有两个:「agent 觉得不熟悉」
+// (主观、每次都成立)与「全文字段里出现研究二字」(每个提到研究的 PLAN 都触发)。
 
 import { existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -106,15 +102,16 @@ export function checkResearch({ name, goal = "", files = [], phase, root, planDi
   const c = researchCompliant(readFileSync(artifact, "utf8"));
   if (!c.ok)
     e(`${name}: 研究产物 ${artifact} 没有指向具体结论的引用 —— 「读了很多文件」不能自证读对了`, "补一条 file:line 引用(形如 skills/mm-gsd-loop/scripts/gsd-state-check.mjs:120),并说明这条引用支持哪个结论");
+  // 摘要要短(phase 08 D-01):主上下文只拿摘要,摘要太长照样击穿上下文
+  for (const p of checkResearchSummary(readFileSync(artifact, "utf8")))
+    e(`${name}: 研究产物 ${artifact} ${p}`, "补一个不超过 15 行的「## 摘要」节(结论清单),细节留在正文里给票用");
 }
 
 /**
  * 研究消费门 —— 研究落盘了,却没有票引用它,等于没人读。
  *
- * 为什么要有这条(phase 07 D-02):`RESEARCH` 在 mm-gsd-exec/SKILL.md 里出现 0 次 ——
- * 研究产物落盘了,却没有任何角色被要求读它。于是执行端不知道「哪些结论已经查过」,
- * 只得自己重查一遍:调研的时间被花两遍,而且第二遍还没人监督。
- *
+ * 为什么要有这条(phase 07 D-02):`RESEARCH` 在 mm-gsd-exec/SKILL.md 里出现 0 次 —— 研究产物落盘了,却没有任何
+ * 角色被要求读它,执行端不知道「哪些结论已经查过」,只得自己重查一遍(调研的时间花两遍,第二遍没人监督)。
  * 判据:phase 有研究产物 + 该 phase 的**活票**没在任何 read_first / action 里点名它 → 判红。
  * 只对活票判(与上面的研究触发门同一套判活判据)—— 存量工件恒红就是墙(T-13)。
  *
@@ -134,14 +131,11 @@ export function checkResearchConsumed({ name, phase, root, planDir, text = "", e
 }
 
 /**
- * 全仓版:扫 .planning 下所有活票,逐张判研究有没有被消费。
- * 给 mmc 的 R-21 门禁用(判据是工件事实,不是散文)。
+ * 全仓版:扫 .planning 下所有活票,逐张判研究有没有被消费。给 mmc 的 R-21 门禁用。
  *
- * **自证会红**(照 checkTags 的形状):门禁自己造一个假场景(有研究产物 + 票没引用它),
- * 跑一遍**整条判定路径**,确认它真的给出判红。门禁自己不会红,就没有人知道它坏了 ——
- * check-report-fails-loud 的先例。实测过的洞:把判定改成「永远通过」,
- * 自测能抓住;但把门禁**接线**整个掏空,自测抓不到(自测直接调函数,不经接线)——
- * 那个洞是本仓所有门禁共有的,记在 phase 07 的 deferred 里。
+ * **自证会红**(照 checkTags 的形状):门禁自己造一个假场景(有研究产物 + 票没引用它),跑一遍整条判定
+ * 路径,确认它真的判红。门禁自己不会红,就没人知道它坏了。实测过的洞:把判定改成「永远通过」自测能抓住;
+ * 但把门禁**接线**整个掏空,自测抓不到(自测直接调函数,不经接线)—— 那个洞是本仓所有门禁共有的。
  */
 export function checkResearchConsumedAll({ root, report }) {
   const dir = join(root, ".planning");
@@ -176,4 +170,31 @@ export function checkResearchConsumedAll({ root, report }) {
   }
   if (pass) report.pass(`研究产物都有票消费(${checked} 张活票;自证会红)`);
   return pass;
+}
+
+/**
+ * 研究摘要门禁(phase 08 D-01/D-08):研究产物必须带 `## 摘要`,且摘要**不超过 15 行**。
+ *
+ * 「探索外包」这条纪律有一半机器判不了(主上下文有没有真只拿摘要),另一半判得了 ——
+ * **摘要有多长**。摘要是主上下文唯一要读的东西,30 行还是 300 行,决定这轮会不会击穿上下文。
+ * 细节留在正文里给票用(结论摘进 `<action>`),主上下文不必读它。
+ *
+ * @param text 研究产物全文
+ * @returns 问题串数组;空数组 = 摘要合规
+ */
+export function checkResearchSummary(text) {
+  const problems = [];
+  const s = String(text ?? "");
+  const m = s.match(/^##\s*摘要\s*$/m);
+  if (!m) {
+    problems.push("研究产物没有「## 摘要」节 —— 主上下文只拿摘要;没摘要就等于把全文灌进主上下文");
+    return problems;
+  }
+  const after = s.slice(m.index + m[0].length);
+  const next = after.search(/^##\s/m);
+  const body = (next < 0 ? after : after.slice(0, next)).trim();
+  const lines = body ? body.split(/\r?\n/).filter((l) => l.trim()).length : 0;
+  if (!lines) problems.push("「## 摘要」节是空的");
+  else if (lines > 15) problems.push(`「## 摘要」有 ${lines} 行(>15)—— 摘要在复述全文;压到 15 行内,细节留在正文里给票用`);
+  return problems;
 }

@@ -285,7 +285,7 @@ node tools/mmc.mjs promote 0.4.1 --execute  # 真晋级(改 npm 标签 —— �
 
 | 步 | 做什么 | 为什么是这个顺序 |
 |---|---|---|
-| 1 | 跑 `mmc health` 全部门禁 | 门禁不绿就不该发出去 |
+| 1 | 跑 `mmc health` 全部门禁 | 门禁不绿就不该发出去(逐次提交跑 `--fast` 快检,全量留到批次/phase 收尾) |
 | 2 | 递增版本号(改 `package.json`) | 版本是发布的标识 |
 | 3 | 提交 + 打 `vX.Y.Z` 标签 | 代码与版本一一对应,可回溯 |
 | 4 | `npm publish` | 发出去了就收不回来 |
@@ -421,7 +421,8 @@ node tools/mmc.mjs issue      # 带证据转 issue(没证据不给建)
 node tools/mmc.mjs fix        # 标记解决并跑全部门禁
 node tools/mmc.mjs close      # 关掉已修的 GitHub issue
 node tools/mmc.mjs distill    # 复盘 → 规则 / 理论条目
-node tools/mmc.mjs health     # 每次提交必跑,CI 也会跑
+node tools/mmc.mjs health --fast   # 每次提交前跑(快检:跳过四条慢门禁)
+node tools/mmc.mjs health          # 全量:批次与 phase 收尾跑,CI 也会跑
 ```
 
 闭环是 `inbox → fix → release → close`。使用方 agent 那边报修走随包分发的入口:

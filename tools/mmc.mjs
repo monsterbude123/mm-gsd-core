@@ -6,7 +6,7 @@
 //   issue    带证据转 issue          → 问题可追溯
 //   fix      最小改动 + 复现用例     → 问题解决
 //   distill  复盘 → 规则/理论条目     → 经验落地
-//   health   每次提交都跑            → 门禁生效(预算/台账/自检/零依赖/模式顺序)
+//   health   门禁生效(快检 --fast / 全量) → 预算/台账/自检/零依赖/模式顺序
 //
 // 零依赖,跨平台(Windows)。用法:mmc.mjs <命令> [参数]
 
@@ -67,6 +67,11 @@ const globToMatcher = (pattern) => {
 };
 
 // ---- 检查器组:ledger 里每条 active 规则挂的那一个 ----
+// 慢门禁:要起子进程、装包、跑冷启动沙盒的那几条。
+// 逐次提交跑全量太贵(实测 24.3 秒/次,见 phase 08-RESEARCH),所以 health 分两档:
+// `--fast` 跳过这几条(但要**点名**跳过,不许悄悄不跑),全量留到批次与 phase 收尾。
+const HEAVY = new Set(["check-syntax-and-modes", "check-package-verifiable", "check-install-traceable", "check-card-refresh"]);
+
 const CHECKS = {
   // R-01:issue 必须带证据
   "check-issue-evidence"(report) {
@@ -218,12 +223,9 @@ const CHECKS = {
     return true;
   },
 
-  // R-06:零依赖
-  // "零依赖"指零第三方依赖,不是零 import。相对路径引同仓库的兄弟模块是
-  // 本仓库自己的代码,换台机器照样在 —— 但它必须真的存在,否则才是安装摩擦。
-  // 判据:node: 内置 或 . 开头(相对同仓库,且单独校验可达)。
-  // 静态 import 写错路径 Node 加载时就崩(红得很响);动态 import() 藏在函数里
-  // 加载期不崩、运行到才炸,所以两种都得扫 —— 只扫静态的等于漏一半。
+  // R-06:零依赖。"零依赖"指零第三方依赖,不是零 import:相对路径引同仓库的兄弟模块是
+  // 本仓库自己的代码,但必须真的存在(否则才是安装摩擦)。静态 import 写错路径加载时就崩,
+  // 动态 import() 藏在函数里加载期不崩、运行到才炸 —— 两种都得扫,只扫静态的等于漏一半。
   async "check-zero-dep"(report) {
     let pass = true;
     for (const f of (await collectScripts(ROOT, "skills", "tools"))) {
@@ -307,8 +309,7 @@ const CHECKS = {
     return pass;
   },
 
-  // R-15:门禁必须对自己的正则有自测。GitHub #6/#7/#8 三条都是
-  // 「门禁看起来在跑、实际判错」—— 不崩,只是安静地给错答案。
+  // R-15:门禁必须对自己的正则有自测。GitHub #6/#7/#8 三条都是「门禁看起来在跑、实际判错」—— 不崩,只是安静地给错答案。
   "check-gate-selftest"(report) {
     let out = "", code = 0;
     try { out = execFileSync(process.execPath, [CHECKER, "--selfcheck"], { cwd: ROOT, encoding: "utf8", stdio: "pipe" }); }
@@ -320,9 +321,8 @@ const CHECKS = {
     return false;
   },
 
-  // R-16:每个门禁必须登记一条会红用例。GitHub #6/#7/#8 的根因都是
-  // 「门禁看起来在跑、实际永远绿或判错」,而 R-15 只覆盖检查器的正则 ——
-  // mmc 自己的门禁坏了,当时没有任何东西能发现。核对实现见 module-registry.mjs。
+  // R-16:每个门禁必须登记一条会红用例。GitHub #6/#7/#8 的根因都是「门禁看起来在跑、实际永远绿或判错」,
+  // 而 R-15 只覆盖检查器的正则 —— mmc 自己的门禁坏了没人能发现。核对实现见 module-registry.mjs。
   async "check-gate-cases"(report) {
     const reg = readJSON(R("tools", "gate-cases.json"), null);
     if (!reg) { report.fail("读不到 tools/gate-cases.json"); return false; }
@@ -411,13 +411,10 @@ const CHECKS = {
   "check-card-refresh"(report) { return checkCardRefresh(report, ROOT); },
 
   // R-20:改外部发布通道必须显式 —— promote 默认只演练;发版只落 next,latest 只能由 promote 显式动。
-  // 为什么要有这条:改 npm 的 dist-tag 是外部副作用,「批 promote」是人保留的动作
-  // (03-CONTEXT D-04)。promote 一旦默认就真跑,agent 顺手敲一条命令就把公开标签改了。
-  // 这里不查源码,查行为:注入一个会记账的假 exec,断言默认路径一次 registry 都没碰。
-  //
-  // 发版那一半:npm publish 默认落 latest —— 「发个版」会把正式通道一起带走,
-  // 而 latest 的语义是「最稳那条」(03-CONTEXT D-01)。2026-10-22 真发 0.4.1 时
-  // 就是这么发生的:latest 从 0.4.0 跳到 0.4.1,工具的收尾文案却写着「latest 未动」。
+  // 为什么:改 npm 的 dist-tag 是外部副作用,「批 promote」是人保留的动作(03-CONTEXT D-04);promote 一旦默认就真跑。
+  // 这里不查源码查行为:注入一个会记账的假 exec,断言默认路径一次 registry 都没碰。
+  // 发版那一半:npm publish 默认落 latest —— 「发个版」会把正式通道一起带走,而 latest 的语义是「最稳那条」
+  // (03-CONTEXT D-01)。2026-10-22 真发 0.4.1 时就是这么发生的:latest 从 0.4.0 跳到 0.4.1,收尾文案却写着「latest 未动」。
   // 断言的是命令本身(构造与调用是同一处),不是某句文案。
   async "check-channel-safety"(report) {
     const { makeReleaseFlow, publishArgs } = await import("./release-flow.mjs");
@@ -596,9 +593,10 @@ const CMD = {
     return 0;
   },
 
-  // 5. 体检:每次提交都跑
-  async health() {
-    head("⑤ health —— 门禁体检(每次提交都要跑)");
+  // 5. 体检:逐次提交跑快检(--fast),批次与 phase 收尾跑全量
+  async health(args) {
+    const fast = (args ?? []).includes("--fast");
+    head(fast ? "⑤ health —— 门禁体检(快检:跳过慢门禁;全量留到批次/phase 收尾)" : "⑤ health —— 门禁体检(全量)");
     const ledgerPath = R(".agents", "rules", "ledger.json");
     const raw = readFileSync(ledgerPath, "utf8");
     let led;
@@ -632,11 +630,12 @@ const CMD = {
       return 1;
     }
     const report = { pass: (s) => ok(s), fail: (s) => bad(s), info: (s) => log(`  ${C.d}· ${s}${C.x}`) };
-    let failed = 0, ran = 0;
+    let failed = 0, ran = 0, skipped = 0;
     for (const r of led.rules ?? []) {
       if (r.status !== "active" || !r.check) continue;
       const fn = CHECKS[r.check];
       if (!fn) { bad(`${r.id}: check "${r.check}" 不存在`); failed++; continue; }
+      if (fast && HEAVY.has(r.check)) { skipped++; log(`  ${C.d}${r.id} 跳过(快检模式:慢门禁,留到全量)${C.x}`); continue; }
       ran++;
       const before = process.exitCode;
       let pass = false;
@@ -647,7 +646,7 @@ const CMD = {
     }
     log("");
     if (failed) { bad(`${failed}/${ran} 条规则门禁未通过 —— 不许合进 main`); return 1; }
-    ok(`${ran} 条规则门禁全通过`);
+    ok(`${ran} 条规则门禁全通过` + (skipped ? `(${skipped} 条慢门禁在快检里跳过 —— 批次与 phase 收尾要跑全量)` : ""));
     return 0;
   },
 
@@ -688,7 +687,7 @@ ${C.b}mmc${C.x} — mm-gsd-core 自我维护 CLI
   ${C.b}fix${C.x}       标记解决并跑全部门禁  mmc fix <id>
   ${C.b}close${C.x}     关掉已修的 GitHub issue  mmc close <id> | --all
   ${C.b}distill${C.x}   复盘 → 规则/理论沉淀(挂不上门禁的规则不许 active)
-  ${C.b}health${C.x}    体检:台账/预算/模板自检/零依赖/模式顺序   ${C.d}每次提交都要跑${C.x}
+  ${C.b}health${C.x}    体检:台账/预算/模板自检/零依赖/模式顺序   ${C.d}--fast 只跑快检;全量留到批次/phase 收尾${C.x}
   ${C.b}budget${C.x}    只看体积预算
 
 ${C.d}核心循环:observe → issue → fix → distill →(下次 observe)

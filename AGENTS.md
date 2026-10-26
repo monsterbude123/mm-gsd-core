@@ -31,7 +31,8 @@ discuss → plan → exec → verify    observe / inbox → issue
 | 修复 | `fix` | R-01 证据;R-13/R-14 报修不假绿 |
 | 沉淀 | `distill` | R-02(挂不上门禁不许 active) |
 | 发布 + 覆盖安装 | `release` | R-11 打包、R-12 可追溯 |
-| 每次提交前 | `health` | 全部 active 规则 |
+| 每次提交前 | `health --fast` | 全部 active 规则(跳过四条慢门禁) |
+| 批次 / phase 收尾 | `health` | 全量(含慢门禁) |
 
 **这三个格子原来都是空的**——有事实、没命令、也没挂门禁的纪律。列出来是为了不让它被当成不存在:
 
@@ -81,7 +82,7 @@ observe ──→ issue ──→ fix ──→ distill ──→ health ──�
 | fix | `node tools/mmc.mjs fix <id>` | 标记解决并跑全部门禁 |
 | close | `node tools/mmc.mjs close <id>` | 关掉已修的 GitHub issue |
 | distill | `node tools/mmc.mjs distill` | 复盘 → 规则 / 理论条目 |
-| health | `node tools/mmc.mjs health` | **每次提交前必跑** |
+| health | `node tools/mmc.mjs health --fast` | **每次提交前必跑**(快检);全量 `health` 在批次与 phase 收尾跑 |
 
 ### 派子代理时怎么用路由提示
 
@@ -123,6 +124,8 @@ npx mm-gsd-core report "<标题>" --evidence "<复现命令或报错>"
 ## 不可协商的三条
 
 **1. `mmc health` 必须绿才能进 main。** 它逐条执行台账里每条 active 规则挂的检查。
+逐次提交跑 `--fast`(全量实测 24.3 秒/次,逐次跑会吃掉上下文);全量留到批次与 phase 收尾 ——
+**贵的门禁不在每次改动里跑**。
 不绿就是没门禁了,不是"门禁坏了可以绕过"。
 
 **2. 变胖必须有等量删除。** `budget.json` 有总行数上限和单文件上限,`health` 会拦。

@@ -9,6 +9,9 @@
 // 判定逻辑逐字保留(phase 04 的 T1):搬家不改行为。搬家改行为是另一件事,
 // 混在一起就分不清「输出变了」是因为搬了家还是因为改了逻辑。
 //
+// phase 08 起这里还管**批内并行与票预算**(checkBatchGraph / checkTicketBudget):
+// 「能不能并行」和「worktree 能不能并行」是同一个判断,两个地方各判一次就会分叉。
+//
 // 依赖注入:PLAN 的解析(frontmatter / parsePlanFile / listPlanFiles)在主脚本里,
 // 搬过来抄一份就是第二真相源 —— 抄的那份迟早与原件分叉,而没人会比对它们。
 
@@ -101,4 +104,97 @@ export function runWorktrees({ cwd, plan, die }) {
   if (busy.length > 1) console.log("\n  ! " + busy.length + " 个 worktree 同时 executing —— 确认 dev server 端口 / 同一数据库 / 共享构建产物没打架(端口冲突不体现在 files_modified 里)");
   console.log("");
   return hard.length ? 1 : 0;
+}
+
+/**
+ * 批图门禁(phase 08 D-02):可并行的两张票**不许撞同一个文件**,票间依赖不许成环。
+ *
+ * 为什么要它:原版 GSD 把这条做进了分派器(`gsd-planner.md:761`「Same-wave plans must have
+ * zero files_modified overlap」,`execute-phase.md:525-530` 派活前再查一遍)。mm-gsd 没有分派器,
+ * 也就没人查 —— 于是「并行」只存在于散文里。判据只取**工件事实**:票的 files 清单与依赖声明。
+ *
+ * 只在**同一个 phase 内**判:不同 phase 碰同一个文件是正常的(前一个 phase 改完,后一个再改),
+ * 跨 phase 判重叠会把正常的先后关系判成冲突。
+ *
+ * @param tickets [{id, files:[], depends:[]}] 同一 phase 的票
+ * @returns 问题串数组;空数组 = 批图健康 */
+export function checkBatchGraph(tickets) {
+  const problems = [];
+  const byId = new Map(tickets.map((t) => [t.id, t]));
+  // 依赖成环:顺着 depends 走一圈回到自己
+  const state = new Map();
+  const walk = (id, path) => {
+    if (state.get(id) === "done") return;
+    if (state.get(id) === "open") { problems.push(`依赖成环:${[...path, id].join(" → ")} —— 批图没有入口,派不了活`); return; }
+    state.set(id, "open");
+    for (const d of byId.get(id)?.depends ?? []) if (byId.has(d)) walk(d, [...path, id]);
+    state.set(id, "done");
+  };
+  for (const t of tickets) walk(t.id, []);
+  // 可并行的两张票撞同一个文件:谁都不依赖谁 → 可能同时开工 → 必须零文件重叠
+  for (let i = 0; i < tickets.length; i++) {
+    for (let j = i + 1; j < tickets.length; j++) {
+      const a = tickets[i], b = tickets[j];
+      const linked = (a.depends ?? []).includes(b.id) || (b.depends ?? []).includes(a.id);
+      if (linked) continue;
+      const hit = (a.files ?? []).filter((f) => (b.files ?? []).includes(f));
+      if (hit.length) problems.push(`${a.id} 与 ${b.id} 互不依赖(可并行)却撞了文件:${hit.join("、")} —— 并行必冲突,拆批或补依赖`);
+    }
+  }
+  return problems;
+}
+
+/**
+ * 票预算门禁(phase 08 D-03/D-04):一票只接**一条** verify,且它不许是全量套件。
+ *
+ * 为什么要它:「逐次循环」在机器上留下的痕迹就是**每票都跑一遍全量**。全量套件每跑一次都是几十秒到几分钟,
+ * 票一多就把整批的时间吃光;而逐票跑全量并不会多给一条证据 —— 票级要的是「这一票的断言过没过」,
+ * 那是具名测试/单文件的事(原版 `gsd-code-fixer.md:715`、`gsd-verifier.md:477`)。全量属于批级 batch_verify。
+ *
+ * @param tasks [{id, verify}] 票
+ * @returns 问题串数组;空数组 = 票预算健康
+ */
+export function checkTicketBudget(tasks) {
+  const problems = [];
+  for (const t of tasks) {
+    const cmds = splitCommands(String(t.verify ?? ""));
+    // 只数「测试类」命令:`cd x && npm test` 是一条检查,不是两条
+    const tests = cmds.filter((c) => TEST_CMD.test(c));
+    if (tests.length > 1) problems.push(`${t.id}: ${tests.length} 条测试命令 —— 一票只接一个子代理,一次只验一件事(其余挪到批级 batch_verify)`);
+    for (const c of cmds) if (isFullSuite(c)) problems.push(`${t.id}: verify 是全量套件(${c})—— 票级只跑本票的便宜检查,全量写进 PLAN 的 batch_verify`);
+  }
+  return problems;
+}
+
+/** 看起来是「跑测试」的命令 */
+const TEST_CMD = /\b(npm\s+(?:run\s+)?test|node\s+--test|pytest|jest|vitest|go\s+test|cargo\s+test|mvn\s+test|gradle\s+test|make\s+test)\b/;
+
+/** 按 shell 语义切命令:引号里的 ; 与 && 不算分隔符 */
+export function splitCommands(cmd) {
+  const out = [];
+  let cur = "", q = null;
+  for (let i = 0; i < cmd.length; i++) {
+    const c = cmd[i];
+    if (q) { cur += c; if (c === q && cmd[i - 1] !== "\\") q = null; continue; }
+    if (c === '"' || c === "'" || c === "`") { q = c; cur += c; continue; }
+    if (c === ";" || c === "\n") { out.push(cur); cur = ""; continue; }
+    if ((c === "&" || c === "|") && cmd[i + 1] === c) { out.push(cur); cur = ""; i++; continue; }
+    cur += c;
+  }
+  out.push(cur);
+  return out.map((s) => s.trim()).filter(Boolean);
+}
+
+/** 这条命令是不是「跑全套」?有收窄参数(具名测试/单文件/单包)就不算。 */
+export function isFullSuite(cmd) {
+  const c = String(cmd ?? "").replace(/[`'"]/g, "");
+  if (/\bgo\s+test\b/.test(c)) return /\.\.\./.test(c) || !/\s\.\//.test(c);
+  if (/\bnode\s+--test\b/.test(c)) return !/\s\S+\.(?:mjs|cjs|js|ts|mts|cts|jsx|tsx)\b/.test(c);
+  if (/\bpytest\b/.test(c)) return !/\s\S+\.py\b|\s-t\s|\s-k\s/.test(c);
+  if (/\bnpm\s+(?:run\s+)?test\b/.test(c)) return !/\s--\s|\s\S+\.(?:mjs|cjs|js|ts|tsx|mts|py|cts)\b|\s-t\s/.test(c);
+  if (/\b(?:yarn|pnpm)\s+test\b/.test(c)) return !/\s--\s|\s\S+\.(?:mjs|cjs|js|ts|tsx)\b/.test(c);
+  if (/\bjest\b|\bvitest\b/.test(c)) return !/\s\S+\.(?:mjs|cjs|js|ts|tsx)\b|\s-t\s/.test(c);
+  if (/\bcargo\s+test\b/.test(c)) return !/\s--\s*\S+\s+\S/.test(c);
+  if (/\bmvn\s+test\b|\bgradle\s+test\b|\bmake\s+test\b/.test(c)) return true;
+  return false;
 }
