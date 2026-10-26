@@ -1,6 +1,6 @@
 {
   "name": "mm-gsd-core",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "description": "极简 GSD 核心:把散文约定换成机器门禁。五步循环 + 六模式状态检查器 + 多 worktree 并发契约 + 交付终态门禁",
   "keywords": [
     "ai",
