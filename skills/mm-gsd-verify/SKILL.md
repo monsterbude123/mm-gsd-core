@@ -112,7 +112,7 @@ PLAN 的每一张票,在这里都要拿到一条 verdict —— **不看 SUMMARY
   `fix_hint` 只是**一条**可选路线,不是指令 —— 说不出不变式的,降级 INFO 或直接丢掉。
 - **只报不处方**:报出失败的那一行原文,不要替 plan 写改法(改法归 plan,拍板归 discuss)。
 
-### 产出(形状写在这里,不另立模板文件 —— 仓库文件数已满)
+### 产出(形状写在这里,不另立模板文件 —— 判据与形状同源,另立模板只会分叉)
 
 `.planning/<NN-MM>-PLAN-CHECK.md`,frontmatter:
 
@@ -121,11 +121,18 @@ PLAN 的每一张票,在这里都要拿到一条 verdict —— **不看 SUMMARY
 status: passed      # passed = 零 BLOCKER 且零 WARNING;有 INFO 照列但不挡
 plan: "09-01"       # 对应哪张 PLAN
 blockers: 0
-warnings: 2
+warnings: 0
 ---
 ```
 
 正文:发现清单,每条 = 维度 / 严重级 / 不变式 / 证据(引用 PLAN 里的原文行)。没有发现也要写正文(说明查了哪些维度、什么证据)。
+
+**自相矛盾会被机器判红**:`status: passed` 却 blockers/warnings 非零 → 判定不成立(fail-closed)。
+`plan:` 必须是**这张票**的票号 —— 复审时别复用上一轮的结论,那是别人的票的结论。
+
+**结论落盘后可以自己验**:`mm-gsd check --plan-check .planning/<NN-MM>-PLAN.md`
+会核对这份工件的形状与票号,并给出「能不能开工」的结论(退出码 0 = 能开工)。
+不需要等人来问 —— 写完自己跑一次。
 
 ### 有界修订
 

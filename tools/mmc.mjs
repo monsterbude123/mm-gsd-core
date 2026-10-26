@@ -16,7 +16,7 @@ import { execFileSync } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
 import { missingRules, BASELINE_RULES } from "./rule-baseline.mjs";
 import { registryGaps, unregisteredModules, baselineDrift, deadGates, checkCardClaims, checkCardRefresh } from "./module-registry.mjs";
-import { fatAdvice, collectFiles, countLines, collectScripts } from "./budget.mjs";
+import { collectFiles, countLines, collectScripts } from "./budget.mjs";
 import { fileURLToPath } from "node:url";
 import { makeInboxClose, clusterKey, readLocalIssues, findRecurrences, recurrenceRate } from "./gh-issues.mjs";
 import { makeReleaseFlow, checkTags } from "./release-flow.mjs";
@@ -111,42 +111,40 @@ const CHECKS = {
     return pass;
   },
 
-  // R-03:体积预算
+  // 体积统计:只报不拦。2026-10-26 起没有体积硬顶(fileCaps / maxTotalFiles 已退役,见 docs/theory.md T-16)
+  // —— 硬顶逼出的不是瘦身,是为凑行数做的等价交换,那是收过路费。
+  // 匹配器仍然自测:它现在用于按族分组统计,坏掉的匹配器会让统计静默空过(假绿)。
   async "check-budget"(report) {
     for (const [pat, path, want] of MATCHER_SELFTEST) {
       let got;
       try { got = globToMatcher(pat)(path); }
-      catch (e) { report.fail(`匹配器自测崩了(${pat}): ${e.message} —— 上限检查等于没跑`); return false; }
-      if (got !== want) { report.fail(`匹配器自测失败: ${pat} 对 ${path} 应为 ${want} 实为 ${got} —— 上限检查等于没跑`); return false; }
+      catch (e) { report.fail(`匹配器自测崩了(${pat}): ${e.message} —— 体积统计等于没跑`); return false; }
+      if (got !== want) { report.fail(`匹配器自测失败: ${pat} 对 ${path} 应为 ${want} 实为 ${got} —— 体积统计等于没跑`); return false; }
     }
     const b = readJSON(R("budget.json"), null);
     if (!b) { report.fail("读不到 budget.json"); return false; }
     const { collectFiles, countLines } = await import("./budget.mjs");
-    const files = collectFiles(ROOT, "skills", "tools");
+    const files = collectFiles(ROOT, "skills", "tools", "bin", "docs");
     const { counts, total } = countLines(ROOT, files);
-    let pass = true;
-    // 全局总量只是参考线,不拦人。2026-10-19 起从硬顶改为参考 —— 理由见 docs/theory.md T-12:
-    // 硬顶会逼出「为了凑行数而合并/删减」的等价交换,那是收过路费。真正防住膨胀的是下面两条硬门禁。
     const over = total - b.totalLines;
-    if (over > 0) report.info(`总行数 ${total},高于参考线 ${b.totalLines}(超 ${over})—— 参考线不拦人;膨胀由单文件/文件数上限拦`);
+    if (over > 0) report.info(`总行数 ${total},高于参考线 ${b.totalLines}(超 ${over})—— 参考线,只报不拦`);
     else report.pass(`总行数 ${total} / 参考线 ${b.totalLines}(余 ${b.totalLines - total})`);
-    if (files.length > b.maxTotalFiles) { report.fail(`文件数 ${files.length} 超上限 ${b.maxTotalFiles} —— 该合并,不是新增`); pass = false; }
-    for (const cap of b.fileCaps ?? []) {
-      const match = globToMatcher(cap.pattern);
-      for (const [p, n] of Object.entries(counts)) {
-        if (match(p) && n > cap.max) { report.fail(`${p}: ${n} 行,单文件上限 ${cap.max}(超 ${n - cap.max})\n${fatAdvice(p, n, cap, counts)}`); pass = false; }
-      }
+    // 按族报一遍:哪一族在长,自己看得见。统计用同一个匹配器,所以它的自测是有意义的。
+    for (const g of [...(b.systemGlobs ?? []), ...(b.docGlobs ?? [])]) {
+      const m = globToMatcher(g);
+      const n = Object.entries(counts).filter(([p]) => m(p)).reduce((a, [, v]) => a + v, 0);
+      report.info(`${g}: ${n} 行`);
     }
-    if (pass) report.pass(`全部 ${files.length} 个文件在单文件上限内`);
+    report.pass(`${files.length} 个文件 —— 体积只报不拦(硬顶已退役)`);
     const top = Object.entries(counts).sort((a, b2) => b2[1] - a[1]).slice(0, 3);
     report.info("最大的三个文件: " + top.map(([p, n]) => `${pathBase(p)} ${n}`).join(", "));
-    return pass;
+    return true;
   },
 
   // R-04:语法 + 六种模式真跑
   async "check-syntax-and-modes"(report) {
     let pass = true;
-    for (const f of (await collectScripts(ROOT, "skills", "tools"))) {
+    for (const f of (await collectScripts(ROOT, "skills", "tools", "bin"))) {
       try { execFileSync(process.execPath, ["--check", f], { stdio: "pipe" }); }
       catch (e) { report.fail(`${rel(f)}: 语法错误\n${String(e.stderr || e.message).split("\n").slice(0, 3).join("\n")}`); pass = false; }
     }
@@ -156,7 +154,7 @@ const CHECKS = {
     const sandbox = join(tmpdir(), "mmc-smoke");
     mkdirSync(join(sandbox, ".planning"), { recursive: true });
     writeFileSync(join(sandbox, ".planning", "STATE.md"), "---\nstatus: discussing\nactive_phase: 01\n---\n");
-    const modes = ["", "--plan", "--phases", "--worktrees", "--stats", "--json", "--routes"];
+    const modes = ["", "--plan", "--plan-check", "--phases", "--worktrees", "--stats", "--json", "--routes"];
     for (const m of modes) {
       try {
         execFileSync(process.execPath, [CHECKER, m].filter(Boolean), { cwd: sandbox, env: { ...process.env, GSD_SANDBOX: "1" }, stdio: "pipe", timeout: 20000 });
@@ -168,7 +166,7 @@ const CHECKS = {
         }
       }
     }
-    if (pass) report.pass("七种模式全部能在未初始化项目里跑起来(冷启动沙盒)");
+    if (pass) report.pass("八种模式全部能在未初始化项目里跑起来(冷启动沙盒)");
     return pass;
   },
 
@@ -228,7 +226,7 @@ const CHECKS = {
   // 动态 import() 藏在函数里加载期不崩、运行到才炸 —— 两种都得扫,只扫静态的等于漏一半。
   async "check-zero-dep"(report) {
     let pass = true;
-    for (const f of (await collectScripts(ROOT, "skills", "tools"))) {
+    for (const f of (await collectScripts(ROOT, "skills", "tools", "bin"))) {
       const src = readFileSync(f, "utf8");
       const specs = [
         ...[...src.matchAll(/^\s*import\s+.*?from\s+["']([^"']+)["']/gm)].map((m) => m[1]),
@@ -587,7 +585,7 @@ const CMD = {
     log(`\n  每次修复后问自己三件事:`);
     log(`    1. 这次踩的坑,是「纪律没写」还是「纪律写了但没门禁」?`);
     log(`       ${C.d}——绝大多数是后者。写了没门禁的纪律等于没写。${C.x}`);
-    log(`    2. 修完之后系统变大了吗?变大了要等量删掉什么?${C.d}(见 budget.json)${C.x}`);
+    log(`    2. 修完之后系统变大了吗?${C.d}体积只报不拦(hard cap 已退役,见 docs/theory.md T-16)—— 大不是罪,看不懂才是${C.x}`);
     log(`    3. 这条经验是通用的,还是只对当前实现成立?通用的进 rules,只对实现成立的留在 git history 里就够了。`);
     log(`\n  理论文档:docs/theory.md   复盘模板:docs/lessons/TEMPLATE.md\n`);
     return 0;
@@ -670,7 +668,7 @@ const CMD = {
   },
 
   // release / promote:发布通道。实现住在 tools/release-flow.mjs ——
-  // 主文件已 700/700 顶着上限,再加就破(本仓先例:gh-issues.mjs、rule-baseline.mjs)。
+  // 主文件别再涨:发布流程的细节(打 tag、推 tag、验 tag)自成一份,留在主文件里只会让它读不下去。
   ...makeReleaseFlow({ log, ok, bad, warn, head, C, health: () => CMD.health() }),
 
 };

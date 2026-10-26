@@ -98,7 +98,8 @@ ${C.b}mm-gsd${C.x} — 极简 GSD 核心安装器
       --uninstall             移除已装的技能
       --home <dir>            覆盖家目录(测试用;Windows 上 HOME 环境变量不生效,必须用这个)
   ${C.b}doctor${C.x}             体检:宿主环境、已装状态、hooks(只读,不改任何东西)
-  ${C.b}check${C.x} [args]       跑状态检查器(转发 --plan / --phases / --worktrees / --stats / --templates)
+  ${C.b}check${C.x} [args]       跑状态检查器(转发 --plan / --plan-check / --phases / --worktrees / --stats / --templates)
+  ${C.b}check --plan-check${C.x} <PLAN>  显式校验一份计划:现在能不能开工(退出码 0 = 能)
   ${C.b}--help${C.x}
 
 ${C.d}装完就能用:在项目里让 agent 调用 mm-gsd-discuss / plan / exec / verify / loop。${C.x}

@@ -147,10 +147,28 @@ CONTEXT.md 每条 D-NN 决策必须被本 phase **至少一张票认领**并精�
 3. **BLOCKER 不清零就不许进执行**:退回你自己修(要改决策才回 `mm-gsd-discuss`),修完复审一次(≤2 轮);
    复审还不降 → 停下升级到人。预审报的问题由**你**修 —— 预审只报不处方。
 
+## 显式校验计划(随时可做,不必等流程走到那一步)
+
+用户随时可能问「这份计划能开工吗」。别凭印象回答,别等流程自己走到预审那一步 —— **跑一次就有答案**:
+
+```
+node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --plan-check .planning/<NN-MM>-PLAN.md
+# 装成命令后等价于:mm-gsd check --plan-check <同一路径>
+```
+
+它做三件事:跑完整的机器判据 → 核对预审工件(`status`/票号/计数自不自洽)→ 给出
+**「能不能开工」**的结论(退出码 0 = 能开工)。
+
+- **预审没做**:命令会把该派什么、写成什么样**直接打印出来** —— 照抄给一个**全新上下文的只读子代理**。
+  **你多半没有再派子代理的能力**:预审不是你派,是你把票交回编排层(`mm-gsd-loop`),编排层派。
+- **预审 blocked**:把 findings 逐条修掉(要改决策才回 `mm-gsd-discuss`),复审一次(≤2 轮),再跑一次这条命令。
+- **改了计划**:之前那轮结论不再作数 —— 机器判据重跑,预审也要重审。
+
 ## 完成后
 
-- 这一步做完的判据:PLAN 落盘在 `.planning/<NN>-<MM>-PLAN.md`,`node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --plan <你的文件>` 退出码 0,
-  **且** `.planning/<NN-MM>-PLAN-CHECK.md` 的 `status` 是 `passed`。
+- 这一步做完的判据:PLAN 落盘在 `.planning/<NN>-<MM>-PLAN.md`,
+  `node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --plan-check <你的文件>` 退出码 0
+  (它同时覆盖机器判据与预审工件),**且** `.planning/<NN-MM>-PLAN-CHECK.md` 的 `status` 是 `passed`。
 - **下一步:调用 `mm-gsd-exec`** —— 按 PLAN 里的任务四件套动手,别临场重解需求。预审没过就不许进这一步。
 - 例外:`--plan` 没转绿就进执行,是拿一份执行者猜不出来的契约开工。报错里都写着该改什么,先改;真要改决策才回 mm-gsd-discuss。
 - 环的完整顺序只有 mm-gsd-loop 持有,这里只写自己这一步的出口。

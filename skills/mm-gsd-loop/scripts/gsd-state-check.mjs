@@ -8,6 +8,7 @@
 // 无参数  = 状态行 + 违规清单,违规 exit 1
 //   --json    机读:{state, derived, errors, warnings}     --quiet  只退出码(CI)
 //   --init    建 STATE.md          --plan  校验 PLAN 文件          --phases 算波次
+//   --plan-check <PLAN>  显式校验:这份计划现在能不能开工(退出码 0 = 能)
 //   --worktrees 跨 worktree 冲突  --templates 模板自检            --stats   遥测聚合
 //   --selfcheck  门禁对自己的正则自测(见 references/gate-selftest.mjs)
 //
@@ -42,7 +43,9 @@ const TELEMETRY_PATH = join(homedir(), ".agents", "mm-gsd-runs.jsonl");
 // 用途:自测沙箱里的失败是**正常的**(那是在故意造失败),不该混进
 // 「最该修的地方」排行 —— 否则 observe 环的诊断入口被自己的自测噪声淹掉。
 const SANDBOX = process.env.GSD_SANDBOX === "1";
-const MODE = ["init", "worktrees", "plan", "phases", "stats", "route"].find((m) => process.argv.includes("--" + m))
+// 显式开工判定(--plan-check)与规划期体检(--plan)是**两个模式**:语义不同,不能共用一个开关。
+const PLAN_CHECK = process.argv.includes("--plan-check");
+const MODE = ["init", "worktrees", "plan", "plan-check", "phases", "stats", "route"].find((m) => process.argv.includes("--" + m))
   ?? (process.argv.includes("--json") ? "check-json" : "check");
 const runRec = { ts: new Date().toISOString(), mode: MODE, cwd: root, sandbox: SANDBOX, declared: null, derived: null, phase: null, errors: [], warnings: [] };
 // exit 钩子保证每个 process.exit 路径都被记到,不靠人工在分支里记得写
@@ -161,13 +164,16 @@ if (process.argv.includes("--worktrees")) {
   process.exit(runWorktrees({ cwd: process.cwd(), plan: { frontmatter, parsePlanFile, listPlanFiles }, die }));
 }
 
-// ---- --plan:计划质量门禁(散文约定 → 可执行检查)----
-if (process.argv.includes("--plan")) {
+// ---- --plan / --plan-check:计划质量门禁(散文约定 → 可执行检查)----
+// --plan = 规划期体检:预审还没派不算红(那时预审本来就还没发生)。
+// --plan-check = 开工判定:预审没做/结论非法/结论没 passed,一律判不能开工。
+// 两者共用同一批机器判据,差的是「预审工件」这一层 —— 只有显式校验才问它。
+if (process.argv.includes("--plan") || PLAN_CHECK) {
   const errs = [], warns = [];
   const e = (m, fix) => errs.push({ message: m, fix: fix ?? "" });
   const w = (m, fix) => warns.push({ message: m, fix: fix ?? "" });
 
-  const at = process.argv.indexOf("--plan");
+  const at = process.argv.indexOf(PLAN_CHECK ? "--plan-check" : "--plan");
   const arg = process.argv[at + 1];
   // 三种写法都收:.planning/02-01-PLAN.md、02-01-PLAN.md、绝对路径;已含 .planning 的别再拼一次
   const resolve = (rel) => {
@@ -189,7 +195,7 @@ if (process.argv.includes("--plan")) {
     die("未找到任何 *-PLAN.md —— 先按 templates/plan.md 落盘,再跑本检查。");
   }
 
-  const batchPlans = [];
+  const batchPlans = [], review = [], reviewErrs = [];
   const depList = (v) => String(v ?? "").replace(/[[\]"'\s]/g, "").split(/[,、]/).filter(Boolean);
   const { checkTicketBudget } = await import("../references/worktree-view.mjs");
   for (const rel of targets) {
@@ -200,6 +206,14 @@ if (process.argv.includes("--plan")) {
     const parsed = parsePlanFile(txt);
     const name = rel.split(/[\\/]/).pop();
     const relForCtx = dirname(rel);
+    // 预审工件(只有 --plan-check 判):显式校验问的是「现在能不能开工」,不是「合不合规」。
+    // 判定住在 references/plan-ready.mjs —— 主脚本只留接线。
+    if (PLAN_CHECK) {
+      const { checkPlanReady } = await import("../references/plan-ready.mjs");
+      const rr = checkPlanReady({ planPath: path });
+      review.push({ name, state: rr.state });
+      for (const p of rr.problems) reviewErrs.push({ message: p.msg, fix: p.fix });
+    }
 
     // ---- frontmatter 契约 ----
     if (!fm.goal) e(`${name}: 缺 goal`, "写成结果形一句话(做完之后用户能做到什么),不是任务形");
@@ -287,6 +301,7 @@ if (process.argv.includes("--plan")) {
     }
   }
 
+  if (PLAN_CHECK) errs.push(...reviewErrs);
   console.log("\n=== mm-gsd 计划门禁(" + targets.length + " 份) ===");
   for (const t of targets) console.log("  " + t.split(/[\\/]/).pop());
   for (const x of errs) console.log(`  ✗ ${x.message}${x.fix ? `\n      → ${x.fix}` : ""}`);
@@ -301,6 +316,10 @@ if (process.argv.includes("--plan")) {
       const h = phaseHealth(root, ph);
       console.log(`  · phase ${ph} 过程健康:票 ${h.tickets} / 受阻 ${h.blocked} / 缺口 ${h.gaps}(过程健康,不是质量分)`);
     }
+  }
+  if (PLAN_CHECK) {
+    const { renderPlanReady } = await import("../references/plan-ready.mjs");
+    console.log(renderPlanReady({ review, ok: !errs.length }));
   }
   process.exit(errs.length ? 1 : 0);
 }

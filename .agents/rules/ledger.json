@@ -23,10 +23,11 @@
     },
     {
       "id": "R-03",
-      "statement": "系统总行数不得超过 budget.json 的 totalLines;单文件不得超过 fileCaps。变胖必须有等量删除。",
+      "statement": "[已退役 2026-10-26]系统总行数不得超过 budget.json 的 totalLines;单文件不得超过 fileCaps。变胖必须有等量删除。",
       "check": "check-budget",
-      "status": "active",
-      "since": "2026-10-19"
+      "status": "retired",
+      "since": "2026-10-19",
+      "_note": "退役理由:硬顶逼出的是等价交换(把该有的内容挤成注释、把该拆的模块塞进邻居文件),不是瘦身 —— 用户判定价值为负。体积现在只报不拦;check-budget 还在(变成统计门 + 匹配器自测),由 R-09 驱动。详见 docs/theory.md T-16。"
     },
     {
       "id": "R-04",

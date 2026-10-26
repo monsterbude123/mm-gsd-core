@@ -1,6 +1,5 @@
 {
-  "_why": "防膨胀靠两条硬门禁:单文件上限、文件数上限。总量只是参考线,不拦人 —— 硬顶会逼出「为凑行数而合并删减」��等价交换。依据 docs/theory.md T-12。",
-  "_amend": "改单文件上限必须走一次 distill:在 docs/theory.md 写清楚为什么这个上限可以放宽、放宽换来什么可度量的收益。只写「需要更多空间」不算理由。",
+  "_why": "体积只报不拦。2026-10-26 退役 fileCaps 与 maxTotalFiles 两条硬顶:硬顶逼出的不是瘦身,是等价交换 —— 该有的内容被挤成注释,该拆的模块被塞进邻居文件。理由与代价见 docs/theory.md T-16。",
   "systemGlobs": [
     "skills/**",
     "tools/**",
@@ -11,47 +10,9 @@
     "*.md"
   ],
   "totalLines": 3015,
-  "_totalRationale": "参考线,不是门槛。超过只提示不拦人。真正拦住膨胀的是 fileCaps 与 maxTotalFiles。",
+  "_totalRationale": "参考线,不是门槛。超了只提示不拦人 —— 现在没有任何体积硬顶。",
   "_totalRationaleHistory": [
-    "2026-10-19:从硬顶降为参考线。观察到的副作用 —— 为凑行数把 exec 失效模式两条同义项合并、把 loop 散文压掉,那些删除不是去脂肪是为计数器好看。一个防膨胀机制开始逼写文档的人做等价交换,就是收过路费。详见 T-12。"
-  ],
-  "fileCaps": [
-    {
-      "pattern": "skills/**/SKILL.md",
-      "max": 320,
-      "_why": "散文是脂肪最容易堆的地方。loop SKILL.md 是本仓最大的 SKILL(实时值跑 mmc budget 看),想加内容先想删哪条。"
-    },
-    {
-      "pattern": "skills/**/*.mjs",
-      "max": 700,
-      "_why": "检查器是本仓最大的文件、且长期贴着这个上限(实时值跑 mmc budget 看)。它已经很大:下次加模式前先考虑拆成两个文件。"
-    },
-    {
-      "pattern": "skills/**/references/*.mjs",
-      "max": 200,
-      "_why": "references 里的规则表会随契约增长,单独给一条比挤进主脚本的 700 上限合理"
-    },
-    {
-      "pattern": "skills/**/templates/*.md",
-      "max": 80,
-      "_why": "模板超 80 行会让人不愿照抄,等于没写。"
-    },
-    {
-      "pattern": "skills/**/hooks/*",
-      "max": 120,
-      "_why": "钩子要短,长了就该拆。"
-    },
-    {
-      "pattern": "tools/*.mjs",
-      "max": 700,
-      "_why": "维护工具自身也不能胖——这是最容易自我腐化的地方。"
-    },
-    {
-      "pattern": "bin/*.mjs",
-      "max": 250,
-      "_why": "安装器是要分发给用户的入口,不该无限长"
-    }
-  ],
-  "maxTotalFiles": 40,
-  "_maxFilesRationale": "skill/工具文件加文档已接近两位数(实时计数跑 mmc budget 看)。超过 40 个说明该合并而不是新增。"
+    "2026-10-19:从硬顶降为参考线。观察到的副作用 —— 为凑行数把 exec 失效模式两条同义项合并、把 loop 散文压掉,那些删除不是去脂肪是为计数器好看。一个防膨胀机制开始逼写文档的人做等价交换,就是收过路费。详见 T-12。",
+    "2026-10-26:fileCaps 与 maxTotalFiles 一并退役,体积彻底只报不拦。用户判定:为凑上限做的等价交换,价值为负。详见 T-16。"
+  ]
 }

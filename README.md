@@ -141,6 +141,7 @@ CK=~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs
 node $CK --init "<项目目标>"   # 冷启动:建 .planning/STATE.md
 node $CK                      # 每步收尾:工件契约 + 状态推导 + 交付缺口
 node $CK --plan               # PLAN 落盘后:四件套/失败方向/文件清单/任务预算
+node $CK --plan-check <PLAN>  # 显式校验:机器判据 + 预审工件 → 现在能不能开工(退出码 0 = 能)
 node $CK --phases             # 规划前:算波次 + 同波次零重叠 + 环依赖
 node $CK --worktrees          # 并行前:跨 worktree 文件与 REQ 冲突
 node $CK --routes             # 技能门禁:每个技能都写清了自己的下一步
@@ -204,6 +205,17 @@ node $CK --stats              # 诊断:读遥测,不用手工记
   「你应该怎么改」；**只报不处方**——改法归 plan，拍板归 discuss。
 - BLOCKER 不清零不进执行；退回 plan 修，复审 ≤2 轮；issue 数不下降就升级到人。
 - 执行端开工前会读这份工件：`status` 不是 `passed` 就停下升级。
+
+**显式校验（不想等流程走到那一步时,自己跑）**
+
+```
+node $CK --plan-check .planning/<NN-MM>-PLAN.md     # 或:mm-gsd check --plan-check <同一路径>
+```
+
+它把两件事合成一个结论:**能不能开工**。跑完整的机械判据 → 核对预审工件
+（`status` 合法吗?票号对得上吗?`passed` 却 `blockers/warnings` 非零 = 自相矛盾 → 判红）→
+给出结论并返回退出码（0 = 能开工）。预审还没做时,它会把该派的只读子代理提示词**直接打印出来**,
+照抄即可 —— 判据在 `mm-gsd-verify` 的「执行前预审」节,命令只负责调用与核对。
 
 **`--phases`**
 
@@ -419,8 +431,7 @@ node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --route plan
   本项目门禁速查(机器从 ledger/budget 读出,不是手写):
     · active 规则 20 条:
         R-01 任何进 main 的行为改变,都必须能追溯到一个 issue……
-    · 单文件上限 7 条:
-        skills/**/SKILL.md ≤ 320
+    · 本项目没有体积上限 —— 体积只报不拦(不是缺数据,是事实)
 ```
 
 速查是**现场读出来的**:从当前项目的 `.agents/rules/ledger.json` 与 `budget.json` 读。
@@ -485,12 +496,15 @@ I-900: 复发 1 次 —— 但它没有 github: 行,拉不回远端,本地标记
 `observe` 读的就是检查器自己写的遥测。跑起来的当场效果:
 它会把你真实项目里的重复失败聚成几类,并标出哪些值得转 issue。
 
-**防肥胖靠两条硬约束,不是靠自觉:**
+**防肥胖靠一条硬约束,不是靠自觉:**
 
-1. `budget.json` 定死总行数与单文件上限,超了就红。**变胖必须有等量删除。**
-2. `.agents/rules/ledger.json` 里**每条 active 规则必须挂一个可跑的门禁**。
-   挂不上检查的纪律只能进 `candidates`——因为这个仓库自己的历史已经证明,
-   写了没门禁的纪律在真实项目里会原形毕露。
+`.agents/rules/ledger.json` 里**每条 active 规则必须挂一个可跑的门禁**。
+挂不上检查的纪律只能进 `candidates`——因为这个仓库自己的历史已经证明,
+写了没门禁的纪律在真实项目里会原形毕露。
+
+体积**只报不拦**(`budget.json` 现在没有硬顶,2026-10-26 退役):硬顶逼出的是
+「为凑行数做等价交换」——把内容压成注释、把模块塞进邻居文件 —— 那是收过路费。
+`mmc budget` 仍然会报总行数、按族分组和最大的三个文件,自己看得见就够了。
 
 **造门禁的判据:上线前必须先造一个违规输入,证明它真的会红。**
 

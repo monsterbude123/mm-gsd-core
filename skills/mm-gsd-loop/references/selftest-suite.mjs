@@ -4,11 +4,13 @@
 // 三种断言:eq(正则)、eqN(单值)、eqArr(数组)。全部把失败计入 st.bad。
 
 import { classifyArtifact, parseAccounting, commitExists, checkArtifactLedger } from "./artifact-ledger.mjs";
+import { checkPlanReady, REVIEW_PROMPT } from "./plan-ready.mjs";
 import { checkPhaseCoverage } from "./decision-gates.mjs";
 import { staleDecisions, coveredDecisions, phaseCovered, staleNote, planExists, runDecisionContracts, checkPlanCheckArtifacts } from "./ticket-alive.mjs";
 import { phaseHealth } from "./telemetry-aggregate.mjs";
 import { checkRoutes, routeSection } from "./agent-routing.mjs";
-import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, rmSync, existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -193,4 +195,74 @@ export function runLedgerGateCases({ eqN }) {
   writeFileSync(join(pl, "06-01-SUMMARY.md"), '---\nphase: "06"\nplan: "01"\nstatus: halted\ncommits: 0\n---\n');
   eqN(problems().length, 0, "halted 的工件零 commit 不算毛病(它没声称完成)");
   rmSync(dir, { recursive: true, force: true });
+}
+
+// ---- 显式开工判定(--plan-check 的判定核心):fail-closed,看不清的状态一律不能开工 ----
+export function runPlanReadyCases(st) {
+  const { eqN } = st;
+  const dir = mkdtempSync(join(tmpdir(), "mm-gsd-planready-"));
+  const plan = join(dir, "07-01-PLAN.md");
+  const check = join(dir, "07-01-PLAN-CHECK.md");
+  writeFileSync(plan, "---\nphase: \"07\"\n---\n");
+  const ready = () => checkPlanReady({ planPath: plan });
+  const put = (body) => writeFileSync(check, body);
+  try {
+    eqN(ready().state, "missing", "没有预审工件 → missing(不是默认可行)");
+    eqN(ready().problems.length, 1, "没有预审工件 → 报一条");
+    put('---\nstatus: 看情况\n---\n');
+    eqN(ready().state, "invalid", "status 非法 → invalid(fail-closed)");
+    put('---\nstatus: blocked\nblockers: 1\nwarnings: 0\nplan: "07-01"\n---\n');
+    eqN(ready().state, "blocked", "status=blocked → 不能开工");
+    eqN(ready().problems.length, 1, "blocked → 报一条");
+    put('---\nstatus: passed\nblockers: 1\nwarnings: 0\nplan: "07-01"\n---\n');
+    eqN(ready().problems.length, 1, "status=passed 却 blockers≠0 → 自相矛盾,照红");
+    put('---\nstatus: passed\nblockers: 0\nwarnings: 2\nplan: "07-01"\n---\n');
+    eqN(ready().problems.length, 1, "status=passed 却 warnings≠0 → 自相矛盾,照红");
+    put('---\nstatus: passed\nblockers: 0\nwarnings: 0\nplan: "07-02"\n---\n');
+    eqN(ready().problems.length, 1, "预审结论指向别的票 → 照红(别复用别人的结论)");
+    put('---\nstatus: passed\nblockers: 0\nwarnings: 0\nplan: "07-01"\n---\n');
+    eqN(ready().state, "passed", "工件在、结论 passed、票号对得上 → 可以开工");
+    eqN(ready().problems.length, 0, "可以开工 → 没有问题项");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+}
+// ---- 端到端:用户敲的那条命令,真跑一遍,断言退出码与结论(phase 10 预审 B2/B3/W1) ----
+// 只测单元级函数是不够的:bin → checker → 判定 → 渲染 → 退出码,任何一环断掉,单元用例照样全绿。
+export function runPlanCheckE2ECases(st) {
+  const { eqN } = st;
+  const dir = mkdtempSync(join(tmpdir(), "mm-gsd-e2e-"));
+  const checker = fileURLToPath(new URL("../scripts/gsd-state-check.mjs", import.meta.url));
+  const plan = "---\nphase: \"01\"\nplan: \"01\"\ngoal: 夹具计划:跑通 --plan-check 的机器判据\nrollback: 删掉夹具即可\nfiles_modified:\n  - a.mjs\n---\n\n# 01-01 PLAN\n\n### T1 改一个常量\n\n- **files**: a.mjs\n- **read_first**: a.mjs\n- **action**: 把常量改成 2,然后跑测试。\n- **verify**: node test.js\n- **fails_when**: 测试退出码非 0(输出里没有 ok)\n- **done**: 测试输出 ok\n";
+  const run = (args) => {
+    try { return { code: 0, out: execFileSync(process.execPath, [checker, ...args], { cwd: dir, encoding: "utf8", stdio: "pipe" }) }; }
+    catch (e) { return { code: e.status ?? 1, out: String(e.stdout || "") + String(e.stderr || "") }; }
+  };
+  try {
+    mkdirSync(join(dir, ".planning"), { recursive: true });
+    writeFileSync(join(dir, ".planning", "STATE.md"), "---\nstatus: discussing\nactive_phase: \"01\"\n---\n");
+    writeFileSync(join(dir, "a.mjs"), "export const a = 1;\n");
+    writeFileSync(join(dir, "test.js"), "console.log(\"ok\");\n");
+    writeFileSync(join(dir, ".planning", "01-01-PLAN.md"), plan);
+    // 体检模式不要求预审 —— 缺预审时它必须还是绿的(D-01:两个模式问的不是同一个问题)
+    const p1 = run(["--plan", ".planning/01-01-PLAN.md"]);
+    eqN(p1.code, 0, "缺预审时 --plan 仍是绿的(体检模式不绑架预审)");
+    // 显式校验:缺预审 → 不能开工,并且把该派什么打印出来(D-03)
+    const p2 = run(["--plan-check", ".planning/01-01-PLAN.md"]);
+    eqN(p2.code, 1, "缺预审时 --plan-check 退出码 1(不能开工)");
+    eqN(p2.out.includes("不能开工"), true, "缺预审时输出「不能开工」");
+    eqN(p2.out.includes(REVIEW_PROMPT.split("\n")[0]), true, "缺预审时把该派的预审提示词打印出来(D-03)");
+    // D-04:检查器只读不写 —— 跑完,预审工件仍然不存在
+    eqN(existsSync(join(dir, ".planning", "01-01-PLAN-CHECK.md")), false, "--plan-check 自己不写预审工件(D-04)");
+    // 预审工件在且 passed → 机器判据全过 → 可以开工
+    writeFileSync(join(dir, ".planning", "01-01-PLAN-CHECK.md"), "---\nstatus: passed\nplan: \"01-01\"\nblockers: 0\nwarnings: 0\n---\n");
+    const p3 = run(["--plan-check", ".planning/01-01-PLAN.md"]);
+    eqN(p3.code, 0, "机器判据全过 + 预审 passed → 退出码 0");
+    eqN(p3.out.includes("可以开工"), true, "机器判据全过 + 预审 passed → 输出「可以开工」");
+    // D-06:用户真正敲的那条命令(mm-gsd check --plan-check)也要跑通 —— bin 那一跳同样会断
+    const bin = fileURLToPath(new URL("../../../bin/mm-gsd.mjs", import.meta.url));
+    let p4 = { code: 1, out: "" };
+    try { p4 = { code: 0, out: execFileSync(process.execPath, [bin, "check", "--plan-check", ".planning/01-01-PLAN.md"], { cwd: dir, encoding: "utf8", stdio: "pipe" }) }; }
+    catch (e) { p4 = { code: e.status ?? 1, out: String(e.stdout || "") + String(e.stderr || "") }; }
+    eqN(p4.code, 0, "用户侧命令 mm-gsd check --plan-check 退出码 0(D-06)");
+    eqN(p4.out.includes("可以开工"), true, "用户侧命令 mm-gsd check --plan-check 输出「可以开工」");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 }

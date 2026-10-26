@@ -101,8 +101,9 @@ const readJSON = (p) => { try { return JSON.parse(readFileSync(p, "utf8")); } ca
 const cut = (s, n) => { const t = String(s ?? "").trim(); return t.length > n ? t.slice(0, n) + "…" : t; };
 
 /**
- * 从当前项目读出「本项目门禁速查」:ledger 的 active 规则 + budget 的单文件上限。
- * 读不到就记一条说明,**一个字都不许自己补**(D-03)。
+ * 从当前项目读出「本项目门禁速查」:ledger 的 active 规则 + budget 的单文件上限(若该项目还设了)。
+ * 读不到就记一条说明,**一个字都不许自己补**(D-03)。2026-10-26 起 mm-gsd 自己的仓不再设上限,
+ * 所以本仓的速查里没有「单文件上限」这一条 —— 那不是缺数据,是事实。
  */
 export function gateQuickRef(projectRoot) {
   const rules = [], caps = [], notes = [];
@@ -111,8 +112,10 @@ export function gateQuickRef(projectRoot) {
     rules.push({ id: r.id, text: cut(r.statement, 70), check: r.check ?? "" });
   else notes.push("本项目没有 .agents/rules/ledger.json —— 规则速查为空(不补写)");
   const bud = readJSON(join(projectRoot, "budget.json"));
-  if (bud) for (const c of bud.fileCaps ?? []) caps.push({ pattern: c.pattern ?? "", max: c.max ?? "?" });
-  else notes.push("本项目没有 budget.json —— 单文件上限速查为空(不补写)");
+  if (bud) {
+    for (const c of bud.fileCaps ?? []) caps.push({ pattern: c.pattern ?? "", max: c.max ?? "?" });
+    if (!(bud.fileCaps ?? []).length) notes.push("本项目没有体积上限 —— 体积只报不拦(不是缺数据,是事实)");
+  } else notes.push("本项目没有 budget.json —— 单文件上限速查为空(不补写)");
   return { rules, caps, notes };
 }
 
@@ -194,7 +197,7 @@ description: "mm-gsd 的 ${stage} 子代理:${desc}"
 - 摸清现状/调研/搜代码也派子代理:主上下文只拿**摘要 + 落盘路径**,别把探查结果灌进主上下文
 - **一票一代理**:别把多张票塞给你 —— 你只接这一张(一张票 = 20 分钟能做完的量)
 - **批量收尾**:一批做完再统一检查,不要改一次跑一次(贵的门禁不在票里跑)
-- 本项目的门禁速查(该跑哪些门禁、单文件行数上限)由主会话在项目根跑:
+- 本项目的门禁速查(该跑哪些门禁、有没有单文件行数上限)由主会话在项目根跑:
   \`${routeCmd} --route ${stage}\` —— 那是机器从 ledger/budget 读出来的,不是手写的
 `;
 }

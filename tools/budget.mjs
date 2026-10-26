@@ -1,19 +1,15 @@
-// 预算门禁的两半:数文件数行数(收集),以及超限时给什么建议(诊断)。
+// 体积统计 —— 数文件数行数,给 check-budget 报告用。
 //
-// 为什么合成一份:这两个文件都只服务 check-budget 一条门禁 ——
-// fat-advice 是「超了怎么办」,budget-collect 是「有多少」。
-// 拆成两个文件时,它们的关系只存在于 mmc.mjs 的两行 import 里;
-// phase 04 实施时文件数正好卡在 40/40(见 .planning/04-RESEARCH.md 4.2),
-// 要新增一个 references 模块就得先腾一个位置 —— 合并「本来就该是一份」的两半,
-// 比删掉其中一半功能、或让文件数超限,都更符合本仓「变胖必须有等量删除」的纪律。
+// 2026-10-26:「超限诊断」(原 fat-advice)随体积硬顶一起退役 —— 没有上限就没有「超了怎么办」,
+// 留着它就是一份没人调用的说明书。想拆文件时该看的是 docs/theory.md T-11,不是它。
 //
-// 导出名一个没改:调用方(mmc.mjs)只改 import 的路径,行为不变。
+// 本文件只做测量,不做判断:判断在 mmc 的 check-budget,这里只给它数字。
 
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
 /** 收集目录下所有受管文件(用于预算统计),返回仓库相对路径 */
-export function collectFiles(root, skillsDir, toolsDir) {
+export function collectFiles(root, ...dirs) {
   const out = [];
   const walk = (dir) => {
     if (!dir) return;
@@ -26,14 +22,15 @@ export function collectFiles(root, skillsDir, toolsDir) {
       else if (/\.(md|mjs|ts|json)$/.test(e.name) || e.name === "pre-commit") out.push(p);
     }
   };
-  walk(join(root, skillsDir));
-  walk(join(root, toolsDir));
+  for (const d of dirs) walk(join(root, d));
+  // 根级文件(README.md / AGENTS.md 等)也算 —— budget.json 的 docGlobs 里有 "*.md"
+  try { for (const e of readdirSync(root, { withFileTypes: true })) if (e.isFile() && /\.(md|mjs|ts|json)$/.test(e.name)) out.push(join(root, e.name)); } catch {}
   return out;
 }
 
 /** 找出 skills/ 与 tools/ 下所有 .mjs —— 语法检查与零依赖检查都要用 */
-export function collectScripts(root, skillsDir, toolsDir) {
-  return collectFiles(root, skillsDir, toolsDir).filter((p) => p.endsWith(".mjs"));
+export function collectScripts(root, ...dirs) {
+  return collectFiles(root, ...dirs).filter((p) => p.endsWith(".mjs"));
 }
 
 /** 每个文件的行数,以及总行数 */
@@ -47,99 +44,4 @@ export function countLines(root, files) {
     counts[relative(root, f).split(sep).join("/")] = n;
   }
   return { counts, total };
-}
-
-// ---------------------------------------------------------------------------
-// 以下是超限诊断(原 tools/fat-advice.mjs)
-// ---------------------------------------------------------------------------
-
-// 超预算时给什么建议 —— 只诊断不给药方的门禁等于把难题推回给读者。
-//
-// 为什么需要它:拦红时说「超 N 行,脂肪最容易堆的地方」只回答了「哪里错了」,
-// 没回答「那我该拆什么、拆去哪」。T-02 说散文纪律没有闸等于没写;反过来,
-// 闸只判不导,执行方就得自己重新发明改造方案,而多数人第一反应是抬上限或者硬删。
-// 本仓两种都吃过亏(T-11)。
-
-/** 一句话讲清 references 化:什么留骨架、什么进 references、怎么被引用 */
-const REFACTOR = {
-  core: "骨架留核心文件:入口、状态流转、装配(import 与注册)",
-  ref: "按需引用的内容进 references/:判定规则表、契约表、正则表、模板",
-  call: "核心文件只 import 并调用,不复制 —— 复制就变成两份会分叉的真相",
-  why: "判据不是「行数好看」,是删掉之后下一次同类问题会以什么形式回来",
-};
-
-/**
- * 生成一条超限文件的改造指引。
- *
- * 三条建议对应三种不同的超限形状,不能一刀切:
- *  - `references/` 里的文件超限:它**已经**是抽出去的那部分,再抽没有落点。
- *    这时说「references 化」是废话。落点是回去问「它该和谁合并」。
- *  - `tools/` 或 `skills/` 主文件:给完整的 references 化三步。
- *  - `SKILL.md` / 散文:给的是「先砍复述」而不是抽模块 —— 散文没有调用点。
- *
- * @param p      超限文件的仓库相对路径
- * @param n      实际行数
- * @param cap    命中的 fileCaps 条目(含 pattern / max / _why)
- * @param counts 全仓库 { 相对路径: 行数 } —— 用来指认可合并的邻居
- */
-export function fatAdvice(p, n, cap, counts = {}) {
-  const over = n - cap.max;
-  const base = cap._why ?? "该文件已超上限";
-  const lines = [`${base}`, `→ 多出 ${over} 行,按 T-11 分流:`];
-
-  if (/references\//.test(p)) {
-    // references/ 自身超限 —— 抽出去的东西没有更小的落点,只能往回问合并
-    lines.push(
-      `  1. 先确认它是不是被误当成垃圾桶:references/ 是**按需引用**的落点,`,
-      `     不是「主文件放不下就往这塞」的地方。本仓四条先例:`,
-      `     template-gates / verification-gates / decision-gates / gate-selftest`,
-      `     —— 每个都是单一契约一族,拆的依据是「判据自成一族」,不是「这里塞得下」。`,
-      `  2. 若它已经是一族(判定表+正则+用例),说明该族太大:先在族内拆`,
-      `     (表 / 用例 / 匹配器),而不是再加一层目录。`,
-      `  3. 若它只是「两种不相干的契约被凑到一个文件」,那它本就不该在 references/,`,
-      `     回主文件按契约归位,或并进同族的邻居。`,
-    );
-    return lines.join("\n");
-  }
-
-  if (p.endsWith(".md")) {
-    // 散文没有调用点,references 化对它不成立
-    lines.push(
-      `  1. 先砍复述:同一约束在 SKILL.md、模板、门禁注释里各写一遍是本仓最大的脂肪源。`,
-      `     留一处权威,其余改成指向它的一句话。`,
-      `  2. 只有「正文确实长、但读的人不必每次读全」的部分才拆成 references/,`,
-      `     由 SKILL.md 显式指路 —— 散文按需引用靠的是「读到这里才知道要不要读」。`,
-      `  3. 砍完仍超:走 distill 抬上限,并在 docs/theory.md 写清放宽换来了什么。`,
-    );
-    return lines.join("\n");
-  }
-
-  // 主文件(.mjs):完整的 references 化三步
-  lines.push(
-    `  1. ${REFACTOR.core}`,
-    `     —— 判据:这个文件是「程序」还是「程序 + 一堆规则表」?后者里的表就是按需引用的内容。`,
-    `  2. ${REFACTOR.ref}`,
-    `     本仓已有先例,照着拆:`,
-    `     skills/ 侧 → references/<契约名>.mjs(上限 200),`,
-    `     tools/   侧 → 独立模块如 gh-issues / rule-baseline / module-registry。`,
-    `     判据:那部分内容**主流程不需要每行都读**,只在特定分支才用到。`,
-    `  3. ${REFACTOR.call}`,
-    `  4. ${REFACTOR.why}:`,
-    `     删掉超限那部分,下一次同类问题会以什么形式回来?答不上来就说明它是新能力,`,
-    `     该走 distill 抬上限,不该拆。`,
-  );
-  const near = nearestSiblings(p, counts);
-  if (near.length)
-    lines.push(`  邻居参考:${near.join("、")} —— 看它们各占多少行,拆到同一量级`);
-  return lines.join("\n");
-}
-
-/** 找同目录下量级最接近的兄弟文件,给出「拆到这一量级」的参照 */
-function nearestSiblings(p, counts) {
-  const dir = p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "";
-  return Object.entries(counts)
-    .filter(([q]) => q !== p && (q.includes("/") ? q.slice(0, q.lastIndexOf("/")) : "") === dir)
-    .sort((a, b) => Math.abs(a[1] - 120) - Math.abs(b[1] - 120))
-    .slice(0, 3)
-    .map(([q, k]) => `${q} ${k} 行`);
 }

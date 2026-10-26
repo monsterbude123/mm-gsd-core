@@ -73,6 +73,9 @@ node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --init "<一句话
    **预审门**:PLAN 落盘后、执行前,**由你(编排层)**开一个**全新上下文的只读子代理**,按 `mm-gsd-verify` 的
    「执行前预审」节复核这份计划,产出 `.planning/<NN-MM>-PLAN-CHECK.md`;`status` 不是 `passed` → **不许进执行**
    (机械合规过了不等于这份计划成立)。预审子代理多半不能自己再派子代理 —— 你派它,别让 plan 派。
+   **这条门可以随时手动跑**:`node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --plan-check .planning/<NN-MM>-PLAN.md`
+   (= `mm-gsd check --plan-check <路径>`)会跑完整的机器判据 + 核对预审工件,直接给出「能不能开工」。
+   用户问「这份计划能开工吗」时跑它,别凭印象回答;预审没做时它会把该派的子代理提示词直接打印出来。
 3. **execute** → 调用 mm-gsd-exec。**施工方,不是设计师**:照 PLAN 那张票施工,只核对自己落的与图纸对不对得上;不重做调研、不重新理解项目、**不审批**(图纸对不对是 verify 的活)。
 4. **verify** → 调用 mm-gsd-verify。**验证不过 → 回 execute 修 → 重 verify;每条 REQ 拿到证据才准进 ship。修复预算 2 次,超了升级到人。**(执行侧「同一根因自动修 ≤2 次」与验证侧「重验 2 轮」是**两件事**:前者管一次施工里能自己修几回,后者管 gap 修完能重验几轮。)
 5. **ship** → 交付物**被消费**才算完成(PR 已开/已合并/已发布),用户可见变更同步文档,并落

@@ -5,7 +5,7 @@
 import { validateVerification, checkTicketPremises, checkTicketLoad, checkReqClaims } from "./verification-gates.mjs";
 import { checkDecisions, locateContexts, checkDrift, checkConclusionDrift } from "./decision-gates.mjs";
 import { ticketsCovered } from "./ticket-alive.mjs";
-import { mkAssert, runArtifactCases, runCoverageCases, runLedgerGateCases, runPhaseHealthCases, runRouteCases } from "./selftest-suite.mjs";
+import { mkAssert, runArtifactCases, runCoverageCases, runLedgerGateCases, runPhaseHealthCases, runRouteCases, runPlanReadyCases, runPlanCheckE2ECases } from "./selftest-suite.mjs";
 import { researchRequired, researchCompliant, checkResearchConsumed, checkResearchSummary } from "./research-gates.mjs";
 import { checkBatchGraph, checkTicketBudget } from "./worktree-view.mjs";
 import { buildRouteBrief, pointerCard, listSkills } from "./agent-routing.mjs";
@@ -132,6 +132,8 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   rmSync(dDir, { recursive: true, force: true });
   // ---- 工件三态 + 记账台账 + 决策核销 + 分发包记账门:在 selftest-suite.mjs 里(本文件 200/200 顶格,用例只会继续长)。
   runArtifactCases({ eqN, eqArr });
+  runPlanReadyCases({ eqN });
+  runPlanCheckE2ECases({ eqN });
   runCoverageCases({ eqN, eqArr });
   runLedgerGateCases({ eqN });
   runPhaseHealthCases({ eqN });

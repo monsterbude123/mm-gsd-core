@@ -4,7 +4,7 @@
   "_重开条件": "若某轮把门禁重构成独立模块,就把这里换成自动枚举 —— 那时才值得付自动化的维护成本。",
   "check-issue-evidence": "报修 issue 只给标题不给证据 → 非零退出并打印缺什么;证据只写占位符同样判红",
   "check-ledger-integrity": "台账里某条 active 规则的 check 指向 mmc.mjs 中不存在的门禁 → 判红「台账指向了不存在的门禁」",
-  "check-budget": "把某个受 fileCaps 约束的文件写到超过单文件上限 → 判红并指出是哪个文件超了多少;三种形状(main .mjs / references 内 / SKILL.md)必须给出**各自不同**的改造指引 —— 一刀切说「references 化」对后两种是废话,它们已经在那儿了",
+  "check-budget": "把 glob 匹配器弄坏(让它永远不匹配 / 直接抛错)→ 判红「匹配器自测失败/崩了」。2026-10-26 起体积只报不拦(体积硬顶退役,见 docs/theory.md T-16),这条门禁的失败路径只剩匹配器自测 —— 它现在用于按族分组统计,坏掉的匹配器会让统计静默空过(假绿)。",
   "check-syntax-and-modes": "任意 .mjs 引入语法错误 → 判红;六种模式在未初始化项目里任一跑不起来 → 判红",
   "check-templates-self-validate": "从模板里删掉一个必填小节(如 ship.md 的「交付内容」)→ --templates 报该模板不合规",
   "check-package-verifiable": "把 package.json 的 files 改到漏掉 bin/ → 判红「打包清单不符合预期」",
@@ -25,6 +25,7 @@
     "research-gates.mjs": "由 --plan 的研究触发检查驱动(触发条件成立又没有合规研究产物 → 判红),判定内核由 R-15 的 --selfcheck 覆盖:跨目录触发、单文件不触发、空洞研究不算合规、URL 端口号不算 file:line 引用",
     "agent-routing.mjs": "由 --routes 模式驱动(每个 mm-gsd 技能都要有「完成后」小节、小节点名的技能必须真实存在),判定内核由 R-15 的 --selfcheck 覆盖:缺小节判红、点名不存在的技能判红、小节边界只到下一个标题。phase 04 加进来的宿主路由提示也在同一组用例里:速查只列 active 规则且文本来自台账、读不到台账时速查为空不补写、指针卡里不许出现规则原文",
     "worktree-view.mjs": "批图门与票预算门(phase 08):同批可并行的票撞文件 → 判红;票级 verify 是全量套件 → 判红;两条都有 --selfcheck 用例覆盖。",
+    "plan-ready.mjs": "开工判定(显式校验 --plan-check 的内核):把 checkPlanReady 掏空成永远返回 passed → 判红(缺预审/状态非法/blocked/自相矛盾/票号对不上,五种都要判红);把判定搬出检查器接线 → 端到端用例判红(自测里跑真命令:缺预审时退出码 1、提示词必须打印出来、检查器不许自己写工件、预审 passed 时退出码 0)",
     "ticket-alive.mjs": "预审工件契约门(phase 09 D-08):开工了却没有 PLAN-CHECK → 判红;status 非法 → 判红。有 --selfcheck 用例覆盖。"
   },
   "_tools": {
@@ -32,7 +33,7 @@
     "rule-baseline.mjs": "从台账删掉一条 active 规则 → health 报红指名缺哪条(基线在 ledger 之外、台账循环之外无条件执行);台账加一条基线没有的规则 → 报红「新增规则不登记基线,它就永久不受保护」;基线里有台账没有的规则 → 报红",
     "module-registry.mjs": "在 references/ 新增一个导出 check*/validate* 的模块但不登记 _modules → 判红;把登记项删掉 → 判红;模块写 export async function / export const 箭头 / export default function / function x(){} export { x } → 仍被抓(真导入枚举导出,不猜源码写法)",
     "gh-issues.mjs": "报修走不通(没装 gh / 证据文件不存在)→ check-report-fails-loud 判红",
-    "budget.mjs": "把 check-budget 里的 fatAdvice 调用删掉或改成只报「超 N 行」→ budget 拦红时不再输出改造指引(门禁只判不导,等于把难题推回给读者)。三种形状(main / references / 散文)必须给出不同的指引,实测见 commit #4787 的 verify。phase 04 把 fat-advice.mjs 与 budget-collect.mjs 合成一份(两个都只服务 check-budget),导出名一个没改",
+    "budget.mjs": "把 glob 匹配器弄坏(让它永远不匹配 / 直接抛错)→ check-budget 判红「匹配器自测失败/崩了」。2026-10-26 体积硬顶退役后,这条门禁不再有「超上限就红」的失败路径 —— 它现在只做统计(总行数、按族分组、最大三个文件),匹配器坏掉会让统计静默空过(假绿),所以自测必须留着",
     "reference-map.mjs": "把 extractRefs 的正则改坏(如让它只认 .md)→ 抽不到 .cts 引用 → R-17 判红「一个路径引用都没抽到」;把 checkRefs 的 existsSync 判断去掉 → 失效路径不再报红",
     "release-flow.mjs": "把 tagsVerdict 的比较方向改反 → 门禁自证那一行立刻判红「标签门禁自证失败:喂 next=0.0.1/latest=9.9.9 竟没判红」(门禁自己证明它会红,照 check-report-fails-loud 的先例);把 compareVersions 换成字符串比较 → 0.10.0 会被判成小于 0.9.0;把 promote 的默认改回真跑 → R-20 判红(见 check-channel-safety)"
   },
