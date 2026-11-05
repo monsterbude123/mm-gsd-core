@@ -220,7 +220,7 @@ node $CK --plan-check .planning/<NN-MM>-PLAN.md     # 或:mm-gsd check --plan-ch
 ```
 
 它把两件事合成一个结论:**能不能开工**。跑完整的机械判据 → 核对预审工件
-（`status` 合法吗?票号对得上吗?`passed` 却 `blockers/warnings` 非零 = 自相矛盾 → 判红）→
+（`status` 合法吗?票号对得上吗?零 BLOCKER 即 passed —— WARNING 不挡:逐条归 Deferred 带进施工）→
 给出结论并返回退出码（0 = 能开工）。预审还没做时,它会把该派的只读子代理提示词**直接打印出来**,
 照抄即可 —— 判据在 `mm-gsd-verify` 的「执行前预审」节,命令只负责调用与核对。
 

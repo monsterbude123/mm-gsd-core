@@ -136,14 +136,22 @@ export function checkTicketPremises(tickets, root) {
   for (const t of tickets) {
     const own = new Set((t.files ?? []).map((f) => String(f).replace(/^\.\//, "")));
     const seen = new Set();
-    const missing = (p) => {
+    // #12:判红要能定位 —— 来源(read_first 第 N 条 / verify 第 M 条命令)+ 记号上下文 + 豁免判定人话。
+    // 三层豁免(own/seen/existsSync)与 PATHY 不改,只加信息。
+    const missing = (p, src) => {
       const rel = String(p).replace(/^\.\//, "");
       if (own.has(rel) || seen.has(rel)) return;      // 这票自己产出 / 重复引用
       seen.add(rel);
-      if (!existsSync(join(root, rel))) problems.push(`${t.id}: 引用的 "${rel}" 不存在 —— 票站在一个假前提上,执行者会照着编或反复找`);
+      if (!existsSync(join(root, rel))) {
+        const at = src.raw.indexOf(String(p));
+        const ctx = at >= 0 ? src.raw.slice(Math.max(0, at - 20), at + String(p).length + 20).replace(/\s+/g, " ") : "";
+        problems.push(`${t.id}: ${src.label} 引用的 "${rel}" 不存在(…${ctx}…) —— 票站在一个假前提上,执行者会照着编或反复找;豁免判定:不在本票 <files>,磁盘上也没有它`);
+      }
     };
-    for (const p of t.readFirst ?? []) missing(p);
-    for (const c of splitCommands(String(t.verify ?? ""))) for (const m of c.matchAll(PATHY)) missing(m[0]);
+    (t.readFirst ?? []).forEach((p, i) => missing(p, { label: `read_first 第 ${i + 1} 条`, raw: String(p) }));
+    splitCommands(String(t.verify ?? "")).forEach((c, i) => {
+      for (const m of c.matchAll(PATHY)) missing(m[0], { label: `verify 第 ${i + 1} 条命令`, raw: c });
+    });
   }
   return problems;
 }
@@ -181,6 +189,29 @@ export function checkReqClaims(tickets, root) {
       if (!/^REQ-/i.test(r)) continue;
       if (!known.has(r.toUpperCase())) problems.push(`${t.id}: covers 认领了 "${r}",但 REQUIREMENTS.md 里没有这条需求 —— 凭空认领`);
     }
+  }
+  return problems;
+}
+
+/**
+ * 判别力 lint(phase 13 D-03,issue #10):只认「退出码被吞」的高置信形状,命中走 WARNING(w 通道),
+ * 不进 errs —— warn 先行,不拦人。裸 `grep -c`(零匹配即 exit 1)是家常正确形状,不判(预审 F5)。
+ */
+export function checkDiscriminatingLints(tickets) {
+  const problems = [];
+  for (const t of tickets) {
+    const raw = String(t.verify ?? "");
+    // grep -c 的吞法(|| true / $() 捕获)跨 shell 分隔符 —— 在原始串上判,不经 splitCommands
+    // (splitCommands 会把 || 当分隔符,吞法在切分后就不存在了)
+    const guarded = /-eq\s*0|-gt\s*0|-ge\s*\d/.test(raw);
+    if (!guarded && /\$\([^)]*grep\s+-c[^)]*\)/i.test(raw))
+      problems.push(`${t.id}: verify:grep -c 被捕获进 $() 且无数值防护 —— 零匹配被吞成 0,判据对空输入是绿的(issue #10 证据 3)`);
+    if (!guarded && /grep\s+-c[^|;&]*(?:\|\|\s*true|2>\/dev\/null|\|\|\s*echo)/i.test(raw))
+      problems.push(`${t.id}: verify:grep -c 的退出码被 || true/2>/dev/null 吞掉 —— 零匹配与命中不可分,判据对空输入是绿的(issue #10 证据 3)`);
+    splitCommands(raw).forEach((c, ci) => {
+      if (/cargo\s+test\b/i.test(c) && /\s--\s(?!-)/.test(c) && !/(test\s+result|running\s+\d)/i.test(c))
+        problems.push(`${t.id}: verify 第 ${ci + 1} 条命令:cargo test 带过滤器却不断言 test result/running —— 零匹配过滤器打印 running 0 tests 并 exit 0,具名用例不存在时判据照样绿(issue #10 证据 3)`);
+    });
   }
   return problems;
 }

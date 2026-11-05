@@ -6,7 +6,8 @@
 // (见 docs/theory.md T-16)之后,新模块不再需要为「塞得进哪个文件」而委屈。
 //
 // fail-closed 是本文件的全部纪律:工件缺失 / status 非法 / status 非 passed /
-// plan 票号对不上 / passed 却计数非零 —— 五种一律判「不能开工」。
+// plan 票号对不上 / blockers 未清零 —— 一律判「不能开工」;passed 带 warnings 合法
+// (WARNING 归 Deferred 带进施工,phase 13 D-01)。
 // 看不清的状态不能当通过:**门禁看不懂 ≠ 门禁放行**。
 
 import { existsSync, readFileSync } from "node:fs";
@@ -55,7 +56,7 @@ export function checkPlanReady({ planPath }) {
   const blockers = Number(fm.blockers ?? 0) || 0, warnings = Number(fm.warnings ?? 0) || 0;
   if (fm.plan && fm.plan !== base.replace(/-PLAN\.md$/, "")) problems.push({ msg: `${base}: 预审结论指向别的票(plan: ${fm.plan})`, fix: "别复用别的票的结论 —— 重审这张票" });
   if (st === "blocked") problems.push({ msg: `${base}: 预审 status=blocked —— 有 BLOCKER 没清零就不许开工`, fix: "把 findings 交回 mm-gsd-plan 修,复审一次(≤2 轮)再跑本命令" });
-  else if (blockers || warnings) problems.push({ msg: `${base}: 预审 status=passed 却 blockers=${blockers}/warnings=${warnings} —— 自相矛盾`, fix: "passed 的条件是零 BLOCKER 且零 WARNING(INFO 照列但不挡)" });
+  else if (blockers) problems.push({ msg: `${base}: 预审 status=passed 却 blockers=${blockers} ≠ 0 —— BLOCKER 不清零不算 passed(fail-closed)`, fix: "修完 BLOCKER 再复审;WARNING 归 Deferred 带进施工(phase 13 D-01)" });
   return { state: problems.length ? "blocked" : "passed", problems, blockers, warnings };
 }
 

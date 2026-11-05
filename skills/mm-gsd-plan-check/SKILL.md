@@ -44,6 +44,13 @@ node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --plan-check .plan
 - **有界修订 ≤2 轮**:BLOCKER 交回 plan 修(要改决策才回 `mm-gsd-discuss`),修完重跑第 1 步;
   两轮 issue 数不降 → 停下升级到人,别再兜圈。INFO 照列但不挡。
 
+### 收敛判据(第 2 步的修复循环按此收口,issue #13)
+
+- `机器门禁绿 ∧ 一轮独立预审零 BLOCKER` ⇒ **允许开工**(进第 3 步拿退出码收口)。
+- 每条 WARNING:逐条**归 Deferred**(写进 SUMMARY 的 Deferred Issues)带进施工 —— 不为它开新一轮改稿。
+- **轮次硬上限 2**:第 3 轮仍报 BLOCKER → **停下升级**(改 scope,或判定该批不做),不继续改稿 ——
+  与 exec「同根因 ≤2 次」同一纪律;复审的价值是发现新事实,不是重复确认既有结论。
+
 ### 第 3 步:重跑第 1 步,拿退出码收口
 
 - 退出码 0 → 报「✅ 可以开工 —— 机器判据全过 + 预审 passed」+ 预审工件路径。

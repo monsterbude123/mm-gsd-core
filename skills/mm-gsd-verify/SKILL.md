@@ -103,7 +103,7 @@ PLAN 的每一张票,在这里都要拿到一条 verdict —— **不看 SUMMARY
 | **票完整性** | 每张票的 files/action/verify/done 齐不齐;票名好听但 action 空,是空票 |
 | **关键连线** | 产物之间接线了吗(只建了组件、没建调用,等于没通) |
 | **载量** | 这张票一个子代理 20 分钟做得完吗(read_first 读得完吗、文件改得完吗) |
-| **验收可跑** | verify 真能跑吗、跑起来真能分出通过与失败吗、done 的判据能被它证明吗 |
+| **验收可跑** | verify 真能跑吗、跑起来真能分出通过与失败吗、done 的判据能被它证明吗;判据在**零数据输入**下会绿吗?(数错/自证/零匹配/二次解析 —— issue #10 四类) |
 | **前提为真** | 票里引用的文件/接口/字段真的存在吗 —— 前提是假的,执行时会空转 |
 
 ### 每条发现的写法
@@ -113,6 +113,7 @@ PLAN 的每一张票,在这里都要拿到一条 verdict —— **不看 SUMMARY
 - **写不变式,不写你想让人怎么改**:例如「每张票的 verify 能区分通过与失败」,而不是「加一个 verify 块」。
   `fix_hint` 只是**一条**可选路线,不是指令 —— 说不出不变式的,降级 INFO 或直接丢掉。
 - **只报不处方**:报出失败的那一行原文,不要替 plan 写改法(改法归 plan,拍板归 discuss)。
+- **处置分级**:BLOCKER=开工前必修;WARNING=逐条**归 Deferred** 带进施工,不挡;INFO=不触发。
 
 ### 产出(形状写在这里,不另立模板文件 —— 判据与形状同源,另立模板只会分叉)
 
@@ -120,7 +121,7 @@ PLAN 的每一张票,在这里都要拿到一条 verdict —— **不看 SUMMARY
 
 ```
 ---
-status: passed      # passed = 零 BLOCKER 且零 WARNING;有 INFO 照列但不挡
+status: passed      # passed = 零 BLOCKER;WARNING 照列但不挡,调用方必须逐条归 Deferred(SUMMARY 的 Deferred Issues)带进施工
 plan: "09-01"       # 对应哪张 PLAN
 blockers: 0
 warnings: 0
@@ -129,7 +130,7 @@ warnings: 0
 
 正文:发现清单,每条 = 维度 / 严重级 / 不变式 / 证据(引用 PLAN 里的原文行)。没有发现也要写正文(说明查了哪些维度、什么证据)。
 
-**自相矛盾会被机器判红**:`status: passed` 却 blockers/warnings 非零 → 判定不成立(fail-closed)。
+**WARNING 不挡**:逐条**归 Deferred**(SUMMARY 的 Deferred Issues)带进施工 —— 零 BLOCKER 即 passed,机器判定已同步(phase 13 D-01);别再为 WARNING 开新一轮改稿。
 `plan:` 必须是**这张票**的票号 —— 复审时别复用上一轮的结论,那是别人的票的结论。
 
 **结论落盘后可以自己验**:`mm-gsd check --plan-check .planning/<NN-MM>-PLAN.md`

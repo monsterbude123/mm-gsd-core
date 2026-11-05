@@ -6,6 +6,7 @@
 import { classifyArtifact, parseAccounting, commitExists, checkArtifactLedger } from "./artifact-ledger.mjs";
 import { checkPlanReady, REVIEW_PROMPT } from "./plan-ready.mjs";
 import { checkPhaseCoverage } from "./decision-gates.mjs";
+import { checkTicketPremises } from "./verification-gates.mjs";
 import { staleDecisions, coveredDecisions, phaseCovered, staleNote, planExists, runDecisionContracts, checkPlanCheckArtifacts } from "./ticket-alive.mjs";
 import { phaseHealth } from "./telemetry-aggregate.mjs";
 import { checkRoutes, routeSection, pointerCard, reviewerCard } from "./agent-routing.mjs";
@@ -212,12 +213,13 @@ export function runPlanReadyCases(st) {
     put('---\nstatus: 看情况\n---\n');
     eqN(ready().state, "invalid", "status 非法 → invalid(fail-closed)");
     put('---\nstatus: blocked\nblockers: 1\nwarnings: 0\nplan: "07-01"\n---\n');
-    eqN(ready().state, "blocked", "status=blocked → 不能开工");
+    eqN(ready().state, "blocked", "status=blocked → 不能开工(blocked 仍照红)");
     eqN(ready().problems.length, 1, "blocked → 报一条");
     put('---\nstatus: passed\nblockers: 1\nwarnings: 0\nplan: "07-01"\n---\n');
-    eqN(ready().problems.length, 1, "status=passed 却 blockers≠0 → 自相矛盾,照红");
+    eqN(ready().state, "blocked", "status=passed 却 blockers≠0 → 照红(BLOCKER 仍挡)");
     put('---\nstatus: passed\nblockers: 0\nwarnings: 2\nplan: "07-01"\n---\n');
-    eqN(ready().problems.length, 1, "status=passed 却 warnings≠0 → 自相矛盾,照红");
+    eqN(ready().state, "passed", "passed 带 warnings → 转绿(WARNING 归 Deferred)");
+    eqN(ready().problems.length, 0, "passed 带 warnings → 零问题项");
     put('---\nstatus: passed\nblockers: 0\nwarnings: 0\nplan: "07-02"\n---\n');
     eqN(ready().problems.length, 1, "预审结论指向别的票 → 照红(别复用别人的结论)");
     put('---\nstatus: passed\nblockers: 0\nwarnings: 0\nplan: "07-01"\n---\n');
@@ -286,4 +288,17 @@ export function runBoundaryCases(st) {
   catch (e) { st2 = e.status ?? 1; }
   eqN(st2, 2, "守卫对非法输入判 2(fail-closed)");
   rmSync(dir, { recursive: true, force: true });
+}
+
+
+// ---- 前提判红定位(#12):报错必须带来源/序号与上下文,人不用重写判据 ----
+export function runPremiseLocateCases(st) {
+  const { eqN } = st;
+  const root = join(tmpdir(), "mm-gsd-premise-probe");
+  const ts = [{ id: "07-01 T1", files: ["out.md"], readFirst: ["src/nope.mjs"], verify: "node out.md && cat src/nope2.mjs" }];
+  const r = checkTicketPremises(ts, root);
+  eqN(r.length, 2, "两个假前提各报一条");
+  eqN(r[0].includes("read_first 第 1 条"), true, "判红带来源与序号(read_first)");
+  eqN(r[1].includes("verify 第 2 条命令") && r[1].includes("cat src/nope2"), true, "判红带上下文(±20 字符)");
+  eqN(r[0].includes("不在本票"), true, "豁免判定人话出现");
 }

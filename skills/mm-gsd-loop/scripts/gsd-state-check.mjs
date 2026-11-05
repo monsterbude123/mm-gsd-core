@@ -174,20 +174,28 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
   const w = (m, fix) => warns.push({ message: m, fix: fix ?? "" });
 
   const at = process.argv.indexOf(PLAN_CHECK ? "--plan-check" : "--plan");
-  const arg = process.argv[at + 1];
+  // #14:收集所有非 -- 开头的位置参数 —— 一批同 phase 计划一次圈定,批图才有比较对象
+  const rest = process.argv.slice(at + 1).filter((a) => !a.startsWith("--"));
+  const arg = rest[0];
   // 三种写法都收:.planning/02-01-PLAN.md、02-01-PLAN.md、绝对路径;已含 .planning 的别再拼一次
   const resolve = (rel) => {
     const n = rel.replace(/\\/g, "/");
     if (n.startsWith(".planning/") || n.includes("/.planning/") || /^[A-Za-z]:\//.test(n) || n.startsWith("/")) return n;
     return P(rel);
   };
-  const targets = arg && !arg.startsWith("--")
-    ? [arg]
+  const targets = rest.length
+    ? rest
     : (() => {                                        // 默认:当前 active_phase 的 PLAN
       const active = unquote(frontmatter(P("STATE.md"))?.active_phase);
       const all = listPlanFiles(P("."));
       if (!active) return all;
       const scoped = all.filter((f) => f.split(/[\\/]/).pop().startsWith(active + "-") || f.includes(join("phases", active)));
+      // #14:圈定导致其它 phase 的计划一份未查时,必须说出口 —— 静默会让人以为「全批都过了」
+      const others = all.filter((f) => !scoped.includes(f));
+      if (others.length) {
+        const ph = [...new Set(others.map((f) => f.split(/[\\/]/).pop().slice(0, 2)))].join("/");
+        console.log("  · active_phase=" + active + ";另有 " + others.length + " 份其它 phase(" + ph + ")的计划未检查 —— 用 --plan <路径…> 显式圈定(issue #14)");
+      }
       return scoped.length ? scoped : all;
     })();
 
@@ -198,6 +206,7 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
   const batchPlans = [], review = [], reviewErrs = [];
   const depList = (v) => String(v ?? "").replace(/[[\]"'\s]/g, "").split(/[,、]/).filter(Boolean);
   const { checkTicketBudget } = await import("../references/worktree-view.mjs");
+  const { checkDiscriminatingLints } = await import("../references/verification-gates.mjs");
   for (const rel of targets) {
     const path = resolve(rel);
     if (!existsSync(path)) { e(`${rel}: 文件不存在`, "路径写错,或 PLAN 还没落盘"); continue; }
@@ -231,7 +240,7 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
     const tasks = [];
     let cur = null;
     for (const line of txt.split(/\r?\n/)) {
-      const h = line.match(/^#{2,4}\s+T(\d+)\b\s*(.*)$/);
+      const h = line.match(/^#{2,4}\s+T(\d+[A-Za-z]*)\s*(.*)$/); // #11:后缀票(T3b)是真票,不隐形
       if (h) { cur = { id: "T" + h[1], title: h[2].trim(), lines: [] }; tasks.push(cur); continue; }
       if (cur) cur.lines.push(line);
     }
@@ -243,7 +252,7 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
       return null;
     };
 
-    if (!tasks.length) { e(`${name}: 没有 T1/T2 任务节 —— 计划无票可执行`, "至少写一个 '### T1 <任务名>'"); continue; }
+    if (!tasks.length) { e(`${name}: 没有 T1/T2 任务节 —— 计划无票可执行`, "至少写一个 '### T1 <任务名>'(票号可带字母后缀,如 T3b)"); continue; }
     if (tasks.length > 3) e(`${name}: ${tasks.length} 个任务(>3) —— 超出单执行上下文预算`, "拆成多张票(每张 ≤3 任务);超预算的正解是拆票,不是缩内容");
     const tickets = [];
 
@@ -267,6 +276,9 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
       // 票预算(phase 08 D-03/D-04):一票只接一条 verify,且它不许是全量套件
       for (const p of checkTicketBudget([{ id: `${name} ${t.id}`, verify: v }]))
         e(p, "票级只跑本票的便宜检查(具名测试/单文件/单入口);全量套件写进 PLAN 的 batch_verify,一批跑一次");
+      // 判别力 lint(phase 13 D-03,issue #10):WARNING 通道,不拦红 —— warn 先行
+      for (const p of checkDiscriminatingLints([{ id: name + " " + t.id, verify: v }]))
+        w(p, "判别力提示(不拦红):让失败真的能失败 —— issue #10 的四类假绿");
       tickets.push({ id: `${name} ${t.id}`, files: tf, readFirst: (field(t, "read_first") ?? "").split(/[,\s]+/).filter(Boolean), verify: v, covers: (field(t, "covers") ?? "").split(/[,\s]+/).filter(Boolean) });
     }
 
@@ -596,7 +608,11 @@ const artifactInfo = { context: null, plans: [], summaries: [], verification: nu
 {
   const rootFiles = readdirSync(P(".")).filter((f) => f.endsWith(".md"));
   const inPhases = phasePath ? readdirSync(P("phases", phasePath)) : [];
-  const files = inPhases.length > 0 ? inPhases : rootFiles;
+  // #9:root 布局按 active_phase 前缀圈定 —— 历史工件不许把当前 phase 的推导淹没;
+  // 圈不到(冷启动/无 active_phase)才回全量;phases 布局本来就按目录隔离,不动。
+  const activePhase = unquote(frontmatter(P("STATE.md"))?.active_phase);
+  const rootScoped = activePhase ? rootFiles.filter((f) => f.startsWith(activePhase + "-")) : rootFiles;
+  const files = inPhases.length > 0 ? inPhases : (rootScoped.length ? rootScoped : rootFiles);
   const base = inPhases.length > 0 ? P("phases", phasePath) : P(".");
   artifactInfo.layout = inPhases.length > 0 ? "phases" : "root";
   // root 布局下 files 混着所有 phase,find() 取的是排序最靠前那份 ——
@@ -650,7 +666,7 @@ const artifactInfo = { context: null, plans: [], summaries: [], verification: nu
     checkArtifactLedger({ root, report: { pass: () => {}, fail: (m) => err(m), info: (m) => warn(m) } });
     const { checkPlanCheckArtifacts } = await import("../references/ticket-alive.mjs");
     // 预审工件契约(phase 09 D-08):形状要对;已经开工却没有预审结论 → 不许静默跳过
-    for (const m of checkPlanCheckArtifacts({ dir: P("."), plans: artifactInfo.plans, summaries: artifactInfo.summaries, frontmatter }))
+    for (const m of checkPlanCheckArtifacts({ dir: base, plans: artifactInfo.plans, summaries: artifactInfo.summaries, frontmatter }))
       err(m, "先派一个全新上下文的只读子代理做预审(见 mm-gsd-verify「执行前预审」),产出 .planning/<NN-MM>-PLAN-CHECK.md");
   }
   if (artifactInfo.verification) {

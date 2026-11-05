@@ -2,10 +2,10 @@
 // 为什么必须有:GitHub #6/#7/#8 三条都是"门禁看起来在跑、实际判错"(VAGUE_FILE 的 N\/A 无左右断言 /
 // depends_on 只认半角括号 / derived 只判 SHIP 文件存在不读 status)—— 不是崩溃,是安静地给错答案。
 
-import { validateVerification, checkTicketPremises, checkTicketLoad, checkReqClaims } from "./verification-gates.mjs";
+import { validateVerification, checkTicketPremises, checkTicketLoad, checkReqClaims, checkDiscriminatingLints } from "./verification-gates.mjs";
 import { checkDecisions, locateContexts, checkDrift, checkConclusionDrift } from "./decision-gates.mjs";
 import { ticketsCovered } from "./ticket-alive.mjs";
-import { mkAssert, runArtifactCases, runCoverageCases, runLedgerGateCases, runPhaseHealthCases, runRouteCases, runPlanReadyCases, runPlanCheckE2ECases, runBoundaryCases } from "./selftest-suite.mjs";
+import { mkAssert, runArtifactCases, runCoverageCases, runLedgerGateCases, runPhaseHealthCases, runRouteCases, runPlanReadyCases, runPlanCheckE2ECases, runBoundaryCases, runPremiseLocateCases } from "./selftest-suite.mjs";
 import { researchRequired, researchCompliant, checkResearchConsumed, checkResearchSummary } from "./research-gates.mjs";
 import { checkBatchGraph, checkTicketBudget } from "./worktree-view.mjs";
 import { buildRouteBrief, pointerCard, listSkills } from "./agent-routing.mjs";
@@ -13,6 +13,10 @@ import { extractTemplateBlock } from "./template-gates.mjs";
 import { mkdtempSync, writeFileSync, rmSync, utimesSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
+const CHECKER = fileURLToPath(new URL("../scripts/gsd-state-check.mjs", import.meta.url));
 
 /** 跑一遍自测,返回失败条数 */
 export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
@@ -135,6 +139,7 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   runPlanReadyCases({ eqN });
   runPlanCheckE2ECases({ eqN });
   runBoundaryCases({ eqN });
+  runPremiseLocateCases({ eqN });
   runCoverageCases({ eqN, eqArr });
   runLedgerGateCases({ eqN });
   runPhaseHealthCases({ eqN });
@@ -198,6 +203,65 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(checkTicketLoad([{ id: "T1", readFirst: Array.from({ length: 9 }, (_, i) => "f" + i) }]).length, 1, "read_first 9 条 → 判红(一个子代理读不完这一张票)");
   eqN(checkReqClaims([{ id: "T1", covers: ["REQ-99"] }], d4).length, 1, "认领不存在的 REQ → 判红(凭空认领)");
   eqN(checkReqClaims([{ id: "T1", covers: ["REQ-1"] }], d4).length, 0, "认领真实存在的 REQ → 转绿"); rmSync(d4, { recursive: true, force: true });
+  // ---- 票号后缀(#11):T3b 是真票,不是隐形 ----
+  {
+    const d = mkdtempSync(join(tmpdir(), "mm-gsd-tsuf-"));
+    mkdirSync(join(d, ".planning"), { recursive: true });
+    writeFileSync(join(d, "a.mjs"), "x\n");
+    const fm = '---\nphase: "14"\nplan: "02"\ngoal: g\nrollback: r\nfiles_modified:\n  - a.mjs\ndepends_on: []\n---\n\n';
+    const full = '### T3b 事\n- **files**: a.mjs\n- **read_first**: a.mjs\n- **action**: 做\n- **verify**: node a.mjs\n- **fails_when**: 退出码非 0(无 ok)\n- **done**: ok\n';
+    writeFileSync(join(d, ".planning", "14-02-PLAN.md"), fm + full);
+    let out = "", code = 0;
+    try { out = execFileSync(process.execPath, [CHECKER, "--plan", join(d, ".planning", "14-02-PLAN.md")], { cwd: d, encoding: "utf8", stdio: "pipe" }); }
+    catch (e) { code = e.status ?? 1; out = String(e.stdout || "") + String(e.stderr || ""); }
+    eqN(code === 0 && !out.includes("T3b:"), true, "带字母后缀的票被认领(T3b 四件套照查)");
+    writeFileSync(join(d, ".planning", "14-02-PLAN.md"), fm + "### T3b 事\n- **files**: a.mjs\n");
+    try { out = execFileSync(process.execPath, [CHECKER, "--plan", join(d, ".planning", "14-02-PLAN.md")], { cwd: d, encoding: "utf8", stdio: "pipe" }); }
+    catch (e) { code = e.status ?? 1; out = String(e.stdout || "") + String(e.stderr || ""); }
+    eqN(code === 1 && out.includes("T3b"), true, "T3b 缺四件套判红不隐形");
+    rmSync(d, { recursive: true, force: true });
+  }
+  // ---- 批次圈定(#14):多路径进批图;未检查批次要说出口 ----
+  {
+    const d = mkdtempSync(join(tmpdir(), "mm-gsd-multi-"));
+    mkdirSync(join(d, ".planning"), { recursive: true });
+    writeFileSync(join(d, "a.mjs"), "x\n");
+    const mk = (n, f) => '---\nphase: "14"\nplan: "' + n + '"\ngoal: g\nrollback: r\nfiles_modified:\n  - ' + f + '\ndepends_on: []\n---\n\n### T1 事\n- **files**: ' + f + '\n- **read_first**: ' + f + '\n- **action**: 做\n- **verify**: node ' + f + '\n- **fails_when**: 退出码非 0(无 ok)\n- **done**: ok\n';
+    writeFileSync(join(d, ".planning", "14-01-PLAN.md"), mk("01", "a.mjs"));
+    writeFileSync(join(d, ".planning", "14-02-PLAN.md"), mk("02", "a.mjs"));
+    writeFileSync(join(d, ".planning", "14-03-PLAN.md"), mk("03", "b.mjs"));
+    let out = "", code = 0;
+    try { out = execFileSync(process.execPath, [CHECKER, "--plan", join(d, ".planning", "14-01-PLAN.md"), join(d, ".planning", "14-02-PLAN.md")], { cwd: d, encoding: "utf8", stdio: "pipe" }); }
+    catch (e) { code = e.status ?? 1; out = String(e.stdout || "") + String(e.stderr || ""); }
+    eqN(code === 1 && out.includes("14-01") && out.includes("14-02") && out.includes("撞了文件"), true, "--plan 收多路径(两份同 phase 计划撞文件 → 批图判红)");
+    writeFileSync(join(d, ".planning", "STATE.md"), '---\nstatus: planning\nactive_phase: "14"\n---\n');
+    writeFileSync(join(d, "c.mjs"), "y\n");
+    writeFileSync(join(d, ".planning", "15-01-PLAN.md"), mk("01", "c.mjs").replace('phase: "14"', 'phase: "15"'));
+    try { out = execFileSync(process.execPath, [CHECKER, "--plan"], { cwd: d, encoding: "utf8", stdio: "pipe" }); }
+    catch (e) { out = String(e.stdout || "") + String(e.stderr || ""); }
+    eqN(out.includes("另有") && out.includes("15"), true, "无参时未检查的其它 phase 计划有显式提示");
+    rmSync(d, { recursive: true, force: true });
+  }
+  // ---- #9:root 布局推导按 active_phase 计数(历史工件不淹没) ----
+  {
+    const d = mkdtempSync(join(tmpdir(), "mm-gsd-root9-"));
+    mkdirSync(join(d, ".planning"), { recursive: true });
+    writeFileSync(join(d, ".planning", "STATE.md"), '---\nstatus: executing\nactive_phase: "07"\n---\n');
+    writeFileSync(join(d, ".planning", "01-01-PLAN.md"), '---\nphase: "01"\n---\n');
+    writeFileSync(join(d, ".planning", "01-01-SUMMARY.md"), '---\nphase: "01"\nplan: "01"\nstatus: complete\ncommits: 3\n---\n');
+    writeFileSync(join(d, ".planning", "07-01-PLAN.md"), '---\nphase: "07"\n---\n');
+    let out = "";
+    try { out = execFileSync(process.execPath, [CHECKER, "--json"], { cwd: d, encoding: "utf8", stdio: "pipe" }); }
+    catch (e) { out = String(e.stdout || "") + String(e.stderr || ""); }
+    const j = JSON.parse(out.slice(out.indexOf("{")));
+    eqN(j.artifacts && j.artifacts.plans, 1, "root 布局推导按 active_phase 计数(历史工件不淹没)");
+    rmSync(d, { recursive: true, force: true });
+  }
+  // ---- 判别力 lint(#10):只判「退出码被吞」;裸 grep -c 是家常正确形状 ----
+  eqN(checkDiscriminatingLints([{ id: "T1", verify: "n=$(cat t.md | grep -c foo)" }]).length, 1, "lint 命中捕获式 grep -c(报 WARNING)");
+  eqN(checkDiscriminatingLints([{ id: "T1", verify: "grep -c foo t.md || true" }]).length, 1, "lint 命中吞退出码(报 WARNING)");
+  eqN(checkDiscriminatingLints([{ id: "T1", verify: "grep -c foo t.md" }]).length, 0, "裸 grep -c 不误报(零匹配即红)");
+  eqN(checkDiscriminatingLints([{ id: "T1", verify: "cargo test --test skills_bundle" }]).length, 0, "具名 cargo test 不误报");
   console.log(st.bad ? `\n${st.bad} 项自测不过 —— 门禁本身是坏的,先修门禁` : "\n✓ 门禁自测全过");
   return st.bad;
 }

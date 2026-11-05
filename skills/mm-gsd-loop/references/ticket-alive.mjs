@@ -193,7 +193,7 @@ export function checkPlanCheckArtifacts({ dir, plans = [], summaries = [], front
     }
     const st = frontmatter?.(join(dir, cf))?.status;
     if (!["passed", "blocked"].includes(st))
-      problems.push(`${cf}: status 非法或缺失("${st ?? "缺"}") —— 预审结论只能写 passed(零 BLOCKER 且零 WARNING)或 blocked`);
+      problems.push(`${cf}: status 非法或缺失("${st ?? "缺"}") —— 预审结论只能写 passed(零 BLOCKER;WARNING 归 Deferred 带进施工)或 blocked`);
   }
   return problems;
 }
