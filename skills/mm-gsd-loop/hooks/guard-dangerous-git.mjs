@@ -33,16 +33,42 @@ process.stdin.on("end", () => {
   const DANGEROUS = [
     { re: /\bgit\s+reset\b(?![^|;&]*--soft)[^|;&]*--hard/i, why: "会丢弃未提交的工作。确认要丢再用,或用 git stash / git diff 先保住。" },
     { re: /\bgit\s+clean\b[^|;&]*\s-[a-z]*f/i, why: "会删除未跟踪文件——在共享 worktree 里可能删掉别人的东西(绝不要在 worktree 内用)。" },
-    { re: /\bgit\s+stash\b[^|;&]*\b(drop|clear)\b/i, why: "refs/stash 跨 worktree 共享,drop 会清掉兄弟会话的 WIP。要存 WIP 用分支,不要用 stash。" },
+    { re: /\bgit\s+stash\b/i, why: "refs/stash 跨 worktree 共享,stash 全族(push/pop/apply/drop/clear)都可能搅乱兄弟会话的 WIP。要存 WIP 用分支,不要用 stash。" },
     { re: /\bgit\s+push\b[^|;&]*(--force\b(?!-with-lease)|-f\b)/i, why: "强推会覆盖远端他人提交;除非明确知道在做什么,否则用 --force-with-lease 或先 pull。" },
     { re: /\bgit\s+(branch\s+-D|update-ref\s+-d)\b/i, why: "会不可逆删除分支/引用。确认该分支已合并或已备份再删。" },
     { re: /\bgit\s+(checkout|restore)\b[^|;&]*\s\.\s*($|[|;&])/i, why: "全量重置工作区,会丢掉所有未提交改动。逐文件恢复,或先 stash。" },
+    { re: /\bgit\s+checkout\s+(-f|--force)\b/i, why: "强检出会丢掉工作区未提交改动。逐文件恢复,或先备份再切。" },
+    { re: /\bgit\s+switch\b[^|;&]*--discard-changes/i, why: "--discard-changes 会丢未提交改动。先备份再切。" },
   ];
+  // 推保护分支(phase 16 D-01):refspec 尾段精确匹配 main/master/develop(dev/main-x、develop-feature 不误伤);
+  // --force-with-lease 是 SKILL 推荐的出路,不拦(预审 F3)。
+  const pushProtected = (v) => {
+    const i = v.toLowerCase().indexOf("push");
+    if (i < 0) return false;
+    const seg = v.slice(i + 4);
+    if (/--force-with-lease/i.test(seg)) return false;
+    return /(?:^|[\s:'"\/])(?:main|master|develop)(?=["'\s]|$)/i.test(seg);
+  };
 
-  const hit = DANGEROUS.find((d) => d.re.test(cmd));
-  if (!hit) process.exit(0);
+  // -C 归一化(phase 16 D-01,预审 F1):循环剥离 -C 全部词法形式 —— 引号含空格路径 / 带空格 / 无空格紧贴 ——
+  // 每剥一次得一个测试副本,全部正则对原始命令与每个副本各测一次(变体绕过的解法是归一化输入,不是枚举变体)。
+  const variants = [cmd];
+  const strip = /-C\s*(?:"[^"]*"|\S+)\s*/gi;
+  let mm;
+  while ((mm = strip.exec(cmd)) !== null) variants.push(cmd.replace(mm[0], " "));
+  variants.push(cmd.replace(strip, " "));
 
-  const reason = `mm-gsd:已拦截破坏性 git 命令。${hit.why}\n命令:${cmd}`;
+  const hitWhy = (v) => {
+    const d = DANGEROUS.find((x) => x.re.test(v));
+    if (d) return d.why;
+    if (pushProtected(v)) return "直接推保护分支(main/master/develop)会绕过共享历史的评审闸。推特性分支;确需改写共享历史用 --force-with-lease 并由人确认。";
+    return null;
+  };
+  let why = null;
+  for (const v of variants) { why = hitWhy(v); if (why) break; }
+  if (!why) process.exit(0);
+
+  const reason = `mm-gsd:已拦截破坏性 git 命令。${why}\n命令:${cmd}`;
   // 宿主契约:stdout 给决策 JSON,stderr 给理由,exit 2 = 阻断
   process.stdout.write(JSON.stringify({ decision: "block", reason }));
   process.stderr.write(reason + "\n");

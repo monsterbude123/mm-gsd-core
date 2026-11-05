@@ -735,6 +735,41 @@ const artifactInfo = { context: null, plans: [], summaries: [], verification: nu
         warn(`${s}: commits=${commits} 但提交主题无 (${ids.join("|")}): scope —— commits 是人工回填或 scope 缺失(exec SKILL);补 scope 或改用 mm-gsd summary 重新生成`);
       else if (scoped < commits && !process.argv.includes("--json"))
         console.log(`  · ${s}: 部分提交混提(scope 精确命中 ${scoped}/${commits})`);
+      // ---- SUMMARY↔git 对账(phase 16 D-02):票外实碰文件未在 SUMMARY 声明 → 黄 ----
+      // 差集基准 = ids 展开后全部对应 PLAN 的 files_modified 并集;提交归属按主题 scope。
+      // 提及检测先归一化(两侧斜杠统一,全路径子串,不中再「末两段路径」兜底)。
+      {
+        const planNames = ids.map((id) => id + "-PLAN.md").filter((n) => artifactInfo.plans.includes(n));
+        if (planNames.length) {
+          const planFiles = new Set();
+          for (const pn of planNames) {
+            for (const f of parsePlanFile(readFileSync(J(pn), "utf8")).files) planFiles.add(f.replace(/\\/g, "/"));
+          }
+          if (planFiles.size) {
+            const r2 = spawnSync("git", ["log", "--name-only", "--format=%s"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+            if (r2.status === 0) {
+              const touched = new Set();
+              // git log --format=%s --name-only 输出形状(实测):主题 \n 空行 \n 文件行 \n 主题 \n 空行 \n 文件行…
+              // 按行首 "(" 前瞻切分出每笔提交的块,块内首行=主题,其余=文件
+              for (const block of String(r2.stdout || "").split(/\r?\n(?=\()/)) {
+                const bl = block.split(/\r?\n/).filter((x) => x.trim());
+                if (!bl.length) continue;
+                if (!ids.some((id) => bl[0].includes(`(${id}):`))) continue;
+                for (const f of bl.slice(1)) touched.add(f.replace(/\\/g, "/"));
+              }
+              const sumText = readFileSync(J(s), "utf8").replace(/\\/g, "/");
+              const undeclared = [...touched].filter((f) => {
+                if (planFiles.has(f)) return false;
+                if (sumText.includes(f)) return false;
+                const seg2 = f.split("/").slice(-2).join("/");
+                return !sumText.includes(seg2);
+              });
+              for (const f of undeclared)
+                warn(`${s}: 票外实碰文件未在 SUMMARY 声明:${f} —— 偏差区纪律的机器化(16-CONTEXT D-02);在 SUMMARY 偏差区补记,或回退该改动`);
+            }
+          }
+        }
+      }
     }
   }
   // ---- 记账纪律随包分发(D-02):「声称完成却零 commit」当场判红 ----
