@@ -261,6 +261,10 @@ npx mm-gsd-core report "<一句话说清什么坏了>" --evidence "<你跑了什
 
 `.planning/` 是每个 worktree 各自的工作记忆(见上文「工件归属边界」),不跨 worktree 同步;跨 worktree 的事实来源只有一个——git commit history。
 
+### 跨波红窗(守卫跨波变红,计划期承载)
+
+红窗写进票面 frontmatter 的 `red_windows` 列表(`- <守卫或测试路径> | wave <N> | ticket <NN-MM> | close <判据>`,缺兑现票计划门判红,防永久豁免)。放行通道唯一:`mm-gsd commit --ticket` —— 先正常提交,失败项全落该票清单才 `--no-verify` 重试并标注受控放行,清单外失败 exit 2 停下(细节 `node skills/mm-gsd-exec/scripts/mm-gsd-commit.mjs --help`)。phase 收尾逐条核对清单里 `close` 判据是否兑现 —— 计划期声明的红窗机器可读,收尾对账不再人工整理。
+
 ## 假完成检测
 
 占位文本("To be filled"/"placeholder"/"TBD")= 未完成;SUMMARY 缺失或无对应提交 = 未完成。完成判定要 SUMMARY + 提交双证(提交指代码提交,与 SUMMARY 是否入库无关)。
