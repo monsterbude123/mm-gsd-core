@@ -118,16 +118,17 @@ const unquote = (s) => String(s ?? "").replace(/^["']|["']$/g, "").trim();
 function parsePlanFile(txt) {
   const files = new Set(), reqs = new Set(), decisions = new Set();
   const redWindows = [];
-  let cwd = "", batchVerify = "", inBlock = false, inRed = false;
+  let cwd = "", batchVerify = "", inBlock = false, inRed = false, inBv = false;
   for (const raw of txt.split(/\r?\n/)) {
     const line = raw.replace(/\s+#.*$/, "");
     const kv = line.match(/^([A-Za-z_][\w-]*)\s*:\s*(.*)$/);
     if (kv) {
       const k = kv[1].toLowerCase();
       if (k === "cwd") cwd = unquote(kv[2]);
-      else if (k === "batch_verify") batchVerify = kv[2].trim();
+      else if (k === "batch_verify") { const v = kv[2].trim(); if (v && !/^[|>][+-]?$/.test(v)) batchVerify = v; }
       inBlock = k === "files_modified";
       inRed = k === "red_windows";
+      inBv = k === "batch_verify";
       if (inBlock) {
         for (const f of unquote(kv[2].replace(/^\[/, "").replace(/\]$/, "")).split(/[,\s]+/)) {
           if (f && f !== "-" && f.toLowerCase() !== "none") files.add(f);
@@ -145,6 +146,12 @@ function parsePlanFile(txt) {
       const li = line.match(/^\s+-\s+(.+?)\s*$/);
       if (li) redWindows.push(li[1]);
       else if (line.trim()) inRed = false;
+      continue;
+    }
+    if (inBv) {                                     // batch_verify 多行续行(phase 15 D-01):空行跳过,缩进行逐条收
+      if (!line.trim()) continue;
+      if (/^\s/.test(line)) batchVerify = batchVerify ? batchVerify + "\n" + line.trim() : line.trim();
+      else inBv = false;
     }
   }
   for (const m of txt.matchAll(/\bREQ-[A-Za-z0-9._-]+/g)) reqs.add(m[0]);

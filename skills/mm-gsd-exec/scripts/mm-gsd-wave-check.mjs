@@ -42,7 +42,7 @@ if (has("--help") || has("-h")) {
   4. --baseline:同脚本体在基线树再跑一遍,打印差分摘要
      (本批红 X/N 票、基线红 Y/N 票、本批独有红、基线独有红)—— 归因归人
 
-执行需要 bash(Git for Windows 自带);batch_verify 每票一行命令。`);
+执行需要 bash(Git for Windows 自带);batch_verify 支持多行(逐行落脚本,空行跳过)。`);
   process.exit(0);
 }
 
@@ -73,6 +73,23 @@ function frontmatter(text) {
 }
 const pick = (lines, re) => { for (const l of lines) { const m = l.match(re); if (m) return m[1].trim(); } return null; };
 
+// batch_verify 支持内嵌换行(15-01 D-01):首行 + 缩进续行逐条收集,空行跳过(不终止收集);
+// `>`/`|` 块标量的值全在续行。返回按 \n 连接的命令行,或 null(无 batch_verify)。
+function collectBatchVerify(fmLines) {
+  const i = fmLines.findIndex((l) => /^batch_verify:\s*(.*)$/.test(l));
+  if (i < 0) return null;
+  const first = fmLines[i].match(/^batch_verify:\s*(.*)$/)[1].trim();
+  const out = [];
+  if (first && !/^[|>][+-]?$/.test(first)) out.push(first);
+  for (let j = i + 1; j < fmLines.length; j++) {
+    const raw = fmLines[j];
+    if (!raw.trim()) continue;
+    if (!/^\s/.test(raw)) break;                    // 非缩进非空行 = 下一键 / frontmatter 结束
+    out.push(raw.trim());
+  }
+  return out.length ? out.join("\n") : null;
+}
+
 const plans = [];
 let scanned = 0;
 for (const f of readdirSync(".planning").sort()) {
@@ -85,7 +102,7 @@ for (const f of readdirSync(".planning").sort()) {
   plans.push({
     id: `${phase}-${m[1]}`,
     cwd: pick(fm, /^cwd:\s*(.+?)\s*$/),
-    batchVerify: pick(fm, /^batch_verify:\s*(.+?)\s*$/),
+    batchVerify: collectBatchVerify(fm),
   });
 }
 if (!plans.length) {
@@ -96,11 +113,14 @@ if (!plans.length) {
 const noBv = plans.filter((p) => !p.batchVerify);
 const runnable = plans.filter((p) => p.batchVerify);
 
+// POSIX shell 唯一安全的单引号转义:整体包单引号,内部 ' → '\''(含单引号路径不做转义即产出语法坏的脚本,15-01 D-01)
+const shQuote = (s) => `'` + String(s).replace(/'/g, `'\\''`) + `'`;
+
 // ---- 生成脚本:头部 cd,cwd 缺省用当前目录并注释 ----
 const cwdDecls = [...new Set(runnable.map((p) => p.cwd).filter((c) => c !== null))];
 if (cwdDecls.length > 1) console.error(`⚠ 该批各票 cwd 声明不一致(${cwdDecls.join(", ")}),取第一份`);
 const batchCwd = cwdDecls[0];
-const header = batchCwd ? `cd '${batchCwd}'` : `cd '.' # 票面未声明 cwd,用当前目录`;
+const header = batchCwd ? `cd ${shQuote(batchCwd)}` : `cd '.' # 票面未声明 cwd,用当前目录`;
 const script = header + "\n"
   + runnable.map((p) => `# ==== ${p.id} ====\n${p.batchVerify}\necho "WAVECHECK ${p.id} exit=$?"`).join("\n") + "\n";
 
@@ -146,7 +166,7 @@ if (!baseline) {
 }
 
 // ---- --baseline 差分:同脚本体,cd 头换成基线树;只呈现,不归因 ----
-const baseScript = `cd '${baseline.split(sep).join("/")}' # 基线树\n` + script.split(/\r?\n/).slice(1).join("\n");
+const baseScript = `cd ${shQuote(baseline.split(sep).join("/"))} # 基线树\n` + script.split(/\r?\n/).slice(1).join("\n");
 const base = runScript(baseScript);
 if (base.err) { console.error("✗ " + base.err); process.exit(1); }
 const baseReds = report("基线", base.codes);

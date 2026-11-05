@@ -425,6 +425,38 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
     eqN(r.code === 1 && r.out.includes("差分摘要") && r.out.includes("本批独有红") && r.out.includes("14-01") && r.out.includes("基线独有红"), true, "wave-check --baseline 出差分摘要");
     rmSync(d, { recursive: true, force: true }); rmSync(base, { recursive: true, force: true });
   }
+  // ---- wave-check 健壮性(phase 15 D-01):单引号路径转义 + 多行 batch_verify,读取/门禁/执行三处视图一致 ----
+  {
+    const WAVE = fileURLToPath(new URL("../../mm-gsd-exec/scripts/mm-gsd-wave-check.mjs", import.meta.url));
+    const d = mkdtempSync(join(tmpdir(), "mm-gsd-wv15-"));
+    mkdirSync(join(d, ".planning"), { recursive: true });
+    mkdirSync(join(d, ".worktrees", "it's q"), { recursive: true });   // 含单引号与空格的 cwd(中文项目名/Windows 常见)
+    const fm = (cwd, bv) => '---\nphase: "15"\nplan: "01"\nwave: 3\n' + (cwd ? "cwd: " + cwd + "\n" : "") + 'depends_on: []\n' + bv + '\n---\n\n### T1 事\n- **files**: a.mjs\n- **read_first**: a.mjs\n- **action**: 做\n- **verify**: node a.mjs\n- **fails_when**: 退出码非 0\n- **done**: ok\n';
+    const run = (args) => { const r = spawnSync(process.execPath, [WAVE, ...args], { cwd: d, encoding: "utf8" }); return { code: r.status, out: String(r.stdout || "") + String(r.stderr || "") }; };
+    // 用例 1:含单引号路径的 cwd 生成合法脚本(POSIX 转义 ' → '\'')
+    writeFileSync(join(d, ".planning", "15-01-PLAN.md"), fm(".worktrees/it's q", "batch_verify: echo hi"));
+    let r = run(["--phase", "15", "--wave", "3", "--dry"]);
+    const shFile = join(d, "gen.sh");
+    writeFileSync(shFile, r.out);
+    let bn = spawnSync("bash", ["-n", shFile.split("\\").join("/")], { encoding: "utf8" });
+    eqN(r.out.startsWith(`cd '.worktrees/it'\\''s q'`) && bn.status === 0, true, "含单引号路径的 cwd 生成合法脚本(转义 + bash -n 过)");
+    // 用例 2:多行 batch_verify 逐行落脚本,空行跳过(不终止收集)
+    writeFileSync(join(d, ".planning", "15-01-PLAN.md"), fm("", "batch_verify: echo one\n\n  echo two"));
+    r = run(["--phase", "15", "--wave", "3", "--dry"]);
+    eqN(r.out.includes('# ==== 15-01 ====\necho one\necho two\necho "WAVECHECK 15-01 exit=$?"'), true, "多行 batch_verify 逐行落脚本(空行跳过,两行紧邻各占一行)");
+    rmSync(d, { recursive: true, force: true });
+    // 用例 3:多行 batch_verify 在 --plan 下逐行过 lint 与 cd 扫描(不漏行 —— 门禁只见第一行就是错误级盲区,预审 F3)
+    const d2 = mkdtempSync(join(tmpdir(), "mm-gsd-wv15p-"));
+    mkdirSync(join(d2, ".planning"), { recursive: true });
+    writeFileSync(join(d2, "a.mjs"), "x\n");
+    const p2 = join(d2, ".planning", "14-01-PLAN.md");
+    writeFileSync(p2, '---\nphase: "14"\nplan: "01"\ngoal: g\nrollback: r\ncwd: .worktrees/p33\nfiles_modified:\n  - a.mjs\ndepends_on: []\nbatch_verify: cd .worktrees/p33 && node a.mjs\n  cd /elsewhere && node a.mjs\n  npm test -- tests\n---\n\n### T1 事\n- **files**: a.mjs\n- **read_first**: a.mjs\n- **action**: 做\n- **verify**: node a.mjs\n- **fails_when**: 退出码非 0(无 ok)\n- **done**: ok\n');
+    let out2 = "";
+    try { out2 = execFileSync(process.execPath, [CHECKER, "--plan", p2], { cwd: d2, encoding: "utf8", stdio: "pipe" }); }
+    catch (e) { out2 = String(e.stdout || "") + String(e.stderr || ""); }
+    eqN(out2.includes("命令量错树") && out2.includes("无界目录"), true, "多行 batch_verify 在 --plan 下逐行过 lint 与 cd 扫描(不漏行:第 2 行 cd 错树判红,第 3 行无界目录报 WARNING)");
+    rmSync(d2, { recursive: true, force: true });
+  }
   console.log(st.bad ? `\n${st.bad} 项自测不过 —— 门禁本身是坏的,先修门禁` : "\n✓ 门禁自测全过");
   return st.bad;
 }
