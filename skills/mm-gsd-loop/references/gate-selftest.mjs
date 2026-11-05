@@ -404,6 +404,27 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
     eqN(r.code === 0 && !r.out.includes("FAST_PATH") && D.sh(["rev-list", "--count", "HEAD"]).trim() === "2", true, "commit 正常提交优先(无守卫拦截时不走 --no-verify)");
     D.clean();
   }
+  // ---- wave-check 工具(phase 14 D-03/D-04,#17):生成脚本以 cd 头;--baseline 差分摘要(只呈现,不归因) ----
+  {
+    const WAVE = fileURLToPath(new URL("../../mm-gsd-exec/scripts/mm-gsd-wave-check.mjs", import.meta.url));
+    const d = mkdtempSync(join(tmpdir(), "mm-gsd-wv-"));
+    mkdirSync(join(d, ".planning"), { recursive: true });
+    const fm = (plan, cwd, bv) => '---\nphase: "14"\nplan: "' + plan + '"\nwave: 2\n' + (cwd ? "cwd: " + cwd + "\n" : "") + 'depends_on: []\nbatch_verify: ' + bv + '\n---\n\n### T1 事\n- **files**: a.mjs\n- **read_first**: a.mjs\n- **action**: 做\n- **verify**: node a.mjs\n- **fails_when**: 退出码非 0\n- **done**: ok\n';
+    const run = (args) => { const r = spawnSync(process.execPath, [WAVE, ...args], { cwd: d, encoding: "utf8" }); return { code: r.status, out: String(r.stdout || "") + String(r.stderr || "") }; };
+    writeFileSync(join(d, ".planning", "14-01-PLAN.md"), fm("01", ".worktrees/w2", "echo hi"));
+    let r = run(["--phase", "14", "--wave", "2", "--dry"]);
+    eqN(r.code === 0 && r.out.startsWith("cd '.worktrees/w2'"), true, "wave-check 生成脚本以 cwd 开头");
+    writeFileSync(join(d, ".planning", "14-01-PLAN.md"), fm("01", "", "node w.mjs"));
+    writeFileSync(join(d, ".planning", "14-02-PLAN.md"), fm("02", "", "node ok.mjs"));
+    writeFileSync(join(d, "w.mjs"), "process.exit(1);\n");
+    writeFileSync(join(d, "ok.mjs"), "process.exit(0);\n");
+    const base = mkdtempSync(join(tmpdir(), "mm-gsd-wvb-"));
+    writeFileSync(join(base, "w.mjs"), "process.exit(0);\n");
+    writeFileSync(join(base, "ok.mjs"), "process.exit(0);\n");
+    r = run(["--phase", "14", "--wave", "2", "--baseline", base]);
+    eqN(r.code === 1 && r.out.includes("差分摘要") && r.out.includes("本批独有红") && r.out.includes("14-01") && r.out.includes("基线独有红"), true, "wave-check --baseline 出差分摘要");
+    rmSync(d, { recursive: true, force: true }); rmSync(base, { recursive: true, force: true });
+  }
   console.log(st.bad ? `\n${st.bad} 项自测不过 —— 门禁本身是坏的,先修门禁` : "\n✓ 门禁自测全过");
   return st.bad;
 }
