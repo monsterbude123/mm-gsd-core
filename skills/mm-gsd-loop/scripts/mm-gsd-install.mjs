@@ -23,7 +23,7 @@ import { homedir } from "node:os";
 import { execSync } from "node:child_process";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { HOSTS, pointerCard } from "../references/agent-routing.mjs";
+import { HOSTS, pointerCard, reviewerCard } from "../references/agent-routing.mjs";
 
 const argv = process.argv.slice(2);
 const has = (f) => argv.includes(f);
@@ -249,6 +249,17 @@ if (!SKILLS_ONLY && !HOOKS_ONLY) {
       if (!mine) { kept++; continue; }               // 用户自己的卡:不接管
       if (prev === body) { kept++; continue; }        // 已是最新
       writeFileSync(f, body); refreshed++;
+    }
+    // 复核专用卡(phase 11):纯只读(tools: Read, Grep, Glob),同一套「自己的卡跟着技能刷新」指纹逻辑
+    const rcFile = join(dir, "mm-gsd-plan-reviewer.md");
+    const rcBody = reviewerCard({ routeCmd });
+    if (!existsSync(rcFile)) { writeFileSync(rcFile, rcBody); made++; }
+    else {
+      const prev2 = readFileSync(rcFile, "utf8");
+      const mine2 = prev2.includes("别在本卡里找规则") && prev2.includes('name: "mm-gsd-plan-reviewer"');
+      if (!mine2) kept++;
+      else if (prev2 !== rcBody) { writeFileSync(rcFile, rcBody); refreshed++; }
+      else kept++;
     }
     if (made) changes.push(name + ":指针卡 " + made + " 张 → " + dir + (kept ? "(" + kept + " 张已存在,没动)" : ""));
     if (refreshed) changes.push(name + ":指针卡刷新 " + refreshed + " 张 → " + dir + "(技能改了,卡跟着改)");

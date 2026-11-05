@@ -5,7 +5,7 @@
 import { validateVerification, checkTicketPremises, checkTicketLoad, checkReqClaims } from "./verification-gates.mjs";
 import { checkDecisions, locateContexts, checkDrift, checkConclusionDrift } from "./decision-gates.mjs";
 import { ticketsCovered } from "./ticket-alive.mjs";
-import { mkAssert, runArtifactCases, runCoverageCases, runLedgerGateCases, runPhaseHealthCases, runRouteCases, runPlanReadyCases, runPlanCheckE2ECases } from "./selftest-suite.mjs";
+import { mkAssert, runArtifactCases, runCoverageCases, runLedgerGateCases, runPhaseHealthCases, runRouteCases, runPlanReadyCases, runPlanCheckE2ECases, runBoundaryCases } from "./selftest-suite.mjs";
 import { researchRequired, researchCompliant, checkResearchConsumed, checkResearchSummary } from "./research-gates.mjs";
 import { checkBatchGraph, checkTicketBudget } from "./worktree-view.mjs";
 import { buildRouteBrief, pointerCard, listSkills } from "./agent-routing.mjs";
@@ -134,6 +134,7 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   runArtifactCases({ eqN, eqArr });
   runPlanReadyCases({ eqN });
   runPlanCheckE2ECases({ eqN });
+  runBoundaryCases({ eqN });
   runCoverageCases({ eqN, eqArr });
   runLedgerGateCases({ eqN });
   runPhaseHealthCases({ eqN });

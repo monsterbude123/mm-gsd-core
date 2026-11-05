@@ -8,10 +8,10 @@ import { checkPlanReady, REVIEW_PROMPT } from "./plan-ready.mjs";
 import { checkPhaseCoverage } from "./decision-gates.mjs";
 import { staleDecisions, coveredDecisions, phaseCovered, staleNote, planExists, runDecisionContracts, checkPlanCheckArtifacts } from "./ticket-alive.mjs";
 import { phaseHealth } from "./telemetry-aggregate.mjs";
-import { checkRoutes, routeSection } from "./agent-routing.mjs";
+import { checkRoutes, routeSection, pointerCard, reviewerCard } from "./agent-routing.mjs";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, rmSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -265,4 +265,25 @@ export function runPlanCheckE2ECases(st) {
     eqN(p4.code, 0, "用户侧命令 mm-gsd check --plan-check 退出码 0(D-06)");
     eqN(p4.out.includes("可以开工"), true, "用户侧命令 mm-gsd check --plan-check 输出「可以开工」");
   } finally { rmSync(dir, { recursive: true, force: true }); }
+}
+
+// ---- 角色边界机器层(phase 11 D-01/D-04):卡面白名单、复核卡纯只读、守卫 fail-closed、派发指名 ----
+export function runBoundaryCases(st) {
+  const { eqN } = st;
+  const dir = mkdtempSync(join(tmpdir(), "mm-gsd-bound-"));
+  mkdirSync(join(dir, "mm-gsd-plan"), { recursive: true });
+  writeFileSync(join(dir, "mm-gsd-plan", "SKILL.md"), '---\ndescription: "探针用规划技能的简介"\n---\n# plan\n');
+  const card = pointerCard({ skill: "mm-gsd-plan", skillPath: join(dir, "mm-gsd-plan", "SKILL.md"), routeCmd: "node x" });
+  eqN(card.includes("tools: Read, Grep, Glob, Write"), true, "plan 卡含 tools 行(白名单)");
+  const loopCard = pointerCard({ skill: "mm-gsd-loop", skillPath: join(dir, "mm-gsd-plan", "SKILL.md"), routeCmd: "node x" });
+  eqN(loopCard.includes("tools:"), false, "loop 卡不设白名单(编排要派子代理)");
+  const rc = reviewerCard({ routeCmd: "node x" });
+  eqN(rc.includes("tools: Read, Grep, Glob") && !rc.includes("Write") && !rc.includes("Bash"), true, "reviewer 卡纯只读(无 Write)");
+  eqN(REVIEW_PROMPT.includes("物理只读") && REVIEW_PROMPT.includes("调用方落盘"), true, "REVIEW_PROMPT 含调用方落盘(复核只读)");
+  const guard = fileURLToPath(new URL("../hooks/guard-dangerous-git.mjs", import.meta.url));
+  let st2 = 0;
+  try { execFileSync(process.execPath, [guard], { input: "not-json", stdio: "pipe" }); }
+  catch (e) { st2 = e.status ?? 1; }
+  eqN(st2, 2, "守卫对非法输入判 2(fail-closed)");
+  rmSync(dir, { recursive: true, force: true });
 }

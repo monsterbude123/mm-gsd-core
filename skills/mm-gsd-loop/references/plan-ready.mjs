@@ -23,18 +23,21 @@ function frontmatter(text) {
   return out;
 }
 
-/** 派预审的提示词。判据在 mm-gsd-verify「执行前预审」节,这里只给调用形状 */
+/** 派预审的提示词。判据在 mm-gsd-verify「执行前预审」节,这里只给调用形状。
+ *  宿主装了 mm-gsd-plan-reviewer 卡(reviewerCard,物理只读)就用卡派;没卡按本提示词派。 */
 export const REVIEW_PROMPT = [
   "按 mm-gsd-verify 的「执行前预审」节复核下面这份 PLAN:",
+  "  · 工具限 Read/Grep/Glob(物理只读 —— 有 mm-gsd-plan-reviewer 卡就用卡派)",
   "  · 只读 CONTEXT / PLAN / REQ,不看写它的过程(自己写自己审不算数)",
   "  · 每条发现带 severity(BLOCKER/WARNING/INFO);缺 severity 一律当 BLOCKER",
   "  · 只报发现,不处方 —— 改法归写票的人",
-  "  · 结论写进 <PLAN 同名>-PLAN-CHECK.md:status(passed|blocked)/blockers/warnings/plan",
+  "  · 发现清单以文本返回,不写任何文件;PLAN-CHECK 工件由调用方落盘:",
+  "    status(passed|blocked)/blockers/warnings/plan",
 ].join("\n");
 
 /**
  * 开工判定。state: passed|blocked|missing|invalid;problems 逐条带改法。
- * 只读不写 —— 结论只能由独立的只读子代理落盘,脚本能写就等于自己判自己(D-04)。
+ * 只读不写 —— 复核发现以文本返回,工件由调用方落盘(D-01 附带设计);脚本能写就等于自己判自己(D-04)。
  */
 export function checkPlanReady({ planPath }) {
   const base = planPath.split(/[\\/]/).pop();
@@ -62,7 +65,7 @@ export function renderPlanReady({ review = [], ok = false }) {
   for (const r of review) out.push(`  ${r.state === "passed" ? "✓" : "✗"} ${r.name}: 预审 ${r.state}`);
   out.push(ok ? "  ✅ 可以开工 —— 机器判据全过 + 预审 passed" : "  ⛔ 不能开工 —— 上面的项没清零就别派执行");
   if (review.some((r) => r.state !== "passed")) {
-    out.push("", "  派预审(复制给一个全新上下文的只读子代理):");
+    out.push("", "  派预审(宿主装了 mm-gsd-plan-reviewer 卡就用卡派 —— 它被物理限制为只读;没卡才按下面提示词派,并声明工具限 Read/Grep/Glob):");
     for (const l of REVIEW_PROMPT.split("\n")) out.push("    " + l);
   }
   return out.join("\n");

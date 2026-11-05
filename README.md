@@ -63,6 +63,11 @@ npx mm-gsd-core check --plan    # 直接跑状态检查器
 
 零依赖，Node ≥ 18，跨 Windows / macOS / Linux。装完 7 个技能就位：
 `mm-gsd-discuss` / `mm-gsd-plan` / `mm-gsd-exec` / `mm-gsd-verify` / `mm-gsd-plan-check` / `mm-gsd-diagnose` / `mm-gsd-loop`。
+**角色边界有三层**(phase 11):① 构造期**工具白名单** —— 宿主发卡时按角色裁剪(discuss/plan
+无 Bash 无 Edit,物理上不能跑 git、跑构建、装依赖;计划复核子代理是纯只读专用卡
+`mm-gsd-plan-reviewer`,tools: Read/Grep/Glob);② 散文纪律(各 SKILL.md 的身份与红线);
+③ 工件门禁(`--plan-check` 开工判定、漂移门)。其中①②由宿主与角色自觉承载,
+违背③会被机器判红。复核发现以文本返回、工件由调用方落盘。
 其中 **`mm-gsd-plan-check` 是显式校验计划的操作**：用户问「这份计划能开工吗」时直接调它 ——
 跑机器判据、按需派只读子代理独立复核、给出「能不能开工」的结论与退出码,不等流程自己走到那一步。
 

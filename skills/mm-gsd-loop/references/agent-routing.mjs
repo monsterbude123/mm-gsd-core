@@ -176,12 +176,33 @@ export function buildRouteBrief({ stage, skillsRoot, projectRoot, home, activePh
  * description 从该技能 SKILL.md 现读 —— 派发器挑卡看的就是这一行,
  * 写成「这是张指针卡」的自指描述,主会话不知道什么时候该派它(2026-10-23 实测教训)。
  */
+// 按角色裁剪的工具白名单(phase 11 D-01):构造期工具 schema 分发是业界唯一被验证的机制层
+// (11-RESEARCH §1)。讨论/规划**去 Bash 与 Edit** —— 物理上不能跑 git、跑构建、装依赖,
+// 审计口子(规划期 git add -f / 跑构建实测)就在这层收掉;它们都要写 .planning/ 工件,Write 保留,
+// 写源码的屏障由「无 Bash 无 Edit」承担。verify/plan-check 要跑机器门与验收命令,Bash 保留但去 Edit。
+// exec 全量(危险 git 由守卫拦);loop 要派子代理,不设白名单。
+const CARD_TOOLS = {
+  "mm-gsd-discuss": "Read, Grep, Glob, Write",
+  "mm-gsd-plan": "Read, Grep, Glob, Write",
+  "mm-gsd-plan-check": "Bash, Read, Grep, Glob, Write",
+  "mm-gsd-verify": "Bash, Read, Grep, Glob, Write",
+  "mm-gsd-exec": "Bash, Read, Grep, Glob, Write, Edit",
+};
+
 export function pointerCard({ skill, skillPath, routeCmd }) {
   const stage = skill.replace("mm-gsd-", "");
   const desc = readFileSync(skillPath, "utf8").match(/^description:\s*"([^"]*)"/m)?.[1] ?? `mm-gsd 的 ${stage} 阶段`;
+  const tools = CARD_TOOLS[skill] ? `tools: ${CARD_TOOLS[skill]}
+` : "";
+  const worker = CARD_TOOLS[skill]?.includes("Edit")
+    ? `- **一票一代理**:别把多张票塞给你 —— 你只接这一张(一张票 = 20 分钟能做完的量)
+- **批量收尾**:一批做完再统一检查,不要改一次跑一次(贵的门禁不在票里跑)
+`
+    : `- 你产出/审的是 .planning/ 工件;不碰项目源码(卡面 tools 已物理裁掉 Bash/Edit)
+`;
   return `---
 name: "${skill}"
-description: "mm-gsd 的 ${stage} 子代理:${desc}"
+${tools}description: "mm-gsd 的 ${stage} 子代理:${desc}"
 ---
 
 ## 你的任务
@@ -195,9 +216,26 @@ description: "mm-gsd 的 ${stage} 子代理:${desc}"
 - 只传路径,不传内容:要什么文件,让主会话给路径;别把文件内容抄进上下文
 - 主会话只做编排与验收(上下文 ≤15%),重活开子代理 —— 你就是那个子代理
 - 摸清现状/调研/搜代码也派子代理:主上下文只拿**摘要 + 落盘路径**,别把探查结果灌进主上下文
-- **一票一代理**:别把多张票塞给你 —— 你只接这一张(一张票 = 20 分钟能做完的量)
-- **批量收尾**:一批做完再统一检查,不要改一次跑一次(贵的门禁不在票里跑)
+${worker.trimEnd()}
 - 本项目的门禁速查(该跑哪些门禁、有没有单文件行数上限)由主会话在项目根跑:
   \`${routeCmd} --route ${stage}\` —— 那是机器从 ledger/budget 读出来的,不是手写的
+`;
+}
+
+/** 计划复核的专用卡(phase 11 D-01 附带设计):纯只读,无 Write 无 Bash ——
+ *  复核发现以文本返回,PLAN-CHECK 工件由调用方落盘。「物理只读」的宿主级载体:
+ *  卡存在 + 自测 + 派发指令指名(三者缺一,N5)。 */
+export function reviewerCard({ routeCmd }) {
+  return `---
+name: "mm-gsd-plan-reviewer"
+tools: Read, Grep, Glob
+description: "mm-gsd 的计划复核子代理(物理只读):按调用方给的 PLAN 路径做执行前预审,发现以文本返回,不写任何文件 —— PLAN-CHECK 工件由调用方落盘。"
+---
+
+## 你的任务
+
+按调用方 prompt 里给的 PLAN 路径,照 mm-gsd-verify 的「执行前预审」节复核(只读 CONTEXT / PLAN / REQ),
+发现清单以**文本**返回。**不写任何文件** —— 本卡 tools 已物理裁掉写能力。
+门禁速查:\`${routeCmd} --route plan-check\`(调用方负责)。别在本卡里找规则。
 `;
 }

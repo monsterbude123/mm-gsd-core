@@ -38,6 +38,8 @@ JWT 认证含刷新令牌轮换,用 jose 库 —— 禁止 "认证已实现" 这
 - None — plan executed exactly as written.   ← 无偏差也要写这句
 
 ## Known Stubs
+
+(只报事实:哪里是桩、缺什么;阻碍与否的判定归 mm-gsd-verify —— phase 11 D-05)
 - src/x.ts:42 — <占位/硬编码的原因>(不阻碍目标才允许存在)
 
 ## Deferred Issues

@@ -53,7 +53,7 @@ export function runDecisionContracts({ name, planPath, ctxs, root, readFile, e, 
         // 批注有效 → 免单:这张票已被接替,不再按活票处理(核销门与漂移门都不判它)。
       } else {
         const msg = `${name}: 认领了本 phase CONTEXT 里不存在的决策 ${stale.join(",")} —— 这张票实现的是已被推翻的决策`;
-        const fix = `在该 PLAN 的 frontmatter 加一行批注(stale_note: "D-NN 已于 <日期> 推翻,本票由 <接替票> 接替");批注点名的接替票必须真实存在,否则免单不成立`;
+        const fix = `交回 plan:在该 PLAN 的 frontmatter 加一行批注(stale_note: "D-NN 已于 <日期> 推翻,本票由 <接替票> 接替");批注点名的接替票必须真实存在,否则免单不成立。审查方只报不改 —— 批注由 plan 加(phase 11 D-05)`;
         if (done) w(msg, fix + ";这张票已完成,批注对它没有意义,记一笔备查");
         else e(msg, fix);
       }

@@ -11,6 +11,8 @@
 //
 // 契约:stdin 收事件 JSON(读 tool_input.command);exit 0 放行,exit 2 阻断
 // (stdout 给 decision JSON,stderr 给人类可读理由)。
+// fail-closed(phase 11 D-04):解析失败按拦截处理 —— 守卫失效的时刻恰是危险命令穿过的时刻,
+// 「不能验证」不能当「不危险」。
 
 let raw = "";
 process.stdin.setEncoding("utf8");
@@ -20,7 +22,10 @@ process.stdin.on("end", () => {
   try {
     cmd = String(JSON.parse(raw).tool_input?.command || "");
   } catch {
-    process.exit(0); // 事件不是预期形状 → 永不阻断(守卫不能验时不该回答"危险")
+    const reason = "mm-gsd:守卫无法解析本次事件 —— 解析失败按拦截处理(fail-closed,phase 11 D-04)。若为宿主 hook 格式变更,请检查 guard-dangerous-git.mjs 并临时停用后报修,不要永久绕过。";
+    process.stdout.write(JSON.stringify({ decision: "block", reason }));
+    process.stderr.write(reason + "\n");
+    process.exit(2);
   }
   if (cmd === "") process.exit(0);
 
