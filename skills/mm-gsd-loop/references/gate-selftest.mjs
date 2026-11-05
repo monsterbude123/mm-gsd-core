@@ -488,6 +488,38 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
     eqN(r.code === 0 && (r.j?.errors.length ?? 1) === 0 && (r.j?.warnings.length ?? 1) === 0, true, "scope 齐全 → 无警告(scoped 与 commits 同口径命中)");
     rmSync(d, { recursive: true, force: true });
   }
+  // ---- summary notes schema(phase 15 D-03):未知字段/类型错一次列全并拒绝;合法填进模板字面节 ----
+  {
+    const d = mkdtempSync(join(tmpdir(), "mm-gsd-notes-"));
+    const sh = (args) => { const r = spawnSync("git", args, { cwd: d, encoding: "utf8" }); if (r.status !== 0) throw new Error("git " + args.join(" ") + ": " + r.stderr); return r.stdout; };
+    sh(["init", "-q"]); sh(["config", "user.name", "t"]); sh(["config", "user.email", "t@t"]);
+    mkdirSync(join(d, ".planning"), { recursive: true });
+    sh(["commit", "--allow-empty", "-q", "-m", "feat(15-03): c1"]);
+    const SUMMARY = fileURLToPath(new URL("../../mm-gsd-exec/scripts/mm-gsd-summary.mjs", import.meta.url));
+    const run = (args) => { const r = spawnSync(process.execPath, [SUMMARY, ...args], { cwd: d, encoding: "utf8" }); return { code: r.status, out: String(r.stdout || "") + String(r.stderr || "") }; };
+    const put = (obj) => writeFileSync(join(d, "notes.json"), JSON.stringify(obj));
+    const gen = join(d, ".planning", "15-03-SUMMARY.md");
+    // 未知字段拒绝:违规列出,草稿不落盘
+    put({ one_liner: "x", bogus: "y" });
+    let r = run(["--ticket", "15-03", "--notes", "notes.json"]);
+    eqN(r.code === 1 && r.out.includes("bogus") && !existsSync(gen), true, "notes 未知字段拒绝(违规指名、草稿不落盘)");
+    // 类型错拒绝:两处违规一次列全(字符串字段给了非 string;数组元素非字符串)
+    put({ accomplishments: "not-array", deferred: [1, "ok"] });
+    r = run(["--ticket", "15-03", "--notes", "notes.json"]);
+    eqN(r.code === 1 && r.out.includes("accomplishments") && r.out.includes('"deferred"[0] 非字符串') && !existsSync(gen), true, "notes 类型错拒绝(全部违规一次列出)");
+    // 合法:six 字段填进对应节,节标题与 templates/summary.md 字面一致
+    put({ one_liner: "JWT 认证含刷新轮换,用 jose 库", accomplishments: ["登录态可保持"], deviations: ["[R1 - bug] 修了 X"], threats: ["新增 /admin 端点"], stubs: ["src/a.ts:42 — 占位"], deferred: ["LF 归一"] });
+    r = run(["--ticket", "15-03", "--notes", "notes.json"]);
+    const t = () => readFileSync(gen, "utf8");
+    eqN(r.code === 0
+      && t().includes("## One-liner\nJWT 认证含刷新轮换,用 jose 库")
+      && t().includes("## Accomplishments\n- 登录态可保持")
+      && t().includes("## Deviations from Plan\n- [R1 - bug] 修了 X")
+      && t().includes("## Known Stubs\n- src/a.ts:42 — 占位")
+      && t().includes("## Deferred Issues\n- LF 归一")
+      && t().includes("## Threat Flags\n- 新增 /admin 端点"), true, "notes 合法填进对应节(六字段与模板节字面一一对应,缺节按模板补建)");
+    rmSync(d, { recursive: true, force: true });
+  }
   console.log(st.bad ? `\n${st.bad} 项自测不过 —— 门禁本身是坏的,先修门禁` : "\n✓ 门禁自测全过");
   return st.bad;
 }

@@ -22,17 +22,27 @@ if (has("--help") || has("-h")) {
   console.log(`mm-gsd-summary —— 生成票 SUMMARY 草稿,commits 按提交主题 scope 实测
 
 用法:
-  node mm-gsd-summary.mjs --ticket <NN-MM>
+  node mm-gsd-summary.mjs --ticket <NN-MM> [--notes <file.json>]
 
   --ticket <NN-MM>   票号,如 14-02(必需)
+  --notes <file.json>  人工备注(JSON),校验过才填进 SUMMARY 对应节;文件必须存在
   --help             本说明
+
+notes schema(固定,未知字段与类型错一律拒绝并列出全部违规、退出 1):
+  { one_liner?: string,        → ## One-liner
+    accomplishments?: string[], → ## Accomplishments
+    deviations?: string[],      → ## Deviations from Plan
+    threats?: string[],         → ## Threat Flags
+    stubs?: string[],           → ## Known Stubs
+    deferred?: string[] }       → ## Deferred Issues
+  六字段与 templates/summary.md 的节字面一一对应;草稿缺节按模板字面补建。
 
 行为:
   1. git log --format=%s 全量取回提交主题,数出含 \`(<NN-MM>):\` scope 的条目
   2. 零命中 → 按 <NN-MM> 前缀兜底重匹配,并 WARN 提示补 scope
   3. 仍零 → commits: 0 并 WARN(有代码变更但 commits=0 属非法)
-  4. 生成 .planning/<NN-MM>-SUMMARY.md 草稿(One-liner/Accomplishments 留占位待填);
-     已存在则拒绝覆盖(退出 1,手工改)
+  4. 生成 .planning/<NN-MM>-SUMMARY.md 草稿(One-liner/Accomplishments 留占位待填,
+     --notes 校验通过的字段填进对应节);已存在则拒绝覆盖(退出 1,手工改)
 
 SUMMARY 落盘不 commit —— 流程记忆属本地工件(exec SKILL「SUMMARY 原子块」)。`);
   process.exit(0);
@@ -42,6 +52,57 @@ const ticket = val("--ticket");
 if (!ticket || !/^\d+-\d+$/.test(ticket)) {
   console.error("✗ 用法:node mm-gsd-summary.mjs --ticket <NN-MM>(--help 看详情)");
   process.exit(1);
+}
+
+// ---- --notes:固定 schema 的可选人工备注(phase 15 D-03)----
+// 校验在生成之前:JSON.parse 失败 / 未知字段 / 类型错 / 数组元素非字符串 → 全部违规一次列出,exit 1。
+const NOTES_SCHEMA = {
+  one_liner: "string",
+  accomplishments: "string[]",
+  deviations: "string[]",
+  threats: "string[]",
+  stubs: "string[]",
+  deferred: "string[]",
+};
+// 六字段与 templates/summary.md 的节字面一一对应,不自创新节
+const NOTES_SECTION = [
+  ["deviations", "## Deviations from Plan"],
+  ["stubs", "## Known Stubs"],
+  ["deferred", "## Deferred Issues"],
+  ["threats", "## Threat Flags"],     // 模板里的节序:Deviations → Stubs → Deferred → Threats
+];
+let notes = null;
+if (has("--notes")) {
+  const notesPath = val("--notes");
+  if (!notesPath) { console.error("✗ --notes 需要一个 JSON 文件路径(--help 看 schema)"); process.exit(1); }
+  let raw;
+  try { raw = readFileSync(notesPath, "utf8"); }
+  catch { console.error(`✗ --notes 文件读不到:${notesPath}`); process.exit(1); }
+  let obj;
+  try { obj = JSON.parse(raw); }
+  catch (e) { console.error(`✗ notes 不是合法 JSON:${e.message}`); process.exit(1); }
+  const bad = [];
+  if (typeof obj !== "object" || obj === null || Array.isArray(obj)) {
+    bad.push("notes 顶层必须是对象(六字段 schema 见 --help)");
+  } else {
+    for (const [k, v] of Object.entries(obj)) {
+      const kind = NOTES_SCHEMA[k];
+      if (!kind) { bad.push(`未知字段 "${k}"(合法:${Object.keys(NOTES_SCHEMA).join(", ")})`); continue; }
+      if (kind === "string") {
+        if (typeof v !== "string") bad.push(`字段 "${k}" 类型错:须为 string,实为 ${Array.isArray(v) ? "array" : typeof v}`);
+      } else if (!Array.isArray(v)) {
+        bad.push(`字段 "${k}" 类型错:须为 string[],实为 ${Array.isArray(v) ? "array" : typeof v}`);
+      } else {
+        v.forEach((el, i) => { if (typeof el !== "string") bad.push(`字段 "${k}"[${i}] 非字符串(${typeof el})`); });
+      }
+    }
+  }
+  if (bad.length) {
+    console.error(`✗ notes 校验失败(${bad.length} 处违规):`);
+    for (const b of bad) console.error(`  - ${b}`);
+    process.exit(1);
+  }
+  notes = obj;
 }
 const summaryPath = join(".planning", `${ticket}-SUMMARY.md`);
 if (existsSync(summaryPath)) {
@@ -70,6 +131,18 @@ if (!commits) {
 }
 
 const [phase, plan] = ticket.split("-");
+const items = (key, ph) => (notes && notes[key]?.length ? notes[key].map((s) => "- " + s) : notes && key in notes ? [] : [ph]);
+const body = [
+  "## One-liner",
+  notes?.one_liner ?? "<一行摘要:做了什么、用什么 —— 要具体,禁空话>",
+  "",
+  "## Accomplishments",
+  ...items("accomplishments", "- <交付了什么,用户视角>"),
+];
+for (const [key, header] of NOTES_SECTION) {
+  if (!notes || !(key in notes)) continue;   // 生成的草稿缺节按模板字面补建(只补 notes 给了的节)
+  body.push("", header, ...notes[key].map((s) => "- " + s));
+}
 writeFileSync(summaryPath, `---
 phase: "${phase}"
 plan: "${plan}"
@@ -78,11 +151,7 @@ commits: ${commits}
 requirements-completed: []
 ---
 
-## One-liner
-<一行摘要:做了什么、用什么 —— 要具体,禁空话>
-
-## Accomplishments
-- <交付了什么,用户视角>
+${body.join("\n")}
 `);
 console.log(`✓ ${summaryPath} 已生成(commits 实测 ${commits},提交主题全量 ${subjects.length} 条)`);
 if (warn) console.log(warn);
