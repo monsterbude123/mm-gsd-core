@@ -114,15 +114,20 @@ const ALWAYS_TRUE = /\|\|\s*true\b|2>\/dev\/null\s*\|\|\s*echo/i;
 
 const unquote = (s) => String(s ?? "").replace(/^["']|["']$/g, "").trim();
 
-/** 从 PLAN 全文抽 files_modified(三种写法)/ REQ-* / D-NN */
+/** 从 PLAN 全文抽 files_modified(三种写法)/ REQ-* / D-NN;cwd/batch_verify/red_windows 供 #16/#17/#18 的门禁用 */
 function parsePlanFile(txt) {
   const files = new Set(), reqs = new Set(), decisions = new Set();
-  let inBlock = false;
+  const redWindows = [];
+  let cwd = "", batchVerify = "", inBlock = false, inRed = false;
   for (const raw of txt.split(/\r?\n/)) {
     const line = raw.replace(/\s+#.*$/, "");
     const kv = line.match(/^([A-Za-z_][\w-]*)\s*:\s*(.*)$/);
     if (kv) {
-      inBlock = kv[1].toLowerCase() === "files_modified";
+      const k = kv[1].toLowerCase();
+      if (k === "cwd") cwd = unquote(kv[2]);
+      else if (k === "batch_verify") batchVerify = kv[2].trim();
+      inBlock = k === "files_modified";
+      inRed = k === "red_windows";
       if (inBlock) {
         for (const f of unquote(kv[2].replace(/^\[/, "").replace(/\]$/, "")).split(/[,\s]+/)) {
           if (f && f !== "-" && f.toLowerCase() !== "none") files.add(f);
@@ -134,11 +139,17 @@ function parsePlanFile(txt) {
       const li = line.match(/^\s+-\s+(.+?)\s*$/);
       if (li) { const f = unquote(li[1]); if (f) files.add(f); }
       else if (line.trim()) inBlock = false;         // 遇到新内容行 → 块结束
+      continue;
+    }
+    if (inRed) {                                    // 红窗清单续行(phase 14 D-02)
+      const li = line.match(/^\s+-\s+(.+?)\s*$/);
+      if (li) redWindows.push(li[1]);
+      else if (line.trim()) inRed = false;
     }
   }
   for (const m of txt.matchAll(/\bREQ-[A-Za-z0-9._-]+/g)) reqs.add(m[0]);
   for (const m of txt.matchAll(/\bD-\d+\b/g)) decisions.add(m[0]);
-  return { files: [...files], reqs: [...reqs], decisions: [...decisions] };
+  return { files: [...files], reqs: [...reqs], decisions: [...decisions], cwd, batchVerify, redWindows };
 }
 
 /** 列出 .planning 下的 PLAN 文件(双布局) */
@@ -206,7 +217,7 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
   const batchPlans = [], review = [], reviewErrs = [];
   const depList = (v) => String(v ?? "").replace(/[[\]"'\s]/g, "").split(/[,、]/).filter(Boolean);
   const { checkTicketBudget } = await import("../references/worktree-view.mjs");
-  const { checkDiscriminatingLints } = await import("../references/verification-gates.mjs");
+  const { checkDiscriminatingLints, checkBatchVerifyLints } = await import("../references/verification-gates.mjs");
   for (const rel of targets) {
     const path = resolve(rel);
     if (!existsSync(path)) { e(`${rel}: 文件不存在`, "路径写错,或 PLAN 还没落盘"); continue; }
@@ -281,6 +292,38 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
         w(p, "判别力提示(不拦红):让失败真的能失败 —— issue #10 的四类假绿");
       tickets.push({ id: `${name} ${t.id}`, files: tf, readFirst: (field(t, "read_first") ?? "").split(/[,\s]+/).filter(Boolean), verify: v, covers: (field(t, "covers") ?? "").split(/[,\s]+/).filter(Boolean) });
     }
+
+    // ---- cwd 契约(phase 14 D-01,#16):票面命令量的是 cwd 声明的那棵树 ----
+    // 归一化后再比(预审 F5):剥引号、去尾斜杠、/ 统一为 \。豁免:$VAR(判不了不猜)、
+    // 以 cwd 声明为前缀的子目录(cd <cwd>/sub 合法)、cd 无参(正则本就不认)。
+    // 不对 cd 目标做存在性判断 —— 执行树在使用方机器上,判不了不猜。
+    {
+      const cwdDecl = parsed.cwd ?? "", cwdNorm = cwdDecl.replace(/\//g, "\\").replace(/\\+$/, "");
+      let sawCd = false;
+      const cmds = [...tickets.map((t) => ({ id: t.id, cmd: t.verify })), { id: `${name} batch_verify`, cmd: parsed.batchVerify }];
+      for (const c of cmds)
+        for (const m of String(c.cmd ?? "").matchAll(/(?<![A-Za-z0-9_.\\/])cd\s+("[^"]*"|'[^']*'|[^\s;&|]+)/g)) {
+          sawCd = true;
+          const tok = unquote(m[1]);
+          if (tok.startsWith("$")) continue;
+          const n = tok.replace(/\//g, "\\").replace(/\\+$/, "");
+          if (!cwdNorm || n === cwdNorm || n.startsWith(cwdNorm + "\\")) continue;
+          e(`${c.id}: 命令量错树,cd 指向 ${m[1]} 而 cwd 是 ${cwdDecl}`, "改 cwd 字段与命令一致,或删掉 cd —— 主检出不是执行树(issue #16 的 36/36 票判据量错树)");
+        }
+      if (sawCd && !cwdDecl) w(`${name}: cwd 缺省却有 cd —— 票面命令在量哪棵树说不清(#16)`, "frontmatter 补 cwd: <执行树根>;cd 要么与它一致,要么删掉");
+    }
+
+    // ---- 红窗兑现票门禁(phase 14 D-02,#18):红窗必须有兑现票 ----
+    // 格式:`- <守卫或测试路径> | wave <N> | ticket <NN-MM> | close <判据>`(竖线切分)。
+    // 缺 ticket 的红窗就是永久豁免 —— 跨波红窗没有兑现票,期末只能人工对账。
+    for (const rw of parsed.redWindows ?? []) {
+      if (!/\bticket\s*\d{2}-\d{2}\b/i.test(rw))
+        e(`${name}: red_windows 条目缺 ticket <NN-MM> —— 红窗缺兑现票,会变成永久豁免(issue #18): ${rw}`, "每条红窗写明兑现票(ticket NN-MM)与 close 判据;没有兑现票的红窗不许进计划");
+    }
+    // ---- 批闸形状 lint(phase 14 D-03,#17):WARNING 通道,与票级判别力 lint 并排 ----
+    if (String(parsed.batchVerify ?? "").trim())
+      for (const p of checkBatchVerifyLints(parsed.batchVerify))
+        w(p, "批闸是每批都跑的 —— 存量红会淹没本批信号;改成具名文件或子目录树,全量归 push 阶段");
 
     // ---- 全文级:缩水与范围承诺 ----
     const body = txt.slice(txt.indexOf("---", 3) + 3);   // 只扫正文,frontmatter 已单独校验

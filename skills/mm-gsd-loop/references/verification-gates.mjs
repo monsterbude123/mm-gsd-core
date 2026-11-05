@@ -215,3 +215,36 @@ export function checkDiscriminatingLints(tickets) {
   }
   return problems;
 }
+
+/* ================= 批闸形状 lint(phase 14 D-03,issue #17) =================
+ *
+ * 使用方实测:批闸扫 1825 个测试文件,42 红里归因本 phase 0 件 —— 无界目录让存量红淹没本批信号。
+ * 返回 WARNING 串数组(调用方走 w 通道),不拦红 —— warn 先行,照判别力 lint 的先例。
+ * 只判「裸无界目录参数」这一个高置信形状:`-- tests/`、`-- src/`、行尾 bare `tests/` 类;
+ * 深度 < 2 即无界(`tests/unit/` 算有界)。预审 I7 补形:无尾斜杠裸目录(`-- tests`)也算;
+ * `./` 前缀归一后判;flag 值形态(`--out build/`)不判 —— 那是输出路径,不是覆盖范围。
+ * 判不了的不猜:runner 专属 flag 的取值(`node --test tests/` 里的 tests/ 是 flag 的值)照 flag 值豁免
+ * —— lint 漏报比误报便宜。cd 的目标归 cwd 契约管(#16),不归覆盖范围 lint。
+ */
+const BATCH_DIRLIKE = (t) =>
+  !/[*?[\]]/.test(t)                                     // glob 不是目录参数
+  && !/\.[A-Za-z0-9]+$/.test(t.split(/[\\/]/).pop())     // 末段带扩展名 = 具名文件,有界
+  && /^(?:[\\/])?(?:\.{1,2}[\\/])?[\w.-]+(?:[\\/][\w.-]+)*[\\/]?$/.test(t);
+
+export function checkBatchVerifyLints(batchVerify) {
+  const problems = [];
+  for (const seg of splitCommands(String(batchVerify ?? ""))) {
+    let dd = false, prevFlag = false, prev = "";
+    for (const t of seg.replace(/[`'"]/g, " ").split(/\s+/).filter(Boolean)) {
+      if (t === "--") { dd = true; prevFlag = false; prev = t; continue; }
+      if (/^--?[A-Za-z][\w-]*/.test(t)) { prevFlag = true; prev = t; continue; }
+      // `--` 之后裸词也判(-- tests);之外只判带斜杠的(npm run build 的 build 不判)
+      const judged = !prevFlag && prev !== "cd" && BATCH_DIRLIKE(t) && (dd || /[\\/]/.test(t));
+      if (judged && t.replace(/^\.{1,2}[\\/]/, "").replace(/[\\/]+$/, "").split(/[\\/]/).filter(Boolean).length < 2)
+        problems.push(`batch_verify 覆盖无界目录 "${t}" —— 存量红会淹没本批信号(#17:42 红归因 0 件);改成具名文件或子目录树,全量归 push 阶段`);
+      prevFlag = false;   // 位置参数之后的 token 不再是 flag 值
+      prev = t;
+    }
+  }
+  return problems;
+}

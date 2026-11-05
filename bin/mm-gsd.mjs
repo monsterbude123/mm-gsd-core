@@ -302,6 +302,16 @@ if (!cmd || cmd === "install") process.exit(install());
 if (cmd === "doctor" || cmd === "--check" && argv.length === 1) process.exit(doctor());
 if (cmd === "update") process.exit(await update());
 if (cmd === "check") process.exit(check());
+if (["stage", "summary", "commit", "wave-check"].includes(cmd)) {
+  // 执行期工具转发(skills/mm-gsd-exec/scripts/,R-13:使用方手上只有 skills/)。
+  // spawnSync 不用 execFileSync:后者把子进程非零退出变调用栈(report 转发先例)。
+  // existsSync 守卫:14-02 落地后 14-03 前,commit/wave-check 目标还不存在 —— 缺脚本给人话,不抛栈。
+  const tp = join(PKG_ROOT, "skills", "mm-gsd-exec", "scripts", `mm-gsd-${cmd}.mjs`);
+  if (!existsSync(tp)) { bad(`包里缺少 mm-gsd-${cmd}.mjs`); process.exit(1); }
+  const r = spawnSync(process.execPath, [tp, ...argv.slice(1)], { stdio: "inherit" });
+  if (r.error) { bad(`mm-gsd-${cmd} 跑不起来:` + r.error.message); process.exit(1); }
+  process.exit(r.status ?? 1);
+}
 if (cmd === "report") {
   // 转发给随包分发的报修脚本。使用方手上只有 skills/,没有 tools/,
   // 所以逻辑必须住在 skills/mm-gsd-loop/scripts/ 里(规则 R-13)。

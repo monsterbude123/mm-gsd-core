@@ -14,8 +14,13 @@ files_modified:
   - src/api/auth.ts
   - src/lib/session.ts
 depends_on: []
-batch_verify: <批级检查命令(可全量;这一批跑一次,失败一次修完再跑一次)>
+cwd: .   # 执行树根;verify/batch_verify 里的 cd 必须与它一致,或干脆不写 cd(多 worktree 项目写实际树根,主检出不算)
+batch_verify: <批级检查命令(有界:具名文件或子目录树;全量归 push 阶段 —— 批闸是每批都跑的,存量红会淹没信号;这一批跑一次,失败一次修完再跑一次)>
 wave: 1   <!-- 批内序号:同 wave 的票必须零文件重叠,否则拆批 -->
+<!-- 跨波红窗(守卫/测试会跨波保持变红时才启用;整块是注释示例,启用时去掉每行行首的 # 落回 frontmatter):
+# red_windows:
+#   - guards/auth.guard.mjs | wave 3 | ticket 02-02 | close: 02-02 的 verify 转绿
+-->
 ---
 
 ## Truths(用户视角,可观察;3-7 条)
@@ -28,7 +33,7 @@ wave: 1   <!-- 批内序号:同 wave 的票必须零文件重叠,否则拆批 --
 - **files**: src/api/auth.ts, src/lib/session.ts
 - **read_first**: src/api/auth.ts, src/lib/types.ts   <!-- 要改的文件 + 作为真理来源的文件(接口定义/类型声明/既有同类实现) -->
 - **action**: <做什么 + 避免什么及为什么。不写代码块,代码留给执行者;避免的手法要写出来,否则它会用最顺手的那个>
-- **verify**: `npm test -- auth`   <!-- 票级只跑本票的便宜检查(具名测试/单文件/单入口);全量套件写进上面的 batch_verify -->
+- **verify**: `npm test -- auth`   <!-- 票级只跑本票的便宜检查(具名测试/单文件/单入口);全量归 push 阶段,不进批闸 -->
 - **fails_when**: <失败时看到什么:退出码非 0,或输出缺 "2 passing"。没有失败方向的验证是假验证>
 - **done**: <可度量判据:测试名、命令输出、CLI 结果。不写"看起来对">
 - **precondition**: <一行可检验的前置事实;不满足即停。选填>
