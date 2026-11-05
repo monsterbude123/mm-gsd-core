@@ -2,7 +2,7 @@
 // 为什么必须有:GitHub #6/#7/#8 三条都是"门禁看起来在跑、实际判错"(VAGUE_FILE 的 N\/A 无左右断言 /
 // depends_on 只认半角括号 / derived 只判 SHIP 文件存在不读 status)—— 不是崩溃,是安静地给错答案。
 
-import { validateVerification, checkTicketPremises, checkTicketLoad, checkReqClaims, checkDiscriminatingLints } from "./verification-gates.mjs";
+import { validateVerification, checkTicketPremises, checkTicketLoad, checkReqClaims, checkDiscriminatingLints, checkBatchVerifyLints } from "./verification-gates.mjs";
 import { checkDecisions, locateContexts, checkDrift, checkConclusionDrift } from "./decision-gates.mjs";
 import { ticketsCovered } from "./ticket-alive.mjs";
 import { mkAssert, runArtifactCases, runCoverageCases, runLedgerGateCases, runPhaseHealthCases, runRouteCases, runPlanReadyCases, runPlanCheckE2ECases, runBoundaryCases, runPremiseLocateCases } from "./selftest-suite.mjs";
@@ -13,7 +13,7 @@ import { extractTemplateBlock } from "./template-gates.mjs";
 import { mkdtempSync, writeFileSync, rmSync, utimesSync, mkdirSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const CHECKER = fileURLToPath(new URL("../scripts/gsd-state-check.mjs", import.meta.url));
@@ -262,6 +262,60 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(checkDiscriminatingLints([{ id: "T1", verify: "grep -c foo t.md || true" }]).length, 1, "lint 命中吞退出码(报 WARNING)");
   eqN(checkDiscriminatingLints([{ id: "T1", verify: "grep -c foo t.md" }]).length, 0, "裸 grep -c 不误报(零匹配即红)");
   eqN(checkDiscriminatingLints([{ id: "T1", verify: "cargo test --test skills_bundle" }]).length, 0, "具名 cargo test 不误报");
+  // ---- cwd 契约(phase 14 D-01,#16):命令量错树判红;缺字段提示;一致/子目录/$VAR 不误伤 ----
+  {
+    const d = mkdtempSync(join(tmpdir(), "mm-gsd-cwd-"));
+    mkdirSync(join(d, ".planning"), { recursive: true });
+    writeFileSync(join(d, "a.mjs"), "x\n");
+    const p = join(d, ".planning", "14-01-PLAN.md");
+    const mk = (fmExtra, tickets) => '---\nphase: "14"\nplan: "01"\ngoal: g\nrollback: r\nfiles_modified:\n  - a.mjs\ndepends_on: []\n' + fmExtra + '---\n\n'
+      + tickets.map((v, i) => '### T' + (i + 1) + ' 事\n- **files**: a.mjs\n- **read_first**: a.mjs\n- **action**: 做\n- **verify**: ' + v + '\n- **fails_when**: 退出码非 0(无 ok)\n- **done**: ok\n').join("\n");
+    const run = () => { let out = "", code = 0;
+      try { out = execFileSync(process.execPath, [CHECKER, "--plan", p], { cwd: d, encoding: "utf8", stdio: "pipe" }); }
+      catch (e) { code = e.status ?? 1; out = String(e.stdout || "") + String(e.stderr || ""); }
+      return { out, code }; };
+    writeFileSync(p, mk("cwd: .worktrees/p33\n", ["cd /workspace/app && node a.mjs"]));
+    let r = run();
+    eqN(r.code === 1 && r.out.includes("命令量错树"), true, "cwd 不一致判红(命令量错树)");
+    writeFileSync(p, mk("", ["cd /workspace/app && node a.mjs"]));
+    r = run();
+    eqN(r.code === 0 && r.out.includes("cwd 缺省"), true, "cwd 缺省有 cd → 提示补字段");
+    writeFileSync(p, mk("cwd: .worktrees/p33\n", ["cd .worktrees/p33/ && node a.mjs", "cd .worktrees/p33/sub && node a.mjs", "cd $TREE && node a.mjs"]));
+    r = run();
+    eqN(r.code === 0 && !r.out.includes("命令量错树"), true, "cwd 一致/前缀子目录/$VAR 不误伤");
+    rmSync(d, { recursive: true, force: true });
+  }
+  // ---- 红窗兑现票(phase 14 D-02,#18):red_windows 条目缺 ticket 判红;补票转绿 ----
+  {
+    const d = mkdtempSync(join(tmpdir(), "mm-gsd-redw-"));
+    mkdirSync(join(d, ".planning"), { recursive: true });
+    writeFileSync(join(d, "a.mjs"), "x\n");
+    const p = join(d, ".planning", "14-01-PLAN.md");
+    const fm = '---\nphase: "14"\nplan: "01"\ngoal: g\nrollback: r\nfiles_modified:\n  - a.mjs\ndepends_on: []\nbatch_verify: node --test a.mjs\nred_windows:\n  - guards/a.guard.mjs | wave 2 | ticket 14-01 | close: 本票 verify 转绿\n  - guards/b.guard.mjs | wave 3 | close: 没写兑现票\n---\n\n';
+    const body = '### T1 事\n- **files**: a.mjs\n- **read_first**: a.mjs\n- **action**: 做\n- **verify**: node a.mjs\n- **fails_when**: 退出码非 0(无 ok)\n- **done**: ok\n';
+    const run = () => { let out = "", code = 0;
+      try { out = execFileSync(process.execPath, [CHECKER, "--plan", p], { cwd: d, encoding: "utf8", stdio: "pipe" }); }
+      catch (e) { code = e.status ?? 1; out = String(e.stdout || "") + String(e.stderr || ""); }
+      return { out, code }; };
+    writeFileSync(p, fm + body);
+    let r = run();
+    eqN(r.code === 1 && r.out.includes("红窗缺兑现票"), true, "红窗缺兑现票 → 判红(防永久豁免)");
+    writeFileSync(p, fm.replace("| wave 3 | close: 没写兑现票", "| wave 3 | ticket 14-01 | close: 补上兑现票") + body);
+    r = run();
+    eqN(r.code === 0, true, "红窗补上兑现票 → 转绿");
+    rmSync(d, { recursive: true, force: true });
+  }
+  // ---- 批闸形状 lint(phase 14 D-03,#17):裸无界目录报 WARNING;有界形状不误报 ----
+  eqN(checkBatchVerifyLints("npm test -- tests/").length, 1, "lint 命中无界批闸目录(报 WARNING)");
+  eqN(checkBatchVerifyLints("npm test -- src").length, 1, "lint 命中无界批闸目录(报 WARNING)—— 无尾斜杠裸目录也算(预审 I7)");
+  eqN(checkBatchVerifyLints("vitest run ./tests").length, 1, "lint 命中无界批闸目录(报 WARNING)—— ./ 前缀归一后判(预审 I7)");
+  eqN(checkBatchVerifyLints("node --test a.mjs && npm test -- tests").length, 1, "lint 命中无界批闸目录(报 WARNING)—— 多命令段各自判");
+  eqN(checkBatchVerifyLints("npm test -- tests/unit/x.test.mjs").length, 0, "有界批闸不误报(具名文件)");
+  eqN(checkBatchVerifyLints("npm test -- tests/unit/").length, 0, "有界批闸不误报(子目录树,深度 ≥2)");
+  eqN(checkBatchVerifyLints("vite build --out build/").length, 0, "有界批闸不误报(flag 值形态不判,预审 I7)");
+  eqN(checkBatchVerifyLints("npm run build").length, 0, "有界批闸不误报(裸脚本词不是目录参数)");
+  eqN(checkBatchVerifyLints("cd /tmp && npm test -- tests").length, 1, "cd 目标豁免不外溢:-- 后的无界目录照判");
+  eqN(checkBatchVerifyLints("").length, 0, "空 batch_verify 不报");
   // ---- update 机械覆盖(用户指令:更新零判断) ----
   {
     const d = mkdtempSync(join(tmpdir(), "mm-gsd-upd-"));
@@ -282,6 +336,73 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
     catch (e) { code2 = e.status ?? 1; }
     eqN(code2, 0, "update 幂等(二次执行仍 0)");
     rmSync(d, { recursive: true, force: true });
+  }
+  // ---- stage 工具(phase 14 D-04,#19):literal pathspec 与不存在路径跳过,都要真仓用例 —— 使用方的 CRLF+[locale] bug 毁过提交 ----
+  {
+    const d = mkdtempSync(join(tmpdir(), "mm-gsd-stage-"));
+    const sh = (args) => { const r = spawnSync("git", args, { cwd: d, encoding: "utf8" }); if (r.status !== 0) throw new Error("git " + args.join(" ") + ": " + r.stderr); return r.stdout; };
+    sh(["init", "-q"]); sh(["config", "user.name", "t"]); sh(["config", "user.email", "t@t"]);
+    mkdirSync(join(d, "src", "app", "[locale]"), { recursive: true });
+    writeFileSync(join(d, "src", "app", "[locale]", "a.css"), "x\n");
+    mkdirSync(join(d, ".planning"), { recursive: true });
+    // files_modified 用 CRLF 行尾(使用方踩的坑)且含 [locale] 形状路径;docs/not-yet.md 不存在也不在索引
+    writeFileSync(join(d, ".planning", "14-01-PLAN.md"), '---\r\nphase: "14"\r\nplan: "01"\r\nfiles_modified:\r\n  - src/app/[locale]/a.css\r\n  - docs/not-yet.md\r\n---\r\n\r\n### T1 事\r\n- **files**: src/app/[locale]/a.css\r\n- **read_first**: src/app/[locale]/a.css\r\n- **action**: 做\r\n- **verify**: node a.mjs\r\n- **fails_when**: 退出码非 0\r\n- **done**: ok\r\n');
+    const STAGE = fileURLToPath(new URL("../../mm-gsd-exec/scripts/mm-gsd-stage.mjs", import.meta.url));
+    const runTool = (script, args) => { const r = spawnSync(process.execPath, [script, ...args], { cwd: d, encoding: "utf8" }); return { code: r.status, out: String(r.stdout || "") + String(r.stderr || "") }; };
+    const r1 = runTool(STAGE, ["--ticket", "14-01"]);
+    eqN(r1.code === 0 && sh(["status", "--porcelain"]).includes("A  src/app/[locale]/a.css"), true, "stage 按票面 literal 暂存");
+    eqN(r1.code === 0 && r1.out.includes("跳过"), true, "stage 对不存在路径跳过不报错");
+    // ---- summary 工具(phase 14 D-04/D-05,#19):scope 精确 / 前缀兜底 WARN / 拒绝覆盖,同一真仓 fixture ----
+    const commit = (m) => sh(["commit", "--allow-empty", "-q", "-m", m]);
+    commit("feat(14-02): stage 工具");
+    commit("fix(14-02): bin 转发");
+    commit("chore: 提到 14-02 但没写 scope");   // 精确匹配不得把它算进去(--grep 子串就栽在这)
+    commit("14-03 草稿:还没补 scope");          // 前缀兜底用例的靶子
+    const SUMMARY = fileURLToPath(new URL("../../mm-gsd-exec/scripts/mm-gsd-summary.mjs", import.meta.url));
+    let r2 = runTool(SUMMARY, ["--ticket", "14-02"]);
+    eqN(r2.code === 0 && readFileSync(join(d, ".planning", "14-02-SUMMARY.md"), "utf8").includes("commits: 2") && !r2.out.includes("WARN"), true, "summary 按 scope 精确实测 commits");
+    r2 = runTool(SUMMARY, ["--ticket", "14-03"]);
+    eqN(r2.code === 0 && readFileSync(join(d, ".planning", "14-03-SUMMARY.md"), "utf8").includes("commits: 1") && r2.out.includes("WARN"), true, "summary 零命中按前缀兜底并 WARN");
+    r2 = runTool(SUMMARY, ["--ticket", "14-02"]);
+    eqN(r2.code === 1 && r2.out.includes("拒绝覆盖"), true, "summary 拒绝覆盖已存在");
+    rmSync(d, { recursive: true, force: true });
+  }
+  // ---- commit 工具(phase 14 D-02,#18):受限放行 —— 真仓 + core.hooksPath 必败钩子:清单内 FAST_PATH --no-verify 重试;清单外/提取空集 exit 2 停下 ----
+  {
+    const COMMIT = fileURLToPath(new URL("../../mm-gsd-exec/scripts/mm-gsd-commit.mjs", import.meta.url));
+    const mkRepo = (hookBody, rwEntry) => {
+      const d = mkdtempSync(join(tmpdir(), "mm-gsd-cmt-"));
+      const sh = (args) => { const r = spawnSync("git", args, { cwd: d, encoding: "utf8" }); if (r.status !== 0) throw new Error("git " + args.join(" ") + ": " + r.stderr); return r.stdout; };
+      sh(["init", "-q"]); sh(["config", "user.name", "t"]); sh(["config", "user.email", "t@t"]);
+      let hooksPath = null;
+      if (hookBody !== null) {
+        hooksPath = join(d, "hooks"); mkdirSync(hooksPath, { recursive: true });
+        writeFileSync(join(hooksPath, "pre-commit"), "#!/bin/sh\n" + hookBody + "\nexit 1\n");
+      }
+      mkdirSync(join(d, ".planning"), { recursive: true });
+      writeFileSync(join(d, "a.mjs"), "x\n");
+      writeFileSync(join(d, ".planning", "14-01-PLAN.md"), '---\nphase: "14"\nplan: "01"\nfiles_modified:\n  - a.mjs\ndepends_on: []\n' + rwEntry + '---\n\n### T1 事\n- **files**: a.mjs\n- **read_first**: a.mjs\n- **action**: 做\n- **verify**: node a.mjs\n- **fails_when**: 退出码非 0\n- **done**: ok\n');
+      sh(["commit", "--allow-empty", "-q", "-m", "init"]);   // 先落 init:hooksPath 还没配,必败钩子不拦空提交
+      if (hooksPath) sh(["config", "core.hooksPath", hooksPath]);
+      const run = () => { const r = spawnSync(process.execPath, [COMMIT, "--ticket", "14-01", "--message", "feat(14-01): c1"], { cwd: d, encoding: "utf8" }); return { code: r.status, out: String(r.stdout || "") + String(r.stderr || "") }; };
+      return { d, sh, run, clean: () => rmSync(d, { recursive: true, force: true }) };
+    };
+    const A = mkRepo(`echo "guard 'no-force-push'" >&2`, "red_windows:\n  - no-force-push | wave 2 | ticket 14-01 | close: 守卫修复票\n");
+    let r = A.run();
+    eqN(r.code === 0 && r.out.includes("FAST_PATH:失败项全部落在已登记红窗清单") && A.sh(["rev-list", "--count", "HEAD"]).trim() === "2", true, "commit 清单内失败走快路径(--no-verify 重试)");
+    A.clean();
+    const B = mkRepo(`echo "guard 'no-force-push'" >&2`, "red_windows:\n  - other-guard | wave 2 | ticket 14-01 | close: 别的守卫\n");
+    r = B.run();
+    eqN(r.code === 2 && r.out.includes("清单外") && B.sh(["rev-list", "--count", "HEAD"]).trim() === "1", true, "commit 清单外失败 exit 2 停下(真缺陷,不提交)");
+    B.clean();
+    const C = mkRepo("echo boom >&2", "");
+    r = C.run();
+    eqN(r.code === 2 && r.out.includes("UNPARSEABLE_FAILURE"), true, "commit 提取空集 UNPARSEABLE_FAILURE exit 2 停下(空集 ⊆ 清单恒真,绝不当全部命中)");
+    C.clean();
+    const D = mkRepo(null, "");
+    r = D.run();
+    eqN(r.code === 0 && !r.out.includes("FAST_PATH") && D.sh(["rev-list", "--count", "HEAD"]).trim() === "2", true, "commit 正常提交优先(无守卫拦截时不走 --no-verify)");
+    D.clean();
   }
   console.log(st.bad ? `\n${st.bad} 项自测不过 —— 门禁本身是坏的,先修门禁` : "\n✓ 门禁自测全过");
   return st.bad;
