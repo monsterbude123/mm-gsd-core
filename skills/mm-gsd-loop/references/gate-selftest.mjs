@@ -10,7 +10,7 @@ import { researchRequired, researchCompliant, checkResearchConsumed, checkResear
 import { checkBatchGraph, checkTicketBudget } from "./worktree-view.mjs";
 import { buildRouteBrief, pointerCard, listSkills } from "./agent-routing.mjs";
 import { extractTemplateBlock } from "./template-gates.mjs";
-import { mkdtempSync, writeFileSync, rmSync, utimesSync, mkdirSync, readFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, utimesSync, mkdirSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
@@ -262,6 +262,27 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(checkDiscriminatingLints([{ id: "T1", verify: "grep -c foo t.md || true" }]).length, 1, "lint 命中吞退出码(报 WARNING)");
   eqN(checkDiscriminatingLints([{ id: "T1", verify: "grep -c foo t.md" }]).length, 0, "裸 grep -c 不误报(零匹配即红)");
   eqN(checkDiscriminatingLints([{ id: "T1", verify: "cargo test --test skills_bundle" }]).length, 0, "具名 cargo test 不误报");
+  // ---- update 机械覆盖(用户指令:更新零判断) ----
+  {
+    const d = mkdtempSync(join(tmpdir(), "mm-gsd-upd-"));
+    mkdirSync(join(d, ".zcode", "agents"), { recursive: true });
+    mkdirSync(join(d, ".agents", "skills", "mm-gsd-plan"), { recursive: true });
+    writeFileSync(join(d, ".agents", "skills", "mm-gsd-plan", "OLD.txt"), "stale");
+    writeFileSync(join(d, ".zcode", "agents", "mm-gsd-plan.md"), "user content");
+    const BIN = fileURLToPath(new URL("../../../bin/mm-gsd.mjs", import.meta.url));
+    let code = 0;
+    try { execFileSync(process.execPath, [BIN, "update", "--home", d], { stdio: "pipe" }); }
+    catch (e) { code = e.status ?? 1; }
+    eqN(code, 0, "update 退出码 0(零提问)");
+    eqN(existsSync(join(d, ".agents", "skills", "mm-gsd-plan", "SKILL.md")) && !existsSync(join(d, ".agents", "skills", "mm-gsd-plan", "OLD.txt")), true, "update 机械覆盖:技能整删重拷,旧文件不残留");
+    eqN(readFileSync(join(d, ".zcode", "agents", "mm-gsd-plan.md"), "utf8").includes("别在本卡里找规则"), true, "update 宿主卡无条件刷新(不接管判断)");
+    eqN(existsSync(join(d, ".zcode", "agents", "mm-gsd-plan-reviewer.md")) && existsSync(join(d, ".agents", "skills", ".mm-gsd-install.json")), true, "update 复核卡与版本清单齐");
+    let code2 = 0;
+    try { execFileSync(process.execPath, [BIN, "update", "--home", d], { stdio: "pipe" }); }
+    catch (e) { code2 = e.status ?? 1; }
+    eqN(code2, 0, "update 幂等(二次执行仍 0)");
+    rmSync(d, { recursive: true, force: true });
+  }
   console.log(st.bad ? `\n${st.bad} 项自测不过 —— 门禁本身是坏的,先修门禁` : "\n✓ 门禁自测全过");
   return st.bad;
 }

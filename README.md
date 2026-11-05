@@ -57,6 +57,7 @@ GSD Core 的设计我很喜欢——五步成环、fresh-context 子代理、规
 npx mm-gsd-core                 # 装到 ~/.agents/skills/
 npx mm-gsd-core install --local # 装到当前项目的 ./.agents/skills/
 npx mm-gsd-core install --hooks # 顺带装宿主 hook(危险 git 拦截)
+npx mm-gsd-core update          # 机械覆盖更新:已装技能/宿主卡直接盖成包里这份(零提问,零判断)
 npx mm-gsd-core doctor          # 体检宿主环境与已装状态(只读)
 npx mm-gsd-core check --plan    # 直接跑状态检查器
 ```
