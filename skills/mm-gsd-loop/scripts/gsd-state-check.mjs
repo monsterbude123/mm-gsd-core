@@ -17,7 +17,7 @@
 
 import { readFileSync, readdirSync, existsSync, appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
-import { execSync } from "node:child_process";
+import { execSync, spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -705,6 +705,37 @@ const artifactInfo = { context: null, plans: [], summaries: [], verification: nu
     else if (!SUMMARY_STATUSES.includes(sfm.status)) err(`${s}: status 非法值 "${sfm.status}"`, `改为 ${SUMMARY_STATUSES.join(" 或 ")}`);
     else if (sfm.status === "halted") warn(`${s}: status=halted —— 有未解决的阻碍目标,不算完成`, "补修复计划或如实留待下个 phase;别拿它当完成");
     if (sfm && !/^\d+$/.test(sfm.commits ?? "")) err(`${s}: commits 非纯数字 "${sfm.commits ?? "(缺)"}" —— 必须 git rev-list 实测`, "git rev-list --count <base>..HEAD");
+  }
+  // ---- 提交 scope 警告(phase 15 D-02):commits 数字实测的另一半 —— 主题里没有 (<票号>): scope 就是人工回填(issue #19 实测 2 票)----
+  // 黄不拦红:commits 数字本身已由上面契约实测过,scope 是质量提示;与 commits(全批数)同口径比较。
+  // git 缺席/非仓库/取数失败 → 静默跳过(外部依赖不在不能判红的先例)。部分混提是 info,只走文本通道,不给 --json 加新形状。
+  {
+    let subs = null;
+    const gitSubjects = () => {
+      if (subs !== null) return subs;
+      try {
+        const r = spawnSync("git", ["log", "--format=%s"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+        subs = r.status === 0 ? String(r.stdout || "").split(/\r?\n/).filter((x) => x.trim()) : null;
+      } catch { subs = null; }
+      return subs;
+    };
+    for (const s of artifactInfo.summaries) {
+      const sfm = frontmatter(J(s));
+      if (sfm?.status !== "complete" || !/^\d+$/.test(sfm?.commits ?? "") || Number(sfm.commits) <= 0) continue;
+      const subjects = gitSubjects();
+      if (!subjects) continue;
+      const phase = unquote(String(sfm.phase ?? "")).trim() || s.slice(0, 2);
+      // 票号集合:frontmatter plan 字段,逗号/顿号多值(跨票 SUMMARY 先例,ticket-alive 同口径);无 plan 字段退回文件名单值
+      const ids = (sfm.plan ? unquote(sfm.plan).split(/[,,、\s]+/) : [s.replace(/-SUMMARY\.md$/, "")])
+        .filter(Boolean).map((p) => (p.includes("-") ? p : `${phase}-${p}`));
+      if (!ids.length) continue;
+      const scoped = subjects.filter((sub) => ids.some((id) => sub.includes(`(${id}):`))).length;
+      const commits = Number(sfm.commits);
+      if (scoped === 0)
+        warn(`${s}: commits=${commits} 但提交主题无 (${ids.join("|")}): scope —— commits 是人工回填或 scope 缺失(exec SKILL);补 scope 或改用 mm-gsd summary 重新生成`);
+      else if (scoped < commits && !process.argv.includes("--json"))
+        console.log(`  · ${s}: 部分提交混提(scope 精确命中 ${scoped}/${commits})`);
+    }
   }
   // ---- 记账纪律随包分发(D-02):「声称完成却零 commit」当场判红 ----
   // 记账门只判这一条 —— 「这张票认领了哪条决策」由 phase 级 union 门判(D-03),

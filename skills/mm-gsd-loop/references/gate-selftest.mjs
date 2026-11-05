@@ -457,6 +457,37 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
     eqN(out2.includes("命令量错树") && out2.includes("无界目录"), true, "多行 batch_verify 在 --plan 下逐行过 lint 与 cd 扫描(不漏行:第 2 行 cd 错树判红,第 3 行无界目录报 WARNING)");
     rmSync(d2, { recursive: true, force: true });
   }
+  // ---- 提交 scope 警告上门禁(phase 15 D-02):fixture 真仓(照 runLedgerGateCases 的 git init 先例),黄不拦红 ----
+  {
+    const d = mkdtempSync(join(tmpdir(), "mm-gsd-scope-"));
+    const sh = (args) => { const r = spawnSync("git", args, { cwd: d, encoding: "utf8" }); if (r.status !== 0) throw new Error("git " + args.join(" ") + ": " + r.stderr); return r.stdout; };
+    sh(["init", "-q"]); sh(["config", "user.name", "t"]); sh(["config", "user.email", "t@t"]);
+    mkdirSync(join(d, ".planning"), { recursive: true });
+    writeFileSync(join(d, ".planning", "STATE.md"), '---\nstatus: discussing\nactive_phase: "14"\n---\n');
+    writeFileSync(join(d, ".planning", "14-01-PLAN.md"), '---\nphase: "14"\nplan: "01"\n---\n');
+    writeFileSync(join(d, ".planning", "14-01-PLAN-CHECK.md"), '---\nstatus: passed\n---\n');
+    const run = () => {
+      const r = spawnSync(process.execPath, [CHECKER, "--json"], { cwd: d, encoding: "utf8" });
+      const out = String(r.stdout || "") + String(r.stderr || "");
+      let j = null;
+      try { j = JSON.parse(out.slice(out.indexOf("{"))); } catch {}
+      return { code: r.status, out, j };
+    };
+    // scope 缺失 → 黄(不拦红):commits=2 全部无 (14-01): scope
+    sh(["commit", "--allow-empty", "-q", "-m", "chore: 提到 14-01 但没写 scope"]);
+    sh(["commit", "--allow-empty", "-q", "-m", "chore: another unscoped"]);
+    writeFileSync(join(d, ".planning", "14-01-SUMMARY.md"), '---\nphase: "14"\nplan: "01"\nstatus: complete\ncommits: 2\n---\n');
+    let r = run();
+    eqN(r.code, 0, "scope 缺失 → 黄(不拦红):退出码 0");
+    eqN((r.j?.errors.length ?? 1) === 0 && (r.j?.warnings.some((w) => w.message.includes("但提交主题无")) ?? false), true, "scope 缺失 → 黄(不拦红):errors 空、scope 警告进 warnings");
+    // scope 齐全 → 无警告:两笔提交都带 (14-01): scope,scoped === commits
+    sh(["commit", "--allow-empty", "-q", "-m", "feat(14-01): c1"]);
+    sh(["commit", "--allow-empty", "-q", "-m", "fix(14-01): c2"]);
+    writeFileSync(join(d, ".planning", "14-01-SUMMARY.md"), '---\nphase: "14"\nplan: "01"\nstatus: complete\ncommits: 2\n---\n');
+    r = run();
+    eqN(r.code === 0 && (r.j?.errors.length ?? 1) === 0 && (r.j?.warnings.length ?? 1) === 0, true, "scope 齐全 → 无警告(scoped 与 commits 同口径命中)");
+    rmSync(d, { recursive: true, force: true });
+  }
   console.log(st.bad ? `\n${st.bad} 项自测不过 —— 门禁本身是坏的,先修门禁` : "\n✓ 门禁自测全过");
   return st.bad;
 }
