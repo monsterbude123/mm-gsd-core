@@ -242,6 +242,20 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
     eqN(out.includes("另有") && out.includes("15"), true, "无参时未检查的其它 phase 计划有显式提示");
     rmSync(d, { recursive: true, force: true });
   }
+  // ---- active_phase 带引号 vs 不带引号(#20):引号必须被 frontmatter() 剥掉 ----
+  {
+    const d3 = mkdtempSync(join(tmpdir(), "mm-gsd-aph-"));
+    mkdirSync(join(d3, ".planning"), { recursive: true });
+    writeFileSync(join(d3, ".planning", "STATE.md"), "---\nstatus: executing\nactive_phase: '01'\n---\n---\n---");
+    writeFileSync(join(d3, ".planning", "01-01-PLAN.md"), "---\nphase: '01'\n---\n---");
+    writeFileSync(join(d3, ".planning", "02-01-PLAN.md"), "---\nphase: '02'\n---\n---");
+    let o3 = "";
+    try { o3 = execFileSync(process.execPath, [CHECKER, "--json"], { cwd: d3, encoding: "utf8", stdio: "pipe" }); }
+    catch (e) { o3 = String(e.stdout || "") + String(e.stderr || ""); }
+    const j3 = JSON.parse(o3.slice(o3.indexOf("{")));
+    eqN(j3.artifacts && j3.artifacts.plans, 1, "active_phase 带引号(#20):工件按引号剥离后的值选择,不回退到别的 phase");
+    rmSync(d3, { recursive: true, force: true });
+  }
   // ---- #9:root 布局推导按 active_phase 计数(历史工件不淹没) ----
   {
     const d = mkdtempSync(join(tmpdir(), "mm-gsd-root9-"));

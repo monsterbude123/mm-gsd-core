@@ -90,6 +90,8 @@ function frontmatter(path) {
     let v = kv[2].trim();
     const hash = v.indexOf("#");
     if (hash > 0 && !/^["']/.test(v)) v = v.slice(0, hash).trim();
+    // 剥引号(issue #20):active_phase: "33" ⇒ "33"(不带引号)—— 同一包内 worktree-view 已剥,此处补齐口径
+    v = v.replace(/^["']|["']$/g, "");
     out[kv[1]] = v;
   }
   return out;
