@@ -359,10 +359,15 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
   }
   {
     const wv = await import("../references/worktree-view.mjs");
+    const { checkReqCoverage } = await import("../references/verification-gates.mjs");
     for (const ph of [...new Set(batchPlans.map((b) => b.phase))]) {
       for (const p of wv.checkBatchGraph(batchPlans.filter((b) => b.phase === ph)))
         e(p, "同 phase 内互不依赖的票就是可并行的 —— 撞了文件就必须拆批或补依赖");
     }
+    // 需求覆盖门(phase 17 D-03,issue #21):checkReqClaims 的正方向 —— REQ 落盘了但无人认领。
+    // 项目全量对账,整批一次;REQUIREMENTS.md 不存在 → 函数自己返回空,不猜。
+    for (const p of checkReqCoverage({ root, plansDir: P(".") }))
+      e(p, "给这条需求拆票并在 covers 认领 REQ-N;确认不做就回 discuss 从 REQUIREMENTS.md 移除或改写");
   }
 
   if (PLAN_CHECK) errs.push(...reviewErrs);

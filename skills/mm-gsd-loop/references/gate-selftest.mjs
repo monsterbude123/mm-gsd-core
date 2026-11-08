@@ -2,7 +2,7 @@
 // 为什么必须有:GitHub #6/#7/#8 三条都是"门禁看起来在跑、实际判错"(VAGUE_FILE 的 N\/A 无左右断言 /
 // depends_on 只认半角括号 / derived 只判 SHIP 文件存在不读 status)—— 不是崩溃,是安静地给错答案。
 
-import { validateVerification, checkTicketPremises, checkTicketLoad, checkReqClaims, checkDiscriminatingLints, checkBatchVerifyLints } from "./verification-gates.mjs";
+import { validateVerification, checkTicketPremises, checkTicketLoad, checkReqClaims, checkReqCoverage, checkDiscriminatingLints, checkBatchVerifyLints } from "./verification-gates.mjs";
 import { checkDecisions, locateContexts, checkDrift, checkConclusionDrift } from "./decision-gates.mjs";
 import { ticketsCovered } from "./ticket-alive.mjs";
 import { mkAssert, runArtifactCases, runCoverageCases, runLedgerGateCases, runPhaseHealthCases, runRouteCases, runPlanReadyCases, runPlanCheckE2ECases, runBoundaryCases, runPremiseLocateCases } from "./selftest-suite.mjs";
@@ -202,7 +202,21 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(checkTicketPremises([{ id: "T1", files: ["t.test.mjs"], readFirst: ["src/a.mjs"], verify: "node --test t.test.mjs" }], d4).length, 0, "存在 + 这票自己产出 → 转绿");
   eqN(checkTicketLoad([{ id: "T1", readFirst: Array.from({ length: 9 }, (_, i) => "f" + i) }]).length, 1, "read_first 9 条 → 判红(一个子代理读不完这一张票)");
   eqN(checkReqClaims([{ id: "T1", covers: ["REQ-99"] }], d4).length, 1, "认领不存在的 REQ → 判红(凭空认领)");
-  eqN(checkReqClaims([{ id: "T1", covers: ["REQ-1"] }], d4).length, 0, "认领真实存在的 REQ → 转绿"); rmSync(d4, { recursive: true, force: true });
+  eqN(checkReqClaims([{ id: "T1", covers: ["REQ-1"] }], d4).length, 0, "认领真实存在的 REQ → 转绿");
+  // ---- 需求覆盖门(phase 17 D-03,issue #21):checkReqClaims 的正方向 —— REQ 落盘了但全部计划无人认领 ----
+  writeFileSync(join(d4, ".planning", "REQUIREMENTS.md"), "- REQ-1: 真需求\n- REQ-2: 另一条需求\n");
+  writeFileSync(join(d4, ".planning", "09-01-PLAN.md"), "---\nphase: \"09\"\n---\n\n### T1 事\n- **covers**: REQ-1\n");
+  eqN(checkReqCoverage({ root: d4, plansDir: join(d4, ".planning") }).length, 1, "REQ 无人认领 → 判红(REQ-2 存在但没有任何票的 covers 认领)");
+  writeFileSync(join(d4, ".planning", "09-02-PLAN.md"), "---\nphase: \"09\"\n---\n\n### T1 事\n- **covers**: D-01, REQ-2\n");
+  eqN(checkReqCoverage({ root: d4, plansDir: join(d4, ".planning") }).length, 0, "REQ 有人认领 → 转绿(每条 REQ 都有票认领)");
+  {
+    const d4b = mkdtempSync(join(tmpdir(), "mm-gsd-covnr-"));
+    mkdirSync(join(d4b, ".planning"), { recursive: true });
+    writeFileSync(join(d4b, ".planning", "09-01-PLAN.md"), "---\nphase: \"09\"\n---\n\n### T1 事\n- **covers**: REQ-1\n");
+    eqN(checkReqCoverage({ root: d4b, plansDir: join(d4b, ".planning") }).length, 0, "REQUIREMENTS.md 不存在 → 跳过(空)");
+    rmSync(d4b, { recursive: true, force: true });
+  }
+  rmSync(d4, { recursive: true, force: true });
   // ---- 票号后缀(#11):T3b 是真票,不是隐形 ----
   {
     const d = mkdtempSync(join(tmpdir(), "mm-gsd-tsuf-"));

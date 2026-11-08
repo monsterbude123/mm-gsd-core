@@ -120,7 +120,7 @@ export function validateVerification(text, status) {
  * 判不出就判不出:REQUIREMENTS.md 不存在 → 需求反核销跳过,不猜。
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { splitCommands } from "./worktree-view.mjs";
 
@@ -191,6 +191,36 @@ export function checkReqClaims(tickets, root) {
     }
   }
   return problems;
+}
+
+/**
+ * 需求覆盖(phase 17 D-03,issue #21):REQUIREMENTS.md 里的 REQ 有没有人认领 —— checkReqClaims 的**正**方向。
+ *
+ * checkReqClaims 只判「票认领的 REQ 真实存在」(凭空认领);反过来「REQ 落盘了但全部计划无人承接」
+ * (讨论期漏项的下游可见形态)此前零命中。读 plansDir 下全部 PLAN 的 covers 字段 REQ-N 并集
+ * (项目全量,非本批 —— 只对账本批会把相邻计划已认领的 REQ 误判成遗漏),差集逐条判红。
+ * 格式约定 `- REQ-N: <需求一句话>`(D-01),抽取 regex 与 checkReqClaims 同源。
+ * REQUIREMENTS.md 不存在 → 判不了,不猜(与 checkReqClaims 同口径)。
+ */
+export function checkReqCoverage({ root, plansDir }) {
+  const reqFile = join(root, ".planning", "REQUIREMENTS.md");
+  if (!existsSync(reqFile)) return [];
+  const known = [...readFileSync(reqFile, "utf8").matchAll(/REQ-\d+/gi)].map((m) => m[0].toUpperCase());
+  const claimed = new Set();
+  const scan = (dir) => {
+    let entries;
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const d of entries) {
+      const p = join(dir, d.name);
+      if (d.isDirectory()) scan(p);
+      else if (d.name.endsWith("-PLAN.md"))
+        for (const m of readFileSync(p, "utf8").matchAll(/^[ \t]*[-*][ \t]+\*{0,2}covers\*{0,2}[ \t]*:[ \t]*(.*)$/gim))
+          for (const r of String(m[1]).matchAll(/REQ-\d+/gi)) claimed.add(r[0].toUpperCase());
+    }
+  };
+  scan(plansDir);
+  return known.filter((r) => !claimed.has(r))
+    .map((r) => `${r} 无人认领 —— REQUIREMENTS.md 里有这条需求,但全部计划的 covers 都没认领它(需求遗漏,issue #21)`);
 }
 
 /**

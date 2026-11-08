@@ -22,6 +22,12 @@ description: "极简 GSD 讨论(决策捕获,灵魂环节):思考伙伴而非采
 - 先加载既有决策:STATE 的 Decisions 节、已有 CONTEXT 的 D-NN。已决的**预填**("phase 01 你选了 JWT,沿用还是改?"),不是从头再问;与既有决策冲突 → 显式指出让用户裁决。
 - 用户回答中引用的任何文档/spec/issue → 立即读,记入 CONTEXT 的 canonical refs(后续 plan 的验证命令可直接引用)。
 
+## 需求全量落盘
+
+- 用户本次提的**每一条需求(含隐含的)**都要落成 REQ-N 条目,**追加**进 `.planning/REQUIREMENTS.md`(不覆盖已有条目),格式:`- REQ-N: <需求一句话>`,一行一条。没有 REQUIREMENTS.md 时由 discuss 创建。
+- 分工:**REQ = 要达成什么**(用户说的,REQUIREMENTS.md 承载);**D-NN = 怎么定**(拍板定的,CONTEXT 承载)。不要把 REQ 写进 CONTEXT,也不要把「要不要拍板」的事项写成 REQ —— 那是 D-NN 的活。
+- 漏落的代价:REQ 不在清单里,后面整条链路(票 covers 认领 → checkReqCoverage 覆盖门 → verify 预审)都对不上它。落盘时自检一遍:还有没有"用户提了、REQ 清单里没有"的口子。
+
 ## 产出 `.planning/<NN>-CONTEXT.md`(模板见 mm-gsd-plan/templates/context.md;本地不入库)
 
 **文件名必须带 phase 前缀**,不能叫 `CONTEXT.md`。检查器两处都只认 `-CONTEXT.md` 后缀

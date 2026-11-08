@@ -36,7 +36,8 @@ node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --plan-check .plan
 - **你能派子代理** → 派一个**全新上下文的只读子代理**。**宿主装了 `mm-gsd-plan-reviewer` 卡就用卡派
   (它被物理限制为只读:tools: Read, Grep, Glob);没有卡才按提示词派,并在 prompt 里声明工具限 Read/Grep/Glob。**
   提示词用第 1 步输出里打印的那段(判据权威在 `mm-gsd-verify` 的「执行前预审」节:六个维度、severity 必填、
-  写不变式、只报不处方)。**子代理只返回发现清单文本,不写任何文件;PLAN-CHECK 工件
+  写不变式、只报不处方)。**第一维的 REQ 基线:以 REQUIREMENTS.md 的 REQ 清单为基线对账,不只对账 CONTEXT D-NN**
+  —— 没被认领的 REQ 是 BLOCKER(机器门 checkReqCoverage 会判)。**子代理只返回发现清单文本,不写任何文件;PLAN-CHECK 工件
   (`.planning/<NN-MM>-PLAN-CHECK.md`,`status: passed|blocked`)由你落盘**(phase 11 D-01 附带设计)。
   **它多半没有再派子代理的能力 —— 复核由它亲自读 CONTEXT / PLAN / REQ 完成,这不是缺陷,是设计。**
 - **你不能派子代理**(你多半就是被派出来的那一个)→ **停下,把提示词原样交回编排层或用户**,

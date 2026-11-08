@@ -112,6 +112,7 @@ description: "极简 GSD 执行:施工方身份 —— 照 PLAN 施工,不重做
   逐次提交可以(提交很便宜),但**贵的门禁不在票里跑**。
 - Write → commit 之间零叙述输出(截断是已知失败模式)。
 - frontmatter:`status: complete | halted`(halted 会阻塞下游,如实写)+ `commits:`(用 `git rev-parse`/`rev-list` **实测**,不手填;有代码变更但 commits=0 = 非法)+ requirements 完成清单 + `batch:`(本批 PLAN 编号)+ `batch-check-rounds:`(批级检查**实测**跑了几轮,不许填「无」)。
+- **requirements-completed 逐条对回 REQ**:`requirements-completed` 字段填的是本票**实际完成的 REQ-N** —— 不是把 PLAN 的 covers 复制过来,而是做完后回填;没做完的不写。完成声明与 REQ 清单一一对应,SUMMARY 才是可对账的完成证据。
 - 一行摘要必须具体("JWT 认证含刷新轮换,用 jose 库"✓ / "认证已实现"✗)。
 - Deviations 按 `[Rule N - 类型]` 记录;无偏差也要写 "None — plan executed exactly as written"。
 - **Known Stubs**:写 SUMMARY 前扫一遍**你这次落地里**的占位/硬编码空值/无数据源组件,列 file+line+原因,不隐瞒。**「这个 stub 阻不阻碍目标」的判定归 mm-gsd-verify** —— 你只报事实,不下结论;你写的东西自己知道是占位,就别标成 complete。

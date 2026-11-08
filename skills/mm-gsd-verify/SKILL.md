@@ -49,7 +49,7 @@ exists(在)→ substantive(实质内容;"Only N lines"/缺模式 → STUB)→ wi
 
 ## 执行检查
 
-- 逐条 REQ 给 verdict;孤儿需求(映射到本 phase 但没任务认领)必须出现在报告里。
+- 逐条 REQ 给 verdict;孤儿需求(映射到本 phase 但没任务认领)必须出现在报告里;REQUIREMENTS.md 里没被认领的 REQ ⇒ BLOCKER(对账解释在预审「需求覆盖」维度,判定归机器门 checkReqCoverage —— 不在这里重新实现)。
 - 债务标记:TBD/FIXME/XXX 且同行无 issue 引用 → 阻断级发现。
 - **行为抽查**:挑 2-4 个单命令可验的行为,每个 <10 秒;探针**在自己的进程里跑**,不信 SUMMARY 里的 PASS 标记;探针缺失 = 缺口,不算通过。
   - 测试纪律:全量测试整个验证至多跑一次;存在性用 `--list`/`-t` 枚举,通过用**单个具名测试**——绝不逐条 truth 过滤全量(验证慢到自己被跳过的主因)。
@@ -99,7 +99,7 @@ PLAN 的每一张票,在这里都要拿到一条 verdict —— **不看 SUMMARY
 
 | 维度 | 问什么 |
 |---|---|
-| **需求覆盖** | phase 目标拆出的每一条需求,有票认领吗;票认领了却没真做,是空头认领 |
+| **需求覆盖** | **REQUIREMENTS.md 里每条 REQ 有票认领吗**(REQ-N 落盘在 discuss,checkReqCoverage 机器门会判);认领的票真做吗 —— 认领了却没真做,是空头认领;**没被认领的 REQ ⇒ BLOCKER**(机器门判无人认领,预审从判断层补齐解释与后果;别与 checkReqClaims 的「凭空认领」混为一谈,两方向) |
 | **票完整性** | 每张票的 files/action/verify/done 齐不齐;票名好听但 action 空,是空票 |
 | **关键连线** | 产物之间接线了吗(只建了组件、没建调用,等于没通) |
 | **载量** | 这张票一个子代理 20 分钟做得完吗(read_first 读得完吗、文件改得完吗) |
