@@ -577,8 +577,16 @@ if (process.argv.includes("--init")) {
   mkdirSync(P("."), { recursive: true });
   const goal = process.argv[process.argv.indexOf("--init") + 1]?.startsWith("--") ? "<一句话项目目标>" : process.argv[process.argv.indexOf("--init") + 1];
   const today = new Date().toISOString().slice(0, 10);
-  // 已有 CONTEXT 就把它当成 phase 01 的起点,别让 agent 再重读一遍
-  const hasCtx = existsSync(P("CONTEXT.md"));
+  // 已有 CONTEXT 就把它当成 phase 01 的起点,别让 agent 再重读一遍。
+  // 检测扩到合法命名 <NN>-CONTEXT.md(裸名非法;只认裸名时「不必重来」提示永不触发,D-08)
+  let hasCtx = existsSync(P("CONTEXT.md"));
+  let ctxName = "CONTEXT.md";
+  if (!hasCtx) {
+    try {
+      const found = readdirSync(P(".")).filter((f) => f.endsWith("-CONTEXT.md")).sort();
+      if (found.length) { hasCtx = true; ctxName = found[0]; }
+    } catch {}
+  }
   const body = [
     "---",
     `status: ${hasCtx ? "discussing" : "discussing"}`,
@@ -624,7 +632,8 @@ if (process.argv.includes("--init")) {
   ].join("\n");
   writeFileSync(P("STATE.md"), body);
   console.log("已创建 .planning/STATE.md(status=discussing, active_phase=01)");
-  if (existsSync(P("CONTEXT.md"))) console.log("检测到已有 CONTEXT.md —— 讨论已完成的部分直接用,不必重来。下一步:跑 mm-gsd-plan。");
+  if (hasCtx) console.log(`检测到已有 ${ctxName} —— 讨论已完成的部分直接用,不必重来。`);
+  console.log("需求与决策在 discuss 落盘(REQ 进 REQUIREMENTS.md,D-NN 进 CONTEXT):调用 mm-gsd-discuss。");
   console.log("接着做:填 Project Reference 的 Current focus 与 ## Phases 清单,再跑 --phases 看波次。");
   console.log("(占位项是给你改的;检查器不拦 STATE 正文,只拦 frontmatter 契约与工件一致性)");
   process.exit(0);
@@ -793,6 +802,9 @@ const artifactInfo = { context: null, plans: [], summaries: [], verification: nu
   {
     const { checkArtifactLedger } = await import("../references/artifact-ledger.mjs");
     checkArtifactLedger({ root, report: { pass: () => {}, fail: (m) => err(m), info: (m) => warn(m) } });
+    // 本地账三选一门(phase 19 D-11,RC2 解药):诊断过的坑不许裸放 —— e 通道,记账门旁
+    for (const m of (await import("../references/verification-gates.mjs")).checkIssueLedger({ root }))
+      err(m, "三选一:status 改 closed/fixed 销账;或全文挂 REQ-NN;或挂机器门名(check-…);或在 .planning/issues/LEDGER.md 登记一行");
     const { checkPlanCheckArtifacts } = await import("../references/ticket-alive.mjs");
     // 预审工件契约(phase 09 D-08):形状要对;已经开工却没有预审结论 → 不许静默跳过
     for (const m of checkPlanCheckArtifacts({ dir: base, plans: artifactInfo.plans, summaries: artifactInfo.summaries, frontmatter }))

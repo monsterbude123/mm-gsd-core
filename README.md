@@ -62,6 +62,11 @@ npx mm-gsd-core doctor          # 体检宿主环境与已装状态(只读)
 npx mm-gsd-core check --plan    # 直接跑状态检查器
 ```
 
+两个命令的分工:**install 首装尊重已有内容** —— 同名技能已存在且内容相同就跳过;
+内容不同,先把原内容备份到 `~/.agents/backups/<技能名>-<时间戳>/` 再覆盖
+(备份不留在 skills 目录里 —— 留在里面会被宿主注册成第二个技能)。
+**update 机械覆盖**:不比对、不提问,已装技能与宿主卡直接盖成包里这份(零判断)。
+
 零依赖，Node ≥ 18，跨 Windows / macOS / Linux。装完 7 个技能就位：
 `mm-gsd-discuss` / `mm-gsd-plan` / `mm-gsd-exec` / `mm-gsd-verify` / `mm-gsd-plan-check` / `mm-gsd-diagnose` / `mm-gsd-loop`。
 **角色边界有三层**(phase 11):① 构造期**工具白名单** —— 宿主发卡时按角色裁剪(discuss/plan
@@ -174,7 +179,7 @@ node $CK --stats              # 诊断:读遥测,不用手工记
 
 **`--plan`**
 
-- 五件套（`files`/`read_first`/`action`/`verify`/`done`）缺一不可
+- 四件套 + read_first（`files`/`action`/`verify`/`done` 四件，外加要改文件必读的 `read_first`）缺一不可
 - `verify` 必须带 `fails_when` 失败方向——**没有失败方向的验证是假验证**
 - `files_modified` 不许出现模糊措辞（会让并行保护整个失效）
 - `verify` 里不许 `|| true` 之类的"永远为真"写法
@@ -383,7 +388,7 @@ git revert 的额外好处是 GitHub 上留有可读、可审计的 diff 与历�
 ```
 
 `mmc doctor`(或 `npx mm-gsd-core doctor`)会拿它和当前包比对,
-不一致就报「装的是旧版,跑一次 install 更新」。
+不一致就报「装的是旧版,跑一次 update 机械覆盖」(动词统一:版本/卡片漂移都说跑 update)。
 
 手工 cp 装的东西没有这份清单 —— doctor 会直接说
 「没有版本清单 —— 这份是手工拷进去的,版本不可追溯」。
@@ -419,8 +424,10 @@ node ~/.agents/skills/mm-gsd-loop/scripts/mm-gsd-install.mjs --agents-only
 `mm-gsd-<阶段>.md` 的**指针卡**,内容只有三件事:该读哪个 `SKILL.md` 的绝对路径、
 「只传路径不传内容」的边界、以及门禁速查怎么拿。
 
-**卡里没有一条规则原文**——那正是要消灭的第二真相源。**也不接管你已有的卡**:
-同名文件存在就跳过,只报一句「已存在,没动」。
+**卡里没有一条规则原文**——那正是要消灭的第二真相源。卡的行为按指纹分两路:
+**mm-gsd 自己发的卡跟着技能走**(指纹:卡含「别在本卡里找规则」且 frontmatter name 与技能同名)——
+技能改了卡就刷新;**用户自己写的同名卡不接管**(两道指纹都没有,不动它)。
+要让全部卡机械对齐包里这份,跑 `mm-gsd update`。
 
 ### 拿路由提示
 

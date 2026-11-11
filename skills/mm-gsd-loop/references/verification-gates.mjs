@@ -205,7 +205,12 @@ export function checkReqClaims(tickets, root) {
 export function checkReqCoverage({ root, plansDir }) {
   const reqFile = join(root, ".planning", "REQUIREMENTS.md");
   if (!existsSync(reqFile)) return [];
-  const known = [...readFileSync(reqFile, "utf8").matchAll(/REQ-\d+/gi)].map((m) => m[0].toUpperCase());
+  // baseline 跳过(phase 19 D-11):REQUIREMENTS.md 晚于部分能力诞生,标 `(baseline` 的行
+  // (实测形状 `(baseline,0.4.x)`)由已发布版本兑现,不进覆盖集;未标 baseline 的 REQ 照判红。
+  // 逐行判 —— 标记跟着 REQ 行走,不能全文一判(会把别的行的说明文字也卷进来)。
+  const known = readFileSync(reqFile, "utf8").split(/\r?\n/)
+    .filter((line) => !/\(baseline/i.test(line))
+    .flatMap((line) => [...line.matchAll(/REQ-\d+/gi)].map((m) => m[0].toUpperCase()));
   const claimed = new Set();
   const scan = (dir) => {
     let entries;
@@ -221,6 +226,43 @@ export function checkReqCoverage({ root, plansDir }) {
   scan(plansDir);
   return known.filter((r) => !claimed.has(r))
     .map((r) => `${r} 无人认领 —— REQUIREMENTS.md 里有这条需求,但全部计划的 covers 都没认领它(需求遗漏,issue #21)`);
+}
+
+/**
+ * 本地账三选一门(phase 19 D-11,RC2 解药,#21 建议 5 机制化):
+ * .planning/issues/ 下每个 I-*.md 诊断后必须闭环 ——
+ *   ① status 是 closed/fixed(「## 状态」节的裸词;`fixed (待 distill)` 是合法第三态,fixed 待 distill 算闭环);
+ *   ② 或全文挂 REQ-\d+ 引用(诊断升级成了需求,有票承接);
+ *   ③ 或全文挂机器门名 check-[a-z-]+(有门盯着,复发自动红);
+ *   ④ 或 .planning/issues/LEDGER.md 有该件一行(豁免台账先例,同 artifact-ledger:原件是审计痕迹,登记不销毁它)。
+ * 四条全不沾 → 判红(诊断≠矫正的机制解:诊断过的坑不许裸放着)。
+ * issues 目录不存在 → 跳过(没有诊断就没有未闭环);不要求 closed 带 commit。
+ */
+export function checkIssueLedger({ root }) {
+  const issuesDir = join(root, ".planning", "issues");
+  let files;
+  try { files = readdirSync(issuesDir).filter((f) => /^I-\d+\.md$/.test(f)); } catch { return []; }
+  const ledgerPath = join(issuesDir, "LEDGER.md");
+  const ledger = existsSync(ledgerPath) ? readFileSync(ledgerPath, "utf8") : "";
+  const problems = [];
+  for (const f of files) {
+    const text = readFileSync(join(issuesDir, f), "utf8");
+    // 「## 状态」节取到下一个标题为止,裸词 = 节内第一串 ASCII 词(`fixed (待 distill)` → fixed)。
+    // 逐行扫,不用正则切节 —— 多行模式下 $ 在每个行尾都成立,切节正则会静默截断。
+    const lines = text.split(/\r?\n/);
+    const si = lines.findIndex((l) => /^##[ \t]*状态/.test(l));
+    let statusWord = "";
+    if (si >= 0)
+      for (let j = si + 1; j < lines.length && !/^##[ \t]/.test(lines[j]); j++) {
+        statusWord = (lines[j].match(/[A-Za-z-]+/)?.[0] ?? "").toLowerCase();
+        if (statusWord) break;
+      }
+    if (statusWord === "closed" || statusWord === "fixed") continue;
+    if (/REQ-\d+/i.test(text) || /check-[a-z-]+/i.test(text)) continue;
+    if (ledger.includes(f)) continue;
+    problems.push(`${f}: 本地账 I-NNN 诊断后未闭环 —— 三选一:closed/挂 REQ-NN/挂机器门名,或 .planning/issues/LEDGER.md 登记`);
+  }
+  return problems;
 }
 
 /**

@@ -11,7 +11,8 @@
 > **怎么用**:概念模糊 → 在下面的表里查 mm-gsd 的概念 → 打开对应的 GSD 文件读 →
 > 结论落进本次的 CONTEXT 或 PR 描述。**不要凭印象填。**
 >
-> **GSD Core 路径**:`D:\workspace\gsd-monster\gsd-core`(本机参考系,不在本仓内)
+> **GSD Core 路径**:本机 gsd-core 仓(路径随机器不同,不在本仓内)。机器上有这份仓就设
+> 环境变量 GSD_CORE_ROOT 指给它;没有也不判红 —— 参考系是可选的外部依赖(见文末「使用纪律」)。
 
 ---
 
@@ -24,8 +25,9 @@
 | 决策的解析与编号 | `src/decisions.cts`(713 行) | D-NN 的完整语法与边界情况 |
 | 决策覆盖的 verify 侧 | `src/gate-decision-coverage-verify.cts` | 验收侧也要覆盖决策 |
 
-**已知差距**:mm-gsd 的 `checkCoverage` 只做 `ctxIds ⊆ planDecisions` 单向,
-**不查反向**(PLAN 引用的决策是否还在 CONTEXT 里),也不区分「没提到」与「提到但格式坏」。
+**已知差距**(2026-11-12 按现状更新):反向核销**已实现** —— 票 covers 认领了 CONTEXT 里没有的
+D-NN 会判过时(staleDecisions,decision-gates.mjs 的反向核销);决策写法认四种形态(标题/粗体/小写/列表项),
+认不出的不算核销(覆盖门照红)。仍缺 GSD 的 partial-parse 三态:解析失败与「没提到」不分开报。
 
 ---
 

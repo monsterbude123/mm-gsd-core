@@ -61,7 +61,7 @@ JWT 认证含刷新令牌轮换,用 jose 库 —— 禁止 "认证已实现" 这
 
 生产纪律:
 - **frontmatter 的 status 写单个值**(complete 或 halted),不要写 "complete | halted";检查器只认单值。
-- Write → commit 之间零叙述;写完立即提交(worktree/子代理场景下未提交即永久丢失)。
+- Write → 零叙述;**SUMMARY 落盘不 commit**(流程记忆属本地工件,见 exec SKILL git 纪律;代码/测试提交照常)。
 - commits=0 但有代码变更 = 非法,HALT。
 - 占位文本("To be filled"/"TBD")会被判假完成。
 - 验证方只认本文件 + git 双证;`## Self-Check: PASSED/FAILED` 必须写。

@@ -11,7 +11,7 @@ description: "极简 GSD 主循环:discuss→plan→execute→verify→ship 五�
 .planning/
 ├── STATE.md                        # 唯一状态入口;frontmatter.status ∈ {discussing,planning,executing,verifying,completed,shipped,paused}
 ├── HANDOFF.md                      # 仅 paused 时存在
-├── REQUIREMENTS.md                 # REQ-N 编号的唯一出处(冷启动时建)
+├── REQUIREMENTS.md                 # REQ-N 编号的唯一出处(discuss 落盘)
 └── <NN>-CONTEXT.md / <NN-MM>-PLAN.md / <NN-MM>-SUMMARY.md / <NN>-VERIFICATION.md / <NN-MM>-SHIP.md / <NN>-RESEARCH.md
     (phase 用 NN 前缀;多 phase 可放 .planning/phases/<NN-slug>/ 下,检查器两种布局都认)
 ```
@@ -33,7 +33,7 @@ node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --init "<一句话
 **为什么必须是命令而不是纪律**:门禁要求 STATE 存在,但建 STATE 是 loop 的职责、不是 discuss 的 —— agent 在 discuss
 结束时跑门禁会报"未初始化"并卡住,而它站在这一步造不出 STATE。**门禁要的东西,执行方做不到,那它就不是门禁,是死锁。**
 
-- **新项目**:一句话目标 → 建 STATE + `REQUIREMENTS.md`(REQ-N 是 verify 逐条对 verdict 的对象,没有它闭环断裂)→ 第一个 phase 定为 walking skeleton:最薄可运行骨架,选型集中在这个 phase 的 CONTEXT 里定(D-NN)。
+- **新项目**:一句话目标 → 建 STATE(`REQUIREMENTS.md` 不在冷启动建 —— 需求与决策在 discuss 落盘:REQ-N 是 verify 逐条对 verdict 的对象,没有它闭环断裂)→ 第一个 phase 定为 walking skeleton:最薄可运行骨架,选型集中在这个 phase 的 CONTEXT 里定(D-NN)。
 - **现存项目**:先读 README / AGENTS.md / CLAUDE.md / package.json 再建 STATE(Project Reference 从现有代码提炼,**不装作绿地**),从 issue tracker 倒推 REQ。第一个 phase 挑小而有价值的改动,不上大重构;项目已有约定优先于本技能默认,冲突记为偏差。
 - 冷启动是 loop 的职责 —— discuss 只产 CONTEXT。职责唯一,免得两个入口抢着建。
 
@@ -99,7 +99,7 @@ node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --init "<一句话
 |---|---|---|
 | 项目无 STATE | `--init "<目标>"` | 建好 STATE;**不要手搓,也不要把建 STATE 留给"下一步"** |
 | phase 清单定完 | `--phases` | 波次无环、同波次零重叠 |
-| PLAN 落盘 | `--plan` | 四件套齐、失败方向明确、文件清单可解析、预算未超;顺带打印本 phase 过程健康三数 |
+| PLAN 落盘 | `--plan` | 四件套 + read_first 齐、失败方向明确、文件清单可解析、预算未超;**预审门同批:PLAN-CHECK `status: passed` 才准进执行(双轨合一,见「五步成环」第 2 步)**;顺带打印本 phase 过程健康三数 |
 | 每步收尾 | 默认(无参数) | 声明与工件推导一致、无假完成信号、无交付缺口 |
 | 开多 worktree 前 | `--worktrees` | 跨 worktree 文件与 REQ 无冲突 |
 | 改了模板或技能 | `--templates` / `--routes` | 6 份模板结构合规;每个技能都说清了自己的下一步 |
@@ -288,7 +288,7 @@ node ~/.agents/skills/mm-gsd-loop/scripts/mm-gsd-install.mjs --check    # 只体
 |---|---|---|---|
 | **宿主 hook**(PreToolUse/Bash) | 命令执行前 | 破坏性 git(reset --hard / clean -f / stash drop / force push / 删分支 / 全量 checkout) | 环境级,agent 无法绕过 |
 | **gsd-state-check**(每步收尾) | 工件写完 | 工件契约 + 状态一致性 + 假完成信号 + **交付缺口** | 流程级 |
-| **gsd-state-check `--plan`** | PLAN 落盘 | 四件套完整性 / fails_when 失败方向 / files_modified 可解析 / 任务预算 / 决策保真 | 流程级 |
+| **gsd-state-check `--plan`** | PLAN 落盘 | 四件套 + read_first 完整性 / fails_when 失败方向 / files_modified 可解析 / 任务预算 / 决策保真 | 流程级 |
 | **gsd-state-check `--phases` / `--worktrees`** | 并行开工前 | depends_on 环与波次 / 同波次零重叠 / 跨 worktree 文件与 REQ 冲突 | 流程级 |
 | **git pre-commit** | 提交那一刻 | 入库前的工件 | 环境级,但有冲突风险 |
 

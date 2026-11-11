@@ -10,6 +10,14 @@ description: "极简 GSD 验证:goal-backward 三层倒推(TRUE→EXIST→WIRED)
 - **SUMMARY 不是证据**。自评盲区:执行 agent 在自己的上下文里会可靠地报告 PASSED,即使交付物合并后会失败。验证必须独立进行。
 - **任务完成 ≠ 目标达成**。起始假设:任务都完成了但目标落空;逐条拿证据推翻这个假设。
 
+## 审计范围(翻什么,不翻什么)
+
+独立不等于无界 —— **翻的范围是收敛的**(D-05):票面 `files_modified` + 该票 scope 提交的 diff(提交主题 `(NN-MM):` scope)+ 相关测试文件。
+「SUMMARY claims are not evidence」的立场保留,只收敛范围:该翻的范围里照样逐条拿证据,不翻无界全仓。
+
+**工具优先级**(D-01):可用的代码索引类工具(如 codegraph_explore)> 定向读文件 > ripgrep 定向 glob(排除 .worktrees/node_modules/dist/vendor)> 全目录 grep(禁)。
+**消费 `.planning/codebase-map.md`,不重建**(D-02 下游接线):地图在,先读它定入口;地图缺失或过期,注明后重做入口级一屏(不存签名/调用图 —— 那是索引工具的活)。
+
 ## 三层倒推(goal-backward)
 
 什么必须 **TRUE**(可观察 truths,来自目标与 PLAN)→ 什么必须 **EXIST**(工件)→ 什么必须 **WIRED**(连线)。

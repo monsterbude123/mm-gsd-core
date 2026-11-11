@@ -15,7 +15,8 @@ node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --plan .planning/<
 
 它拦的是本文件所有纪律里模型最容易自我放水的那几条:四件套缺项、verify 没有 fails_when 方向、
 files_modified 写成模糊措辞(会让 `--worktrees` 的并行保护整个失效)、任务数超预算、action 里塞代码块、
-范围缩水措辞、CONTEXT 里没被任何任务引用的 D-NN。**门禁报什么就改什么,不要绕着写**——
+范围缩水措辞、red_windows 条目缺兑现票(跨波红窗必须有 `ticket <NN-MM>`,何时写见 mm-gsd-loop 的「跨波红窗」;缺票的红窗会变成永久豁免)、
+CONTEXT 里没被任何任务引用的 D-NN。**门禁报什么就改什么,不要绕着写**——
 它列出的每一项在本文件里都有对应条款。
 
 ⚠️ **门禁报错时不要停在那里等人**。`--plan` 列的每一项都是这一份 PLAN 自己能改的,改完重跑。
@@ -28,6 +29,16 @@ files_modified 写成模糊措辞(会让 `--worktrees` 的并行保护整个失�
 必须零重叠,现在发现冲突比合并时便宜得多。
 
 **工件落点与归属**:`.planning/*` 是 agent 本地工作流记忆(STATE/CONTEXT/PLAN/SUMMARY/VERIFICATION),**本地不入库、不 push 远程**;项目 `.scratch/<主题>-<日期>/` 是**业务票面**(缺陷票/设计稿票),要入库共享给团队(该目录常被 git exclude,需 `git add -f`)。两者不可混放:流程记忆进 `.planning/`,业务产出进 `.scratch/`。
+
+## codebase-map(入口级)
+
+拆票前生成 `.planning/codebase-map.md`(D-02),四节,**一屏内**:
+1. 目录入口 —— 哪个目录管什么;
+2. 关键入口符号 —— 改动大概率要碰的入口(名字即可,不抄签名);
+3. 禁区清单 —— `.worktrees`、node_modules、dist、vendor(检索与 glob 都要排除);
+4. 工具优先级指令 —— 可用的代码索引类工具(如 codegraph_explore)> 定向读文件 > ripgrep 定向 glob > 全目录 grep(禁)(D-01)。
+
+生成方式 = 靠**可用的索引类工具**(如 codegraph_explore)汇总,不逐文件读;地图不存签名/调用图/文件清单 —— 那是索引工具的活。入口级轻量 → 过期丢掉重做(腐烂自愈);预审/verify/exec 消费它,不重建。
 
 ## 拆票(两层)
 

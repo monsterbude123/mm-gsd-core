@@ -216,6 +216,7 @@ ${tools}description: "mm-gsd 的 ${stage} 子代理:${desc}"
 - 只传路径,不传内容:要什么文件,让主会话给路径;别把文件内容抄进上下文
 - 主会话只做编排与验收(上下文 ≤15%),重活开子代理 —— 你就是那个子代理
 - 摸清现状/调研/搜代码也派子代理:主上下文只拿**摘要 + 落盘路径**,别把探查结果灌进主上下文
+- 检索优先级(对所有角色生效):可用的代码索引类工具(如 codegraph_explore)> 定向读文件 > ripgrep 定向 glob(排除 .worktrees/node_modules/dist/vendor)> 全目录 grep 禁
 ${worker.trimEnd()}
 - 本项目的门禁速查(该跑哪些门禁、有没有单文件行数上限)由主会话在项目根跑:
   \`${routeCmd} --route ${stage}\` —— 那是机器从 ledger/budget 读出来的,不是手写的

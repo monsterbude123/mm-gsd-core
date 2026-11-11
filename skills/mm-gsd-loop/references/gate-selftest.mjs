@@ -2,7 +2,7 @@
 // 为什么必须有:GitHub #6/#7/#8 三条都是"门禁看起来在跑、实际判错"(VAGUE_FILE 的 N\/A 无左右断言 /
 // depends_on 只认半角括号 / derived 只判 SHIP 文件存在不读 status)—— 不是崩溃,是安静地给错答案。
 
-import { validateVerification, checkTicketPremises, checkTicketLoad, checkReqClaims, checkReqCoverage, checkDiscriminatingLints, checkBatchVerifyLints } from "./verification-gates.mjs";
+import { validateVerification, checkTicketPremises, checkTicketLoad, checkReqClaims, checkReqCoverage, checkIssueLedger, checkDiscriminatingLints, checkBatchVerifyLints } from "./verification-gates.mjs";
 import { checkDecisions, locateContexts, checkDrift, checkConclusionDrift } from "./decision-gates.mjs";
 import { ticketsCovered } from "./ticket-alive.mjs";
 import { mkAssert, runArtifactCases, runCoverageCases, runLedgerGateCases, runPhaseHealthCases, runRouteCases, runPlanReadyCases, runPlanCheckE2ECases, runBoundaryCases, runPremiseLocateCases } from "./selftest-suite.mjs";
@@ -215,6 +215,34 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
     writeFileSync(join(d4b, ".planning", "09-01-PLAN.md"), "---\nphase: \"09\"\n---\n\n### T1 事\n- **covers**: REQ-1\n");
     eqN(checkReqCoverage({ root: d4b, plansDir: join(d4b, ".planning") }).length, 0, "REQUIREMENTS.md 不存在 → 跳过(空)");
     rmSync(d4b, { recursive: true, force: true });
+  }
+  // ---- baseline 跳过(phase 19 D-11):REQUIREMENTS.md 晚于部分能力诞生,标 (baseline 的 REQ 不进覆盖集 ----
+  {
+    const d5 = mkdtempSync(join(tmpdir(), "mm-gsd-basecov-"));
+    mkdirSync(join(d5, ".planning"), { recursive: true });
+    writeFileSync(join(d5, ".planning", "09-01-PLAN.md"), "---\nphase: \"09\"\n---\n\n### T1 事\n- **covers**: REQ-2\n");
+    writeFileSync(join(d5, ".planning", "REQUIREMENTS.md"), "- REQ-1(baseline,0.4.x): 基线能力\n- REQ-2: 新需求\n");
+    eqN(checkReqCoverage({ root: d5, plansDir: join(d5, ".planning") }).length, 0, "baseline 标记的 REQ 跳过覆盖集(REQ-1 标 (baseline,0.4.x),无人认领不判红)");
+    writeFileSync(join(d5, ".planning", "REQUIREMENTS.md"), "- REQ-1: 基线能力\n- REQ-2: 新需求\n");
+    eqN(checkReqCoverage({ root: d5, plansDir: join(d5, ".planning") }).length, 1, "未标 baseline 的 REQ 照判红(同一 REQ-1 无人认领 → 红)");
+    rmSync(d5, { recursive: true, force: true });
+  }
+  // ---- 本地账三选一门(phase 19 D-11,RC2 解药):诊断过的坑不许裸放 ----
+  {
+    const d6 = mkdtempSync(join(tmpdir(), "mm-gsd-iledger-"));
+    const isd = join(d6, ".planning", "issues");
+    mkdirSync(isd, { recursive: true });
+    writeFileSync(join(isd, "I-001.md"), "# I-001 事\n\n## 状态\n\nopen\n\n## 证据\n\n跑了几次都红\n");
+    eqN(checkIssueLedger({ root: d6 }).length, 1, "本地账 open 无 REQ 无门名无 LEDGER → 判红(诊断后裸放 = RC2 复发)");
+    writeFileSync(join(isd, "LEDGER.md"), "| 件 | 处置 | 挂靠 | 说明 |\n|---|---|---|---|\n| I-001.md | open | — | 已登记,重开条件:同一红再挂 |\n");
+    eqN(checkIssueLedger({ root: d6 }).length, 0, "LEDGER 有行 → 转绿(豁免台账先例,同 artifact-ledger)");
+    // 别误杀合法形态:fixed 待 distill 第三态 / 挂 REQ / 挂门名
+    writeFileSync(join(isd, "I-002.md"), "# I-002 事\n\n## 状态\n\nfixed (待 distill)\n");
+    writeFileSync(join(isd, "I-003.md"), "# I-003 事\n\n## 状态\n\nopen\n\n挂 REQ-9 承接\n");
+    writeFileSync(join(isd, "I-004.md"), "# I-004 事\n\n## 状态\n\nopen\n\n挂 check-req-coverage 门盯着\n");
+    eqN(checkIssueLedger({ root: d6 }).length, 0, "closed/fixed 第三态、挂 REQ、挂门名不误杀(fixed 待 distill 是合法第三态)");
+    rmSync(d6, { recursive: true, force: true });
+    eqN(checkIssueLedger({ root: join(tmpdir(), "mm-gsd-no-issues-dir") }).length, 0, "issues 目录不存在 → 跳过(空)");
   }
   rmSync(d4, { recursive: true, force: true });
   // ---- 票号后缀(#11):T3b 是真票,不是隐形 ----

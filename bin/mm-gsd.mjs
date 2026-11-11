@@ -126,6 +126,25 @@ function install() {
   mkdirSync(target, { recursive: true });
   let done = 0, skipped = 0;
   const manifest = { version: VERSION, source: SOURCE, installedAt: new Date().toISOString(), skills: {} };
+  // 备份根:<home>/.agents/backups/ —— 备份不再落在 skills 目录里:它以 mm-gsd- 开头,
+  // 会被宿主注册成第二个技能(走查摩擦 9)。移位不是取消备份:原件语义保持。
+  const bakRoot = join(HOME, ".agents", "backups");
+  const ts = new Date().toISOString().replace(/[-:]/g, "").replace(/\..+$/, "").replace("T", "-");
+  const backupTo = (srcDir, label) => {
+    try { mkdirSync(bakRoot, { recursive: true }); cpSync(srcDir, join(bakRoot, `${label}-${ts}`), { recursive: true }); return true; }
+    catch { return false; }
+  };
+  if (!uninstall) {
+    // 旧版 install 落在 skills 目录里的就地备份:迁移到 backups 后删除
+    let legacy = [];
+    try { legacy = readdirSync(target).filter((e) => e.endsWith(".bak-mmgsd")); } catch {}
+    for (const e of legacy) {
+      if (backupTo(join(target, e), e.replace(/\.bak-mmgsd$/, ""))) {
+        rmSync(join(target, e), { recursive: true, force: true });
+        log(`  ${C.d}迁移旧备份 ${e} → ${bakRoot}${C.x}`);
+      }
+    }
+  }
   for (const n of names) {
     const dst = join(target, n);
     if (uninstall) {
@@ -133,7 +152,7 @@ function install() {
       else skipped++;
       continue;
     }
-    // 已有同名目录且不是符号链接 → 不覆盖,那是用户自己改过的
+    // 已有同名目录:内容相同 → 跳过;内容不同 → 原内容备份到 backups 后覆盖
     if (existsSync(dst) && !lstatSync(dst).isSymbolicLink()) {
       const same = sameContent(dst, join(SKILLS_SRC, n));
       if (same) {
@@ -142,8 +161,8 @@ function install() {
         skipped++;
         continue;
       }
-      warn(`${n}: 目标已存在且内容不同 —— 不覆盖。备份到 ${n}.bak-mmgsd`);
-      try { rmSync(dst + ".bak-mmgsd", { recursive: true, force: true }); cpSync(dst, dst + ".bak-mmgsd", { recursive: true }); } catch {}
+      if (backupTo(dst, n)) warn(`${n}: 目标已存在且内容不同 —— 原内容已备份到 ${join(bakRoot, `${n}-${ts}`)}`);
+      else warn(`${n}: 目标已存在且内容不同 —— 备份失败,直接覆盖`);
     }
     rmSync(dst, { recursive: true, force: true });
     cpSync(join(SKILLS_SRC, n), dst, { recursive: true });
@@ -275,15 +294,20 @@ function doctor() {
   }
 
   const inst = join(global, "mm-gsd-loop", "scripts", "mm-gsd-install.mjs");
+  let code = 0;
   if (existsSync(inst)) {
     head("宿主环境");
     try { log(execFileSync(process.execPath, [inst, "--check"], { encoding: "utf8", stdio: "pipe" })); }
-    catch (e) { log(String(e.stdout || "") + String(e.stderr || "")); }
+    catch (e) {
+      log(String(e.stdout || "") + String(e.stderr || ""));
+      // 预审 F6:子进程判非 0(如指针卡过期)必须传出来 —— 吞掉它,外部 `doctor && …` 的语义就是假的
+      code = e.status ?? 1;
+    }
   } else {
     warn("全局技能目录里没有 mm-gsd —— 跑一次 `npx mm-gsd-core install`");
   }
   log("");
-  return 0;
+  return code;
 }
 
 // ---- check(转发)----
