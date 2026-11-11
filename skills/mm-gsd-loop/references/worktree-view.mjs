@@ -27,7 +27,7 @@ import { createHash } from "node:crypto";
  * @param plan { frontmatter, parsePlanFile, listPlanFiles } —— 主脚本的 PLAN 解析三件套
  * @param die  (message, fix) => never —— 主脚本的早退出口(打印 + 记遥测 + 退出 1)
  */
-export function runWorktrees({ cwd, plan, die }) {
+export function runWorktrees({ cwd, plan, die, err }) {
   let raw = "";
   try { raw = execSync("git worktree list --porcelain", { stdio: ["ignore", "pipe", "ignore"], encoding: "utf8" }); }
   catch { die("不在 git 仓库中,无法列 worktree。", "在项目根跑,或先 git init"); }
@@ -97,7 +97,11 @@ export function runWorktrees({ cwd, plan, die }) {
       const mark = c.soft ? "i" : "⚠";
       console.log(`\n  ${mark} ${c.kind}冲突:${c.items.join(", ")} 被 ${c.a.branch}(phase ${phOf(c.a)}) 与 ${c.b.branch}(phase ${phOf(c.b)}) 同时声明`);
       if (c.soft) console.log("    → 两边 REQUIREMENTS.md 不是同一份,REQ-NN 是各自局部编号,编号相同不代表做同一件事 —— 不阻塞,确认分工即可");
-      else console.log("    → " + (c.kind === "文件" ? "并行必合并冲突:二选一先做,或把其中一个 phase 重新切到不碰这些文件的切片" : "需求重复实现风险:确认分工,或合并到一个 worktree"));
+      else {
+        console.log("    → " + (c.kind === "文件" ? "并行必合并冲突:二选一先做,或把其中一个 phase 重新切到不碰这些文件的切片" : "需求重复实现风险:确认分工,或合并到一个 worktree"));
+        // 遥测同源(phase 18):硬冲突失败行必须带原因,否则 --stats 对 worktrees 模式全盲
+        err?.(`${c.kind}冲突:${c.items.join(", ")} 被 ${c.a.branch}(phase ${phOf(c.a)}) 与 ${c.b.branch}(phase ${phOf(c.b)}) 同时声明`);
+      }
     }
   }
   const busy = live.filter((w) => stOf(w) === "executing");

@@ -36,7 +36,8 @@ const P = (...s) => join(root, ".planning", ...s);
 // 之前的设计是"agent 手工在项目里追加一行",实测零产出——需要自觉的探子等于没有探子。
 const SKILL_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 const TELEMETRY = process.env.GSD_TELEMETRY !== "0";
-const TELEMETRY_PATH = join(homedir(), ".agents", "mm-gsd-runs.jsonl");
+// GSD_TELEMETRY_PATH:测试注入点 —— 自测要在临时路径验证「失败行必须带原因」,不能写真家目录
+const TELEMETRY_PATH = process.env.GSD_TELEMETRY_PATH || join(homedir(), ".agents", "mm-gsd-runs.jsonl");
 // sandbox 标记:由**跑沙箱的一方**声明,不由被观测方猜路径。
 // 为什么不用「路径含 Temp 就当沙箱」:用户自己建在临时目录里的真项目会被误排除,
 // 而自测沙箱也可能被挪到别处。声明式标记不会骗人。
@@ -181,7 +182,7 @@ function listPlanFiles(plDir) {
 // PLAN 的解析三件套在主脚本里,搬过来抄一份就是第二真相源,所以注入进去。
 if (process.argv.includes("--worktrees")) {
   const { runWorktrees } = await import("../references/worktree-view.mjs");
-  process.exit(runWorktrees({ cwd: process.cwd(), plan: { frontmatter, parsePlanFile, listPlanFiles }, die }));
+  process.exit(runWorktrees({ cwd: process.cwd(), plan: { frontmatter, parsePlanFile, listPlanFiles }, die, err }));
 }
 
 // ---- --plan / --plan-check:计划质量门禁(散文约定 → 可执行检查)----
@@ -190,8 +191,10 @@ if (process.argv.includes("--worktrees")) {
 // 两者共用同一批机器判据,差的是「预审工件」这一层 —— 只有显式校验才问它。
 if (process.argv.includes("--plan") || PLAN_CHECK) {
   const errs = [], warns = [];
-  const e = (m, fix) => errs.push({ message: m, fix: fix ?? "" });
-  const w = (m, fix) => warns.push({ message: m, fix: fix ?? "" });
+  // 遥测同源(phase 18):局部 e/w 必须同步写 runRec,否则 --plan/--plan-check 的失败在遥测里零原因
+  // —— 实测 91% 失败行无原因,observe 环对这两条最常用的模式全盲
+  const e = (m, fix) => { errs.push({ message: m, fix: fix ?? "" }); runRec.errors.push(m); };
+  const w = (m, fix) => { warns.push({ message: m, fix: fix ?? "" }); runRec.warnings.push(m); };
 
   const at = process.argv.indexOf(PLAN_CHECK ? "--plan-check" : "--plan");
   // #14:收集所有非 -- 开头的位置参数 —— 一批同 phase 计划一次圈定,批图才有比较对象
@@ -471,7 +474,10 @@ if (process.argv.includes("--phases")) {
     for (let i = 0; i < group.length; i++) {
       for (let j = i + 1; j < group.length; j++) {
         const ov = [...filesOf.get(group[i].id)].filter((f) => filesOf.get(group[j].id).has(f));
-        if (ov.length) { console.log(`    ⚠ wave ${w} 冲突: ${ov.join(", ")} 被 ${group[i].id} 与 ${group[j].id} 同时声明 —— 不能并行`); errs.push(1); }
+        if (ov.length) {
+          const msg = `wave ${w} 冲突: ${ov.join(", ")} 被 ${group[i].id} 与 ${group[j].id} 同时声明 —— 不能并行`;
+          console.log(`    ⚠ ${msg}`); err(msg); errs.push(1);
+        }
       }
     }
     if (group.length > 1 && !errs.length) console.log(`    ✓ 同波次 files_modified 零重叠 —— wave ${w} 可并行`);
