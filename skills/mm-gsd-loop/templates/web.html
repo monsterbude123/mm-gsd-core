@@ -61,6 +61,20 @@
   #live.stale .dot { background: var(--amb); }
 
   main { max-width: 1180px; margin: 0 auto; padding: 16px 20px 48px; }
+  /* ── 壳布局:左栏(项目)+ 主区(D-04);窄屏左栏落到顶部 ── */
+  .shell { display: flex; gap: 18px; max-width: 1280px; margin: 0 auto; padding: 16px 20px 48px; align-items: flex-start; }
+  .shell aside { flex: none; width: 190px; position: sticky; top: 64px; display: grid; gap: 14px; }
+  .shell main { flex: 1; min-width: 0; max-width: none; margin: 0; padding: 0; }
+  @media (max-width: 900px) { .shell { flex-direction: column; } .shell aside { position: static; width: auto; } }
+  .sidebox { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+  .sidebox h3 { margin: 0 0 8px; font-size: 13px; color: var(--fg-mut); font-weight: 600; }
+  .projlist { display: grid; gap: 2px; }
+  .proj { display: block; width: 100%; text-align: left; background: transparent; border: 1px solid transparent;
+    border-radius: 7px; padding: 4px 8px; font-size: 12px; color: var(--fg-mut);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .proj:hover { border-color: var(--border); color: var(--fg); }
+  .proj.cur { background: var(--muted); color: var(--fg); border-color: var(--border); }
+  .proj.off { opacity: .45; }
   h2 { font-size: 16px; margin: 26px 0 10px; display: flex; align-items: baseline; gap: 8px; }
   h2 small { font-size: 12px; font-weight: 400; color: var(--fg-dim); }
 
@@ -206,6 +220,13 @@
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M8 2v2M8 12v2M2 8h2M12 8h2M4 4l1.4 1.4M10.6 10.6L12 12M12 4l-1.4 1.4M5.4 10.6L4 12"/><circle cx="8" cy="8" r="2.4"/></svg>
   </button>
 </header>
+<div class="shell">
+<aside>
+  <section class="sidebox" id="projBox" aria-label="项目">
+    <h3>项目</h3>
+    <div class="projlist" id="projList"></div>
+  </section>
+</aside>
 <main>
   <section class="kpis" aria-label="概览">
     <button class="kpi" id="kReq" type="button" title="分母只算新增需求(baseline 是已交付的基线能力,不参与认领)"><span class="n" id="nReq">—</span><span class="t">REQ 已认领 / 新增需求</span><span class="bar"><i id="barReq" style="width:0%"></i></span></button>
@@ -281,6 +302,7 @@
   <h2 id="hIss">本地账问题 <small>agent 记下但还没闭环的问题;闭环后本区自动清空</small></h2>
   <div id="issues" class="isslist"></div>
 </main>
+</div>
 <script>
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const $ = (id) => document.getElementById(id);
@@ -301,8 +323,13 @@ const MONO_ID = (s) => '<span class="tk">' + esc(s) + "</span>";
   };
 })();
 
+/* 当前项目(D-04):?project= 跟随页面;批注提交与状态拉取都带上 */
+const projQuery = () => {
+  const p = new URLSearchParams(location.search).get("project");
+  return p ? "?project=" + encodeURIComponent(p) : "";
+};
 async function post(target, type, text) {
-  const r = await fetch("/api/annotations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ target, type, text }) });
+  const r = await fetch("/api/annotations" + projQuery(), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ target, type, text }) });
   return r.json();
 }
 const fmtTime = (iso) => { const d = new Date(iso); return isNaN(d) ? esc(iso) : d.toLocaleTimeString("zh-CN", { hour12: false }); };
@@ -351,11 +378,20 @@ function stepsHtml(p) {
 let last = null;
 async function load() {
   let st;
-  try { st = await (await fetch("/api/state")).json(); }
+  try { st = await (await fetch("/api/state" + projQuery())).json(); }
   catch { $("live").classList.add("stale"); $("liveText").textContent = "服务失联 · 上次 " + (last ? fmtTime(last.generated) : "—"); return; }
   last = st;
   $("live").classList.remove("stale");
   $("liveText").textContent = "每 15s 刷新 · 更新于 " + fmtTime(st.generated);
+
+  /* ── 左栏项目段(D-04):名单每请求现读;当前项高亮,目录不存在灰显 ── */
+  try {
+    const prjs = await (await fetch("/api/projects")).json();
+    $("projList").innerHTML = prjs.map((p) =>
+      '<button type="button" class="proj' + (p.root === st.root ? " cur" : "") + (p.exists ? "" : " off") + '" data-root="' + esc(p.root) + '"' +
+      (p.exists ? "" : ' title="目录不存在 —— 可能已删除或移动"') + ">" + esc(p.name || p.root) + "</button>"
+    ).join("") || '<div class="empty">项目名单为空。</div>';
+  } catch { $("projList").innerHTML = '<div class="empty">项目名单读不到。</div>'; }
 
   /* ── 状态条 ── */
   const noState = !st.declared;
@@ -550,6 +586,13 @@ async function load() {
     ib.appendChild(div);
   }
 }
+
+/* 项目切换(D-04):整页带 ?project= 跳转(hash 保留,视图不丢);名单由服务端每请求现读 */
+$("projList").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-root]");
+  if (!b) return;
+  location.href = location.pathname + "?project=" + encodeURIComponent(b.dataset.root) + location.hash;
+});
 
 /* 提交批注(有反馈:loading → 成功/失败文案) */
 $("annForm").addEventListener("submit", async (e) => {

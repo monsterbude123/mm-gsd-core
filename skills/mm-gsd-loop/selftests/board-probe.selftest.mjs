@@ -1,4 +1,5 @@
-// 看板探针自测 —— 22-01 T2:债面板上屏 + 处置口径全屏统一(D-02/D-05)。
+// 看板探针自测 —— 22-01 T2:债面板上屏 + 处置口径全屏统一(D-02/D-05);23-02 T3 起兼测多项目聚合
+// (全局配置注入 GSD_BOARD_CONFIG_PATH、自动注册、优雅退让、?project= 名单校验,D-04)。
 //
 // 为什么必须 spawn 子进程起服务:mm-gsd-web.mjs 顶层就 server.listen,import 进来会在本进程里
 // 起一个常驻服务(端口不释放、health 进程挂住)。夹具放在临时目录、服务 cwd = 临时目录,
@@ -10,7 +11,7 @@
 // 退出码即判据:任一断言失败 → 1。
 
 import { spawn } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -113,10 +114,21 @@ function writeFixture(root) {
   writeFileSync(join(pl, "STATE.md"), ['---', 'status: active', 'active_phase: "22"', '---', "", "# 状态", ""].join("\n"));
 }
 
-/** 起服务,--port 0 让系统挑一个空闲端口(随机端口且不会撞上占用)。 */
-function startServer(cwd) {
+/**
+ * 起服务,--port 0 让系统挑一个空闲端口(随机端口且不会撞上占用)。
+ * @param {string} cwd 服务的工作目录(自动注册进全局配置的就是它)
+ * @param {{port?: number, args?: string[], expectExit?: boolean}} opts
+ *   expectExit=true:不解析监听行,等进程自然退出并带出退出码与输出 —— 供「端口被占优雅退让」用例(I1)。
+ * @param {string} cfgPath 注入的 GSD_BOARD_CONFIG_PATH(仓库真实 ~/.agents/mm-gsd-board.json 一个字节不碰)
+ */
+function startServer(cwd, opts = {}, cfgPath) {
+  const args = [WEB_MJS, "--port", String(opts.port ?? 0), ...(opts.args || [])];
   return new Promise((res, rej) => {
-    const child = spawn(process.execPath, [WEB_MJS, "--port", "0"], { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(process.execPath, args, {
+      cwd,
+      env: { ...process.env, GSD_BOARD_CONFIG_PATH: cfgPath },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     let out = "";
     let err = "";
     const timer = setTimeout(() => {
@@ -127,6 +139,7 @@ function startServer(cwd) {
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (c) => {
       out += c;
+      if (opts.expectExit) return; // 预期提前退出:不按监听行解析
       const m = out.match(/http:\/\/127\.0\.0\.1:(\d+)/);
       if (m) {
         clearTimeout(timer);
@@ -136,7 +149,8 @@ function startServer(cwd) {
     child.stderr.on("data", (c) => (err += c));
     child.on("exit", (code) => {
       clearTimeout(timer);
-      rej(new Error(`服务提前退出 code=${code}:${err || out}`));
+      if (opts.expectExit) res({ code, out, err });
+      else rej(new Error(`服务提前退出 code=${code}:${err || out}`));
     });
   });
 }
@@ -206,12 +220,24 @@ async function main() {
     console.log(`${cond ? "✓" : "✗"} ${name}${cond || !detail ? "" : " —— " + detail}`);
   };
 
-  const root = mkdtempSync(join(tmpdir(), "mm-gsd-board-probe-"));
+  // 多项目夹具(23 D-04):base 下三个互不相干的目录 —— projA(沿用原夹具)、projB(最小 .planning/)、
+  // 注入用的全局配置文件。真实 ~/.agents/mm-gsd-board.json 一个字节不碰。
+  const base = mkdtempSync(join(tmpdir(), "mm-gsd-board-probe-"));
+  const root = join(base, "projA");
+  const rootB = join(base, "projB");
+  const CFG_PATH = join(base, "board.json");
+  const norm = (p) => String(p).replace(/\\/g, "/");
+  const rootN = norm(root);
+  const rootBN = norm(rootB);
+  const readCfg = () => JSON.parse(readFileSync(CFG_PATH, "utf8")).projects;
+  const kids = [];
   let child = null;
   try {
     writeFixture(root);
-    const started = await startServer(root);
+    mkdirSync(join(rootB, ".planning"), { recursive: true });
+    const started = await startServer(root, {}, CFG_PATH);
     child = started.child;
+    kids.push(child);
     const port = started.port;
 
     const st = JSON.parse((await httpCall(port, "GET", "/api/state")).body);
@@ -297,21 +323,73 @@ async function main() {
       Array.isArray(st.productSurfaceWarn) && st.productSurfaceWarn.length > 0 && st.productSurfaceWarn.every((w) => w.includes("REQ-22")),
       JSON.stringify(st.productSurfaceWarn),
     );
+
+    // ⑬ 启动自动注册 cwd 进全局配置(D-04)
+    ok("启动自动注册 cwd 进全局配置", readCfg().includes(rootN), JSON.stringify(readCfg()));
+
+    // ⑭ --add 追加并持久化(D-04)
+    const bSrv = await startServer(rootB, { args: ["--add", rootB] }, CFG_PATH);
+    kids.push(bSrv.child);
+    ok("--add 追加并持久化", readCfg().includes(rootBN), JSON.stringify(readCfg()));
+
+    // ⑮ 端口被占 → 优雅退让:注册后退出码 0 且不打印监听行(D-04 / I1)
+    const y = await startServer(rootB, { port, expectExit: true }, CFG_PATH);
+    ok(
+      "端口被占 → 注册后退出码 0 且不打印监听行(优雅退让,不崩)",
+      y.code === 0 && !/mm-gsd web →/.test(y.out + y.err) && readCfg().includes(rootBN),
+      `code=${y.code} out=${JSON.stringify(String(y.out + y.err).slice(0, 200))}`,
+    );
+
+    // ⑯ /api/projects 报 exists(D-04:目录存在性就是全部健康检查)
+    const prj = JSON.parse((await httpCall(port, "GET", "/api/projects")).body);
+    const pa = prj.find((p) => p.root === rootN);
+    ok("/api/projects 报 exists(A 在名单、目录存在、name 为目录名)", Array.isArray(prj) && !!pa && pa.exists === true && pa.name === "projA", JSON.stringify(prj));
+
+    // ⑰ 不存在目录 → exists=false(服务不重启,名单改完下个请求就生效 —— 每请求现读)
+    const ghost = norm(join(base, "no-such-dir"));
+    writeFileSync(CFG_PATH, JSON.stringify({ projects: [...readCfg(), ghost] }, null, 2) + "\n");
+    const prj2 = JSON.parse((await httpCall(port, "GET", "/api/projects")).body);
+    const pg = prj2.find((p) => p.root === ghost);
+    ok("不存在目录 → /api/projects exists=false(灰显依据)", !!pg && pg.exists === false, JSON.stringify(prj2.map((p) => [p.root, p.exists])));
+
+    // ⑱ B 注册后 A 的 /api/projects 能看到 B(每请求现读全局配置 —— 预审 B2)
+    ok("B 注册后 A 的 /api/projects 能看到 B(A 一直运行着,没重启)", prj2.some((p) => p.root === rootBN), JSON.stringify(prj2.map((p) => p.root)));
+
+    // ⑲ ?project= 越名单 → /api/state 与批注都 400;批注落点随 ?project= 切到 B(预审 B3/I2)
+    // 「越名单」必须是从未注册过的路径(⑰ 的 ghost 已进名单,不能再当越界样本)
+    const stranger = norm(join(base, "stranger-dir"));
+    const stB = await httpCall(port, "GET", "/api/state?project=" + encodeURIComponent(rootBN));
+    const stGhost = await httpCall(port, "GET", "/api/state?project=" + encodeURIComponent(stranger));
+    const annB = await httpCall(port, "POST", "/api/annotations?project=" + encodeURIComponent(rootBN), JSON.stringify({ target: "REQ-22", type: "备注", text: "落 B" }));
+    const annGhost = await httpCall(port, "POST", "/api/annotations?project=" + encodeURIComponent(stranger), JSON.stringify({ target: "REQ-22", type: "备注", text: "越名单" }));
+    let bAnns = [];
+    try { bAnns = JSON.parse(readFileSync(join(rootB, ".planning", "annotations.json"), "utf8")); } catch {}
+    ok(
+      "?project= 越名单 → /api/state 与批注都 400;批注落点随 ?project= 切到 B 的 annotations.json(A 的批注不被串写)",
+      stB.status === 200 && stGhost.status === 400 && annGhost.status === 400
+        && annB.status === 200 && JSON.parse(annB.body).ok === true
+        && bAnns.length === 1 && bAnns[0].text === "落 B",
+      `stB=${stB.status} stGhost=${stGhost.status} annB=${annB.status} annGhost=${annGhost.status} bAnns=${JSON.stringify(bAnns)}`,
+    );
   } catch (e) {
     console.log(`✗ 探针异常:${e && e.stack ? e.stack : e}`);
     results.push({ name: "探针异常", pass: false });
   } finally {
-    if (child) {
-      child.kill();
-      await new Promise((r) => {
-        if (child.exitCode !== null) return r();
-        child.once("exit", r);
-        setTimeout(r, 1500);
-      });
+    for (const k of kids.length ? kids : child ? [child] : []) {
+      try {
+        k.kill();
+        await new Promise((r) => {
+          if (k.exitCode !== null) return r();
+          k.once("exit", r);
+          setTimeout(r, 1500);
+        });
+      } catch {
+        /* 已退出,忽略 */
+      }
     }
     // Windows 上子进程刚退时目录可能还锁着;残留一个临时目录不算失败,重试几次即可
     try {
-      rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+      rmSync(base, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     } catch {
       /* 临时目录残留,忽略 */
     }

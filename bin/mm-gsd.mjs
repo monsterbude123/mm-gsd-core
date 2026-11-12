@@ -107,6 +107,7 @@ ${C.b}mm-gsd${C.x} — 极简 GSD 核心安装器
       --home <dir>            覆盖家目录(测试用)
   ${C.b}web${C.x}              过程看板:起本地服务(localhost)实时渲染各 phase/REQ/批注(只读+批注)
       --port <n>             端口(默认 4620)
+      --add <dir>            把目录追加进看板项目名单(多项目聚合;启动时 cwd 自动注册,端口被占则注册后让位退出)
   ${C.b}--version${C.x}           打印版本号
   ${C.b}--help${C.x}
 

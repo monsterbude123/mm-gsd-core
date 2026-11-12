@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-// mm-gsd-web —— 过程看板:固定模板 + 实时 .planning 只读渲染 + 批注唯一写通道(phase 21,REQ-19/20)
+// mm-gsd-web —— 过程看板:固定模板 + 实时 .planning 只读渲染 + 批注唯一写通道(phase 21,REQ-19/20);
+// phase 23 起多项目聚合(D-04,REQ-27):全局名单 ~/.agents/mm-gsd-board.json,启动自动注册 cwd,
+// ?project= 参数化 /api/state 与批注落点,端口被占(EADDRINUSE)优雅退让不崩。
 //
 // 零依赖(node 内置 http);只绑 127.0.0.1;对 .planning 只读 —— 唯一写通道是 POST /api/annotations
 // (落 annotations.json,schema 校验,失败不落盘)。纯展示 + 批注,不提供改工件能力(D-10)。
@@ -15,9 +17,9 @@
 // 同样是零 I/O 纯函数;读文件在 buildState() 里做(每次请求现读现算,只读、不外发、不缓存)。
 
 import { createServer } from "node:http";
-import { readFileSync, existsSync, readdirSync, writeFileSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, dirname, relative } from "node:path";
+import { join, dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { buildDebt } from "../references/debt-panel.mjs";
@@ -32,7 +34,42 @@ const argv = process.argv.slice(2);
 const portArg = argv.includes("--port") ? Number(argv[argv.indexOf("--port") + 1]) : NaN;
 const PORT = Number.isFinite(portArg) ? portArg : 4620;
 const ROOT = process.cwd();
-const P = (...s) => join(ROOT, ".planning", ...s);
+const addArg = argv.includes("--add") && argv[argv.indexOf("--add") + 1] ? resolve(argv[argv.indexOf("--add") + 1]) : null;
+const P = (root, ...s) => join(root, ".planning", ...s);
+
+// 全局看板配置(D-04):~/.agents/mm-gsd-board.json,可用环境变量 GSD_BOARD_CONFIG_PATH 覆盖
+// (自测注入用,不碰真实配置)。形状 {"projects": ["<归一化绝对路径>",...]};
+// 路径 windows 反斜杠转正斜杠,名单比较按归一化后全串等值(I2)。
+const CONFIG_PATH = process.env.GSD_BOARD_CONFIG_PATH || join(homedir(), ".agents", "mm-gsd-board.json");
+const normPath = (p) => String(p ?? "").replace(/\\/g, "/");
+const ROOT_N = normPath(ROOT);
+
+function readProjects() {
+  try {
+    const cfg = JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
+    return Array.isArray(cfg.projects) ? cfg.projects.map(normPath).filter(Boolean) : [];
+  } catch { return []; }
+}
+
+// merge-on-write(预审 W1):写前重读只追加缺项,防两进程互覆盖 —— 单机单用户,不做文件锁(残余入 deferred)
+function registerProjects(roots) {
+  const merged = [...readProjects()];
+  let changed = false;
+  for (const r of roots) if (r && !merged.includes(r)) { merged.push(r); changed = true; }
+  if (!changed) return;
+  mkdirSync(dirname(CONFIG_PATH), { recursive: true });
+  writeFileSync(CONFIG_PATH, JSON.stringify({ projects: merged }, null, 2) + "\n");
+}
+
+// ?project= 解析:每请求现读全局配置(预审 B2)—— 运行中的服务因此能看见别处新注册的项目。
+// 归一化后与名单全串等值;不在名单 → ok:false(400);缺省 = 服务 cwd。
+function resolveProject(url) {
+  const projects = readProjects();
+  const qp = url.searchParams.get("project");
+  if (qp == null) return { root: ROOT, projects, ok: true };
+  const n = normPath(qp);
+  return { root: n, projects, ok: projects.includes(n) };
+}
 
 // 工具遥测日志(只读):默认 ~/.agents/mm-gsd-tools.jsonl,可用环境变量覆盖(自测注入用)。
 // 现读现算、不缓存、不外发 —— 看板不因遥测向任何外部发请求(守 R-06)。
@@ -103,9 +140,9 @@ function readTelemetry(root) {
   }
 }
 
-function buildState() {
-  const stateFm = existsSync(P("STATE.md")) ? fm(readFileSync(P("STATE.md"), "utf8")) : {};
-  const body = existsSync(P("STATE.md")) ? readFileSync(P("STATE.md"), "utf8") : "";
+function buildState(root) {
+  const stateFm = existsSync(P(root, "STATE.md")) ? fm(readFileSync(P(root, "STATE.md"), "utf8")) : {};
+  const body = existsSync(P(root, "STATE.md")) ? readFileSync(P(root, "STATE.md"), "utf8") : "";
   const phasesFromState = [];
   let inPh = false;
   for (const line of body.split(/\r?\n/)) {
@@ -117,7 +154,7 @@ function buildState() {
     }
   }
 
-  const allMd = existsSync(P(".")) ? walkPl(P(".")) : [];
+  const allMd = existsSync(P(root, ".")) ? walkPl(P(root, ".")) : [];
   const planPaths = allMd.filter((f) => f.endsWith("-PLAN.md"));
   const checkPaths = new Set(allMd.filter((f) => f.endsWith("-PLAN-CHECK.md")));
   const sumPaths = new Set(allMd.filter((f) => f.endsWith("-SUMMARY.md")));
@@ -127,8 +164,8 @@ function buildState() {
 
   const reqRe = /- (REQ-[\w.-]+)(\(baseline[^)]*\))?:\s*(.*)/;
   const reqs = [];
-  if (existsSync(P("REQUIREMENTS.md"))) {
-    for (const line of readFileSync(P("REQUIREMENTS.md"), "utf8").split(/\r?\n/)) {
+  if (existsSync(P(root, "REQUIREMENTS.md"))) {
+    for (const line of readFileSync(P(root, "REQUIREMENTS.md"), "utf8").split(/\r?\n/)) {
       const m = line.match(reqRe);
       if (m) reqs.push({ id: m[1], baseline: Boolean(m[2]), text: m[3].trim(), claimed: [] });
     }
@@ -183,7 +220,7 @@ function buildState() {
   }
 
   let annotations = [];
-  try { annotations = JSON.parse(readFileSync(P("annotations.json"), "utf8")); } catch {}
+  try { annotations = JSON.parse(readFileSync(P(root, "annotations.json"), "utf8")); } catch {}
 
   const contexts = {};
   for (const cp of ctxPaths) {
@@ -198,7 +235,7 @@ function buildState() {
   // 台账处置列是唯一权威,原件「## 状态」只在台账无行时兜底(22-CONTEXT D-02)。
   const planningDir = {};
   for (const abs of allMd) {
-    const rel = relative(P("."), abs).split(/[\\/]/).join("/");
+    const rel = relative(P(root, "."), abs).split(/[\\/]/).join("/");
     planningDir[rel] = readFileSync(abs, "utf8");
   }
   const debt = buildDebt({ planningDir, annotations });
@@ -222,7 +259,7 @@ function buildState() {
   // REQ 台账对账读端(REQ-26,23-CONTEXT D-01 写端的读端):扫全部 *-SHIP.md 与对应 PLAN 的
   // product_surface: 声明,SHIP 后 req-ledger 缺该批 REQ 的 delivered 行 → 逐条黄警告
   // (渲染由 23-02 总览票接线)。台账解析口径只在 references/req-ledger.mjs 一处。
-  const reqLedgerRows = existsSync(P("req-ledger.md")) ? parseReqLedger(readFileSync(P("req-ledger.md"), "utf8")) : [];
+  const reqLedgerRows = existsSync(P(root, "req-ledger.md")) ? parseReqLedger(readFileSync(P(root, "req-ledger.md"), "utf8")) : [];
   const productSurfaceWarn = [];
   for (const sp of shipPaths) {
     const base = sp.split(/[\\/]/).pop().replace(/-SHIP\.md$/, "");
@@ -244,6 +281,7 @@ function buildState() {
   const allPlans = [...phases.values()].flatMap((p) => p.plans);
   return {
     generated: new Date().toISOString(),
+    root: normPath(root),
     declared: stateFm.status ?? null,
     activePhase: stateFm.active_phase ?? null,
     state: {
@@ -259,7 +297,7 @@ function buildState() {
     issuesOpen, issues,
     debt,
     productSurfaceWarn,
-    telemetry: readTelemetry(ROOT),
+    telemetry: readTelemetry(root),
   };
 }
 
@@ -286,13 +324,33 @@ const server = createServer(async (req, res) => {
     }
     return;
   }
-  if (req.method === "GET" && url.pathname === "/api/state") {
+  if (req.method === "GET" && url.pathname === "/api/projects") {
+    // 项目名单(D-04):每请求现读全局配置 —— 别处新注册的项目,刷新即可见(预审 B2)
+    const projects = readProjects();
     res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
-    res.end(JSON.stringify(buildState()));
+    res.end(JSON.stringify(projects.map((root) => ({ root, name: root.split("/").pop() || root, exists: existsSync(root) }))));
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/api/state") {
+    const pr = resolveProject(url);
+    if (!pr.ok) {
+      res.writeHead(400, { "content-type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({ ok: false, problems: ["project 不在注册名单:" + url.searchParams.get("project")] }));
+      return;
+    }
+    res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+    res.end(JSON.stringify(buildState(pr.root)));
     return;
   }
   if (req.method === "POST" && url.pathname === "/api/annotations") {
     // 唯一写通道:schema 校验失败不落盘;只追加 annotations.json,不碰其他工件(D-03/D-10)
+    // 批注随项目(预审 B3):?project= 与 /api/state 同一份名单校验,落该项目自己的 annotations.json
+    const pr = resolveProject(url);
+    if (!pr.ok) {
+      res.writeHead(400, { "content-type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({ ok: false, problems: ["project 不在注册名单:" + url.searchParams.get("project")] }));
+      return;
+    }
     let body = null;
     try { body = JSON.parse(await readBody(req) || "{}"); } catch {}
     const target = String(body.target ?? "").trim();
@@ -308,11 +366,11 @@ const server = createServer(async (req, res) => {
       return;
     }
     let list = [];
-    try { list = JSON.parse(readFileSync(P("annotations.json"), "utf8")); } catch {}
+    try { list = JSON.parse(readFileSync(P(pr.root, "annotations.json"), "utf8")); } catch {}
     const ann = { id: "a-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 6), ts: new Date().toISOString(), target, type, text, status: "open" };
     list.push(ann);
     try {
-      writeFileSync(P("annotations.json"), JSON.stringify(list, null, 2) + "\n");
+      writeFileSync(P(pr.root, "annotations.json"), JSON.stringify(list, null, 2) + "\n");
       res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
       res.end(JSON.stringify({ ok: true, id: ann.id }));
     } catch (e) {
@@ -323,6 +381,19 @@ const server = createServer(async (req, res) => {
   }
   res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
   res.end("not found");
+});
+
+// 启动即注册(D-04):cwd(--add 时连同追加目录)merge 进全局配置;写失败不挡看板启动
+try { registerProjects([ROOT_N, ...(addArg ? [normPath(addArg)] : [])]); } catch {}
+
+// 端口占用优雅退让(D-04):EADDRINUSE 不崩 —— 把 cwd 注册进全局配置后交棒给已运行的服务,退出码 0
+server.on("error", (e) => {
+  if (e && e.code === "EADDRINUSE") {
+    try { registerProjects([ROOT_N]); } catch {}
+    console.log(`已注册到运行中的看板 http://127.0.0.1:${PORT} —— 刷新即可见,Ctrl+C 退出`);
+    process.exit(0);
+  }
+  throw e;
 });
 
 server.listen(PORT, "127.0.0.1", () => {
