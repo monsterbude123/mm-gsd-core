@@ -1,0 +1,260 @@
+#!/usr/bin/env node
+// mm-gsd-web —— 过程看板:固定模板 + 实时 .planning 只读渲染 + 批注唯一写通道(phase 21,REQ-19/20)
+//
+// 零依赖(node 内置 http);只绑 127.0.0.1;对 .planning 只读 —— 唯一写通道是 POST /api/annotations
+// (落 annotations.json,schema 校验,失败不落盘)。纯展示 + 批注,不提供改工件能力(D-10)。
+//
+// 自含解析逻辑,不 import checker —— checker 顶层有 MODE 分流与 process.exit 钩子,import 会拉入副作用;
+// 代价是解析逻辑与 checker 各一份(预审 F8 已知取舍),对账由 fixture 断言兜(REQ 认领两种口径同数)。
+
+import { createServer } from "node:http";
+import { readFileSync, existsSync, readdirSync, writeFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
+const TEMPLATE_PATH = join(SCRIPT_DIR, "..", "templates", "web.html");
+
+const argv = process.argv.slice(2);
+const portArg = argv.includes("--port") ? Number(argv[argv.indexOf("--port") + 1]) : NaN;
+const PORT = Number.isFinite(portArg) ? portArg : 4620;
+const ROOT = process.cwd();
+const P = (...s) => join(ROOT, ".planning", ...s);
+
+const TYPES = ["需求遗漏", "方向不对", "验收不过", "备注"];
+
+function fm(text) {
+  const m = String(text ?? "").match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  const out = {};
+  if (!m) return out;
+  for (const line of m[1].split(/\r?\n/)) {
+    const kv = line.match(/^([A-Za-z_][\w-]*):\s*(.*)$/);
+    if (!kv) continue;
+    out[kv[1]] = kv[2].trim().replace(/^["']|["']$/g, "").replace(/\s+#.*$/, "");
+  }
+  return out;
+}
+
+function walkPl(dir, out = []) {
+  let names = [];
+  try { names = readdirSync(dir, { withFileTypes: true }); } catch { return out; }
+  for (const e of names) {
+    const p = join(dir, e.name);
+    if (e.isDirectory()) walkPl(p, out);
+    else if (e.isFile() && e.name.endsWith(".md")) out.push(p);
+  }
+  return out;
+}
+
+function ticketsOf(txt) {
+  const tickets = [];
+  let cur = null;
+  for (const line of String(txt ?? "").split(/\r?\n/)) {
+    const h = line.match(/^#{2,4}\s+T(\d+[A-Za-z]*)\b\s*(.*)$/);
+    if (h) { cur = { id: "T" + h[1], title: h[2].trim(), files: "", verify: "", done: "" }; tickets.push(cur); continue; }
+    if (!cur) continue;
+    const f = line.match(/^\s*-\s+\*{0,2}files\*{0,2}\s*:\s*(.*)$/i);
+    const v = line.match(/^\s*-\s+\*{0,2}verify\*{0,2}\s*:\s*(.*)$/i);
+    const d = line.match(/^\s*-\s+\*{0,2}done\*{0,2}\s*:\s*(.*)$/i);
+    if (f) cur.files = f[1].trim();
+    if (v) cur.verify = v[1].trim();
+    if (d) cur.done = d[1].trim();
+  }
+  return tickets;
+}
+
+function coversOf(txt) {
+  const out = { reqs: [], decisions: [] };
+  for (const m of String(txt ?? "").matchAll(/- \*{0,2}covers\*{0,2}\s*:\s*(.*)$/gim)) {
+    for (const tok of m[1].split(/[,\s]+/)) {
+      if (/^REQ-[\w.-]+$/i.test(tok)) out.reqs.push(tok.toUpperCase());
+      else if (/^D-\d+$/.test(tok)) out.decisions.push(tok);
+    }
+  }
+  return out;
+}
+
+function buildState() {
+  const stateFm = existsSync(P("STATE.md")) ? fm(readFileSync(P("STATE.md"), "utf8")) : {};
+  const body = existsSync(P("STATE.md")) ? readFileSync(P("STATE.md"), "utf8") : "";
+  const phasesFromState = [];
+  let inPh = false;
+  for (const line of body.split(/\r?\n/)) {
+    if (/^##[ \t]*Phases[ \t]*$/i.test(line)) { inPh = true; continue; }
+    if (inPh && /^##[ \t]/.test(line)) inPh = false;
+    if (inPh) {
+      const m = line.match(/^-\s*\[( |x|X)\]\s*(\S+)\s*[—–-]?\s*(.*)$/);
+      if (m) phasesFromState.push({ id: m[2], title: m[3].trim(), done: m[1].toLowerCase() === "x" });
+    }
+  }
+
+  const allMd = existsSync(P(".")) ? walkPl(P(".")) : [];
+  const planPaths = allMd.filter((f) => f.endsWith("-PLAN.md"));
+  const checkPaths = new Set(allMd.filter((f) => f.endsWith("-PLAN-CHECK.md")));
+  const sumPaths = new Set(allMd.filter((f) => f.endsWith("-SUMMARY.md")));
+  const verPaths = new Set(allMd.filter((f) => f.endsWith("-VERIFICATION.md")));
+  const shipPaths = new Set(allMd.filter((f) => f.endsWith("-SHIP.md")));
+  const ctxPaths = allMd.filter((f) => f.endsWith("-CONTEXT.md"));
+
+  const reqRe = /- (REQ-[\w.-]+)(\(baseline[^)]*\))?:\s*(.*)/;
+  const reqs = [];
+  if (existsSync(P("REQUIREMENTS.md"))) {
+    for (const line of readFileSync(P("REQUIREMENTS.md"), "utf8").split(/\r?\n/)) {
+      const m = line.match(reqRe);
+      if (m) reqs.push({ id: m[1], baseline: Boolean(m[2]), text: m[3].trim(), claimed: [] });
+    }
+  }
+
+  const phases = new Map();
+  const claimByReq = new Map(reqs.map((r) => [r.id, r]));
+  for (const pp of planPaths) {
+    const txt = readFileSync(pp, "utf8");
+    const f = fm(txt);
+    const base = pp.split(/[\\/]/).pop().replace(/-PLAN\.md$/, "");
+    const phase = String(f.phase ?? base.slice(0, 2));
+    const covers = coversOf(txt);
+    const tickets = ticketsOf(txt);
+    if (!phases.has(phase)) {
+      const st = phasesFromState.find((x) => x.id === phase);
+      phases.set(phase, {
+        phase, title: st?.title ?? "", done: Boolean(st?.done),
+        context: ctxPaths.find((x) => x.split(/[\\/]/).pop().startsWith(phase + "-")) ?? null,
+        plans: [], summaries: [], verification: null, ship: null, planChecks: [],
+      });
+    }
+    const card = phases.get(phase);
+    const claimedTickets = tickets.map((t) => `${base} ${t.id}`);
+    for (const rq of covers.reqs) {
+      const r = claimByReq.get(rq);
+      if (r) for (const t of claimedTickets) if (!r.claimed.includes(t)) r.claimed.push(t);
+    }
+    card.plans.push({
+      file: pp.split(/[\\/]/).pop(), plan: base, goal: f.goal ?? "",
+      isRepair: /-R\d+$/.test(base), wave: f.wave ?? "",
+      tickets, coversReq: covers.reqs, coversD: covers.decisions,
+      check: (() => {
+        const c = [...checkPaths].find((x) => x.split(/[\\/]/).pop().startsWith(base + "-") && x.endsWith("-PLAN-CHECK.md"));
+        return c ? { file: c.split(/[\\/]/).pop(), status: fm(readFileSync(c, "utf8")).status ?? "?" } : null;
+      })(),
+      summary: (() => {
+        const c = [...sumPaths].find((x) => x.split(/[\\/]/).pop().startsWith(base + "-"));
+        return c ? { file: c.split(/[\\/]/).pop(), status: fm(readFileSync(c, "utf8")).status ?? "?", commits: fm(readFileSync(c, "utf8")).commits ?? "" } : null;
+      })(),
+    });
+  }
+  for (const vp of verPaths) {
+    const base = vp.split(/[\\/]/).pop().replace(/-VERIFICATION\.md$/, "");
+    const phase = base.slice(0, 2);
+    if (phases.has(phase)) phases.get(phase).verification = { file: vp.split(/[\\/]/).pop(), status: fm(readFileSync(vp, "utf8")).status ?? "?" };
+  }
+  for (const sp of shipPaths) {
+    const base = sp.split(/[\\/]/).pop().replace(/-SHIP\.md$/, "");
+    const phase = base.slice(0, 2);
+    if (phases.has(phase)) phases.get(phase).ship = { file: sp.split(/[\\/]/).pop(), status: fm(readFileSync(sp, "utf8")).status ?? "?" };
+  }
+
+  let annotations = [];
+  try { annotations = JSON.parse(readFileSync(P("annotations.json"), "utf8")); } catch {}
+
+  const contexts = {};
+  for (const cp of ctxPaths) {
+    const base = cp.split(/[\/]/).pop().replace(/-CONTEXT\.md$/, "");
+    const phase = base.slice(0, 2);
+    const m = readFileSync(cp, "utf8").match(/<domain>([\s\S]*?)<\/domain>/);
+    if (m) contexts[phase] = m[1].trim().slice(0, 6000);
+  }
+
+  let issuesOpen = 0;
+  const issDir = P("issues");
+  if (existsSync(issDir)) {
+    for (const f of readdirSync(issDir).filter((x) => /^I-.*\.md$/.test(x))) {
+      if (/^open$/m.test(readFileSync(join(issDir, f), "utf8"))) issuesOpen++;
+    }
+  }
+
+  // state 条(21-01 PLAN 契约):声明 / phase / 工件计数(含 R 票 pending 数)——
+  // 只有计数,不含推导判定:推导单一来源是 checker(预审 F3)
+  const allPlans = [...phases.values()].flatMap((p) => p.plans);
+  return {
+    generated: new Date().toISOString(),
+    declared: stateFm.status ?? null,
+    activePhase: stateFm.active_phase ?? null,
+    state: {
+      declared: stateFm.status ?? null,
+      activePhase: stateFm.active_phase ?? null,
+      plans: allPlans.length,
+      summaries: allPlans.filter((x) => x.summary).length,
+      repairsPending: allPlans.filter((x) => x.isRepair && !x.summary).length,
+    },
+    phases: [...phases.values()].sort((a, b) => a.phase.localeCompare(b.phase)),
+    contexts,
+    reqs, annotations,
+    issuesOpen,
+  };
+}
+
+function readBody(req) {
+  return new Promise((resolve) => {
+    let raw = "";
+    req.setEncoding("utf8");
+    req.on("data", (c) => (raw += c));
+    req.on("end", () => resolve(raw));
+    req.on("error", () => resolve(""));
+  });
+}
+
+const server = createServer(async (req, res) => {
+  const url = new URL(req.url, "http://127.0.0.1");
+  if (req.method === "GET" && url.pathname === "/") {
+    try {
+      const html = readFileSync(TEMPLATE_PATH);
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.end(html);
+    } catch {
+      res.writeHead(500, { "content-type": "text/plain; charset=utf-8" });
+      res.end("模板缺失:templates/web.html");
+    }
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/api/state") {
+    res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+    res.end(JSON.stringify(buildState()));
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/api/annotations") {
+    // 唯一写通道:schema 校验失败不落盘;只追加 annotations.json,不碰其他工件(D-03/D-10)
+    let body = null;
+    try { body = JSON.parse(await readBody(req) || "{}"); } catch {}
+    const target = String(body.target ?? "").trim();
+    const type = String(body.type ?? "").trim();
+    const text = String(body.text ?? "").trim();
+    const problems = [];
+    if (!target) problems.push("target 缺失(REQ-N / phase:NN / ticket:NN-MM)");
+    if (!TYPES.includes(type)) problems.push("type 必须是 " + TYPES.join("/"));
+    if (!text) problems.push("text 缺失");
+    if (problems.length) {
+      res.writeHead(400, { "content-type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({ ok: false, problems }));
+      return;
+    }
+    let list = [];
+    try { list = JSON.parse(readFileSync(P("annotations.json"), "utf8")); } catch {}
+    const ann = { id: "a-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 6), ts: new Date().toISOString(), target, type, text, status: "open" };
+    list.push(ann);
+    try {
+      writeFileSync(P("annotations.json"), JSON.stringify(list, null, 2) + "\n");
+      res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({ ok: true, id: ann.id }));
+    } catch (e) {
+      res.writeHead(500, { "content-type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({ ok: false, problems: ["落盘失败:" + e.message] }));
+    }
+    return;
+  }
+  res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+  res.end("not found");
+});
+
+server.listen(PORT, "127.0.0.1", () => {
+  console.log(`mm-gsd web → http://127.0.0.1:${PORT}  (cwd: ${ROOT};Ctrl+C 停止)`);
+});

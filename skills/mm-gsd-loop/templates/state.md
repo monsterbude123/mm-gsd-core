@@ -7,8 +7,9 @@ active_phase: 01
 updated: 2026-10-19
 ---
 
-<!-- status 合法值只有六个,一次只写一个:
-     discussing / planning / executing / verifying / completed / shipped / paused
+<!-- status 合法值只有七个,一次只写一个:
+     discussing / planning / executing / verifying / completed / shipped / reopened / paused
+     reopened = 已交付 phase 开了点修 R 票(重验 passed 后改回 shipped)。
      写成 "discussing | planning | ..." 是错的 —— 那是选项说明,不是值,照抄即被判非法。
      真实值由检查器从工件存在性推导,你写声明,它比对。 -->
 

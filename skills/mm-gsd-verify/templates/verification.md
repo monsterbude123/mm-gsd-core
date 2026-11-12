@@ -57,6 +57,13 @@ score: 4/6
 
 - <test/idea/deferred_at>
 
+## 重验记录(R 票收口时逐票追加;格式机器可判,勿改形状)
+
+<!-- 每张点修 R 票收口时追加一行:`- Rk: passed — 重验 <truth 名>`(k 与票号一致,如 R1);未过写 failed。
+     全部 R 票 passed → phase 状态回 shipped(checker 推导读本节)。 -->
+
+- R1: passed — 重验 <truth 名>
+
 ## Human Verification Required(机器验不了,恒发不省略)
 
 - [ ] 视觉:导出按钮 hover 态 —— 期望:<>;怎么算过:<>

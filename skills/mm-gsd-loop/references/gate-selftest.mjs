@@ -597,6 +597,79 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
     eqN(out.includes("进行中"), true, "末次派发标「进行中」(预审 F2:无 PostToolUse/UserPromptSubmit 终止符)");
     rmSync(d, { recursive: true, force: true });
   }
+  // ---- 点修闭环(phase 21,REQ-20/21):批注黄提醒 / reopened 推导 / R 票门禁兼容 / R≥3 升级(具名用例) ----
+  {
+    const runCk = (d, args) => { let out = "", code = 0;
+      try { out = execFileSync(process.execPath, [CHECKER, ...args], { cwd: d, encoding: "utf8", stdio: "pipe" }); }
+      catch (e) { code = e.status ?? 1; out = String(e.stdout || "") + String(e.stderr || ""); }
+      return { out, code }; };
+    // ① open 批注 → checker 黄提醒;全 digested → 静默(默认模式端到端,D-04 后半)
+    const dA = mkdtempSync(join(tmpdir(), "mm-gsd-ann-"));
+    mkdirSync(join(dA, ".planning"), { recursive: true });
+    writeFileSync(join(dA, ".planning", "STATE.md"), '---\nstatus: discussing\nactive_phase: "01"\n---\n');
+    writeFileSync(join(dA, ".planning", "annotations.json"), JSON.stringify([{ id: "a1", ts: "t", target: "REQ:REQ-1", type: "备注", text: "x", status: "open" }]));
+    let rA = runCk(dA, []);
+    eqN(rA.out.includes("待消化") && rA.out.includes("1 条"), true, "open 批注 → checker 黄提醒");
+    writeFileSync(join(dA, ".planning", "annotations.json"), JSON.stringify([{ id: "a1", ts: "t", target: "REQ:REQ-1", type: "备注", text: "x", status: "digested" }]));
+    rA = runCk(dA, []);
+    eqN(rA.out.includes("待消化"), false, "全 digested → 不提醒");
+    rmSync(dA, { recursive: true, force: true });
+
+    // ②③ reopened 推导(D-09):已 shipped 的 phase 开 R 票 → reopened;收口 + 重验 passed → 回 shipped
+    // 已 shipped fixture 四件套照契约造(缺任何一项推导就走不到 shipped,用例会自己暴露)
+    const mkShipped = (d) => {
+      mkdirSync(join(d, ".planning"), { recursive: true });
+      writeFileSync(join(d, ".planning", "STATE.md"), '---\nstatus: shipped\nactive_phase: "01"\n---\n');
+      writeFileSync(join(d, ".planning", "01-CONTEXT.md"), "<domain>做安全登录</domain>\n<decisions>无</decisions>\n<specifics>无</specifics>\n<deferred>无</deferred>\n");
+      writeFileSync(join(d, ".planning", "01-01-PLAN.md"), '---\nphase: "01"\nplan: "01"\n---\n');
+      writeFileSync(join(d, ".planning", "01-01-PLAN-CHECK.md"), '---\nstatus: passed\nplan: "01-01"\nblockers: 0\nwarnings: 0\n---\n');
+      writeFileSync(join(d, ".planning", "01-01-SUMMARY.md"), '---\nphase: "01"\nplan: "01"\nstatus: complete\ncommits: 2\n---\n');
+      writeFileSync(join(d, ".planning", "01-VERIFICATION.md"), '---\nstatus: passed\nscore: 1/1\n---\n\n## Observable Truths\n\n| # | Truth | 状态 | 证据 |\n|---|---|---|---|\n| T1 | 登录安全 | ✓ VERIFIED | t:1 |\n\n## Human Verification Required(机器验不了,恒发不省略)\n\nNone —— 全部由程序验证\n');
+      writeFileSync(join(d, ".planning", "01-SHIP.md"), '---\nstatus: shipped\ndelivered: PR #128\ndocs_synced: yes\n---\n');
+    };
+    const runJson = (d) => { let out = "";
+      try { out = execFileSync(process.execPath, [CHECKER, "--json"], { cwd: d, encoding: "utf8", stdio: "pipe" }); }
+      catch (e) { out = String(e.stdout || "") + String(e.stderr || ""); }
+      return JSON.parse(out.slice(out.indexOf("{"))); };
+    const dB = mkdtempSync(join(tmpdir(), "mm-gsd-rrep-"));
+    mkShipped(dB);
+    writeFileSync(join(dB, ".planning", "01-R1-PLAN.md"), '---\nphase: "01"\nplan: "R1"\n---\n');
+    eqN(runJson(dB).derived, "reopened", "R 票未收口 → derived reopened");
+    rmSync(dB, { recursive: true, force: true });
+    const dC = mkdtempSync(join(tmpdir(), "mm-gsd-rdone-"));
+    mkShipped(dC);
+    writeFileSync(join(dC, ".planning", "01-R1-PLAN.md"), '---\nphase: "01"\nplan: "R1"\n---\n');
+    writeFileSync(join(dC, ".planning", "01-R1-PLAN-CHECK.md"), '---\nstatus: passed\nplan: "01-R1"\nblockers: 0\nwarnings: 0\n---\n');
+    writeFileSync(join(dC, ".planning", "01-R1-SUMMARY.md"), '---\nphase: "01"\nplan: "R1"\nstatus: complete\ncommits: 1\n---\n');
+    const vt = readFileSync(join(dC, ".planning", "01-VERIFICATION.md"), "utf8");
+    writeFileSync(join(dC, ".planning", "01-VERIFICATION.md"), vt.replace("## Human", "## 重验记录\n\n- R1: passed — 重验 登录安全\n\n## Human"));
+    eqN(runJson(dC).derived, "shipped", "R 票收口且重验 passed → 回 shipped");
+    rmSync(dC, { recursive: true, force: true });
+
+    // ④⑤⑥ --plan 门的 R 票兼容(D-06/D-08)
+    const rPlan = (k) => '---\nphase: "01"\nplan: "' + k + '"\ngoal: 重验登录安全这条 truth\nrollback: 回退本票 commit\nfiles_modified:\n  - a.mjs\n---\n\n### T1 重验\n\n- **files**: a.mjs\n- **read_first**: a.mjs\n- **action**: 修复并重验原 truth,不扩 scope。\n- **verify**: node a.mjs\n- **fails_when**: 退出码非 0(输出无 ok)\n- **done**: 输出 ok\n';
+    const mkRDir = (ks) => { const d = mkdtempSync(join(tmpdir(), "mm-gsd-rplan-"));
+      mkdirSync(join(d, ".planning"), { recursive: true });
+      writeFileSync(join(d, "a.mjs"), "console.log('ok');\n");
+      writeFileSync(join(d, ".planning", "STATE.md"), '---\nstatus: shipped\nactive_phase: "01"\n---\n');
+      for (const k of ks) writeFileSync(join(d, ".planning", "01-" + k + "-PLAN.md"), rPlan(k));
+      return d; };
+    // ④ R 票过 --plan 门:无 frontmatter wave 不判红(R 票是串行补票,不进波次)
+    const dD = mkRDir(["R1"]);
+    let rD = runCk(dD, ["--plan", ".planning/01-R1-PLAN.md"]);
+    eqN(rD.code === 0 && !rD.out.includes("wave"), true, "R 票过 --plan 门(wave 可空不判红)");
+    rmSync(dD, { recursive: true, force: true });
+    // ⑤ 两张 R 票撞同一文件 → 批图不判红(修复是串行的,不是新并行面)
+    const dE = mkRDir(["R1", "R2"]);
+    let rE = runCk(dE, ["--plan", ".planning/01-R1-PLAN.md", ".planning/01-R2-PLAN.md"]);
+    eqN(rE.code === 0 && !rE.out.includes("撞了文件"), true, "R 票不被批图卷入(同文件不判并行冲突)");
+    rmSync(dE, { recursive: true, force: true });
+    // ⑥ 同 phase R 票 ≥3 → 强制升级黄提醒(黄不拦红,退出码仍 0)
+    const dF = mkRDir(["R1", "R2", "R3"]);
+    let rF = runCk(dF, ["--plan", ".planning/01-R1-PLAN.md", ".planning/01-R2-PLAN.md", ".planning/01-R3-PLAN.md"]);
+    eqN(rF.code === 0 && rF.out.includes("强制升级"), true, "R 票 ≥3 → 强制升级黄提醒");
+    rmSync(dF, { recursive: true, force: true });
+  }
   console.log(st.bad ? `\n${st.bad} 项自测不过 —— 门禁本身是坏的,先修门禁` : "\n✓ 门禁自测全过");
   return st.bad;
 }

@@ -22,7 +22,8 @@ import { homedir } from "node:os";
 import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
-const STATUSES = ["discussing", "planning", "executing", "verifying", "completed", "shipped", "paused"];
+// reopened = 已交付 phase 开了点修 R 票(D-09):重验 passed 后回 shipped;STATE 不许说谎,声明要与推导一致
+const STATUSES = ["discussing", "planning", "executing", "verifying", "completed", "shipped", "reopened", "paused"];
 const SUMMARY_STATUSES = ["complete", "halted"];
 const VERIF_STATUSES = ["passed", "gaps_found", "human_needed"];
 const SHIP_STATUSES = ["shipped", "held"];
@@ -240,6 +241,10 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
     const parsed = parsePlanFile(txt);
     const name = rel.split(/[\\/]/).pop();
     const relForCtx = dirname(rel);
+    // R 票(点修票,phase 21 D-06):修既有真相,不是新研究;串行修复不进并行面。
+    // wave 可空不判红 —— --plan 本就不校验 wave(wave 只在 --phases 波次计算与 exec 的 wave-check 里用),
+    // R 票是原 phase 收尾后的串行补票,不进波次批闸(wave-check 只收 NN-<数字>-PLAN.md)。
+    const isRepair = /^\d{2}-R\d+-PLAN\.md$/.test(name);
     // 预审工件(只有 --plan-check 判):显式校验问的是「现在能不能开工」,不是「合不合规」。
     // 判定住在 references/plan-ready.mjs —— 主脚本只留接线。
     if (PLAN_CHECK) {
@@ -330,8 +335,9 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
     // ---- 红窗兑现票门禁(phase 14 D-02,#18):红窗必须有兑现票 ----
     // 格式:`- <守卫或测试路径> | wave <N> | ticket <NN-MM> | close <判据>`(竖线切分)。
     // 缺 ticket 的红窗就是永久豁免 —— 跨波红窗没有兑现票,期末只能人工对账。
+    // R 票号(NN-Rk)也算兑现票:点修票同样能把红窗修到绿(phase 21 D-06)。
     for (const rw of parsed.redWindows ?? []) {
-      if (!/\bticket\s*\d{2}-\d{2}\b/i.test(rw))
+      if (!/\bticket\s*\d{2}-(?:\d{2}|R\d+)\b/i.test(rw))
         e(`${name}: red_windows 条目缺 ticket <NN-MM> —— 红窗缺兑现票,会变成永久豁免(issue #18): ${rw}`, "每条红窗写明兑现票(ticket NN-MM)与 close 判据;没有兑现票的红窗不许进计划");
     }
     // ---- 批闸形状 lint(phase 14 D-03,#17):WARNING 通道,与票级判别力 lint 并排 ----
@@ -352,15 +358,21 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
       readFile: (p) => readFileSync(p, "utf8"), check: dg, e, w,
     });
     const phaseNo = unquote(String(fm.phase ?? name.slice(0, 2)));
-    rg.checkResearch({ name, goal: fm.goal ?? "", files: parsed.files, phase: phaseNo, root, planDir: dirname(path), e, w });
-    // 研究消费门(phase 07 D-02):研究落盘了却没有票引用它 = 没人读 = 执行端重查一遍
-    rg.checkResearchConsumed({ name, phase: phaseNo, root, planDir: dirname(path), text: txt, e, w });
+    // R 票跳过研究门:点修票修的是本 phase 已查过的事实,再走研究触发/消费门只会逼它重查(D-06)
+    if (!isRepair) {
+      rg.checkResearch({ name, goal: fm.goal ?? "", files: parsed.files, phase: phaseNo, root, planDir: dirname(path), e, w });
+      // 研究消费门(phase 07 D-02):研究落盘了却没有票引用它 = 没人读 = 执行端重查一遍
+      rg.checkResearchConsumed({ name, phase: phaseNo, root, planDir: dirname(path), text: txt, e, w });
+    }
     // 计划可信度(phase 09 D-07):前提存在性 / 载量 / 需求反核销 —— 坏票在规划期就红,到不了执行端
     for (const p of vg.checkTicketPremises(tickets, root)) e(p, "把路径改成真实存在的;这张票要产出的新文件写进 <files>,别在 read_first 里凭空引一个");
     for (const p of vg.checkTicketLoad(tickets)) e(p, "砍掉真理来源文件或拆票 —— read_first 是执行前要全部读完的清单");
     for (const p of vg.checkReqClaims(tickets, root)) e(p, "covers 只写真有的 REQ;要新需求就回 discuss 补进 REQUIREMENTS.md");
-    // 批图(phase 08 D-02):同 phase 内可并行的票不许撞文件、依赖不许成环
-    batchPlans.push({ id: name.replace(/-PLAN\.md$/, ""), phase: phaseNo, files: parsed.files, depends: depList(fm.depends_on) });
+    // 批图(phase 08 D-02):同 phase 内可并行的票不许撞文件、依赖不许成环。
+    // R 票不进批图(D-06):修复是原 phase 收尾后的串行补票,不是新的并行面 ——
+    // 两张 R 票碰同一个被修文件是常态,卷进批图会误判「并行撞文件」。
+    if (!isRepair)
+      batchPlans.push({ id: name.replace(/-PLAN\.md$/, ""), phase: phaseNo, files: parsed.files, depends: depList(fm.depends_on) });
   }
   {
     const wv = await import("../references/worktree-view.mjs");
@@ -373,6 +385,20 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
     // 项目全量对账,整批一次;REQUIREMENTS.md 不存在 → 函数自己返回空,不猜。
     for (const p of checkReqCoverage({ root, plansDir: P(".") }))
       e(p, "给这条需求拆票并在 covers 认领 REQ-N;确认不做就回 discuss 从 REQUIREMENTS.md 移除或改写");
+  }
+  {
+    // 点修配额(D-08):同 phase R 票 ≥3 → 强制升级(防疤叠疤;#21 历史教训:诊断 3 次未矫正 = RC2 复发)
+    const { readAnnotations } = await import("../references/repair-gates.mjs");
+    const byPhase = new Map();
+    for (const t of targets) {
+      const m = t.split(/[\\/]/).pop().match(/^(\d{2})-R\d+-PLAN\.md$/);
+      if (m) byPhase.set(m[1], (byPhase.get(m[1]) ?? 0) + 1);
+    }
+    for (const [ph, n] of byPhase) if (n >= 3)
+      w(`phase ${ph} 的 R 票已达 ${n} 张(≥3)—— 强制升级:重新 discuss 该 phase 或拆独立 phase(D-08,防疤叠疤)`);
+    // 批注联动(D-05):type=验收不过 的 open 批注指名走点修分流 —— 用户 Web 批注落盘后的机器入口
+    for (const a of readAnnotations(root).filter((x) => x?.status === "open" && x?.type === "验收不过"))
+      w(`批注指向 ${a.target},走点修分流(D-05):不新增 REQ + 不改 D-NN + ≤5 文件 → R 票,否则升级新 phase`);
   }
 
   if (PLAN_CHECK) errs.push(...reviewErrs);
@@ -710,8 +736,22 @@ const artifactInfo = { context: null, plans: [], summaries: [], verification: nu
     for (const i of validateInstance("context", artifactInfo.context, readFileSync(J(artifactInfo.context), "utf8"), null)) err(i.message, i.fix);
 
   const has = (a) => Boolean(a);
+  // 点修挂起推导(D-09,判定件在 references/repair-gates.mjs):R 票存在且未全部
+  // 「收口(SUMMARY complete)+ 重验 passed(VERIFICATION 重验节 - Rk: passed)」 → reopened。
+  // 必须排在 executing 判定之前 —— R 票会撑大 plans 数,summaries < plans 的老判据
+  // 会把一个已交付 phase 错推回 executing(21-RESEARCH 实测约束)。
+  const { repairStatus, readAnnotations } = await import("../references/repair-gates.mjs");
+  const repairs = repairStatus({
+    plans: artifactInfo.plans,
+    verificationText: artifactInfo.verification ? readFileSync(J(artifactInfo.verification), "utf8") : "",
+    summaryOf: (f) => {
+      const sf = artifactInfo.summaries.find((x) => x === f.replace("-PLAN.md", "-SUMMARY.md"));
+      return sf ? frontmatter(J(sf)) : null;
+    },
+  });
   if (!has(artifactInfo.context)) derived = "discussing";
   else if (artifactInfo.plans.length === 0) derived = "planning";
+  else if (repairs.length && repairs.some((r) => !r.closed || !r.passed)) derived = "reopened";
   else if (artifactInfo.summaries.length < artifactInfo.plans.length) derived = "executing";
   else {
     const vfm = artifactInfo.verification ? frontmatter(J(artifactInfo.verification)) : null;
@@ -859,6 +899,11 @@ const artifactInfo = { context: null, plans: [], summaries: [], verification: nu
     const text = readFileSync(J(f), "utf8");
     if (PLACEHOLDER.test(text)) warn(`${f}: 含占位文本 —— 判假完成风险(Known Stubs 节里的合法描述可忽略)`, "填真实内容或移到 Known Stubs 并说明原因");
   }
+
+  // ---- 批注提醒(D-04 后半):open 批注是用户 Web 审核落盘的待办 —— 黄不拦红(观测面) ----
+  // 消化动作在 discuss/plan SKILL 开头(按 type 分流);全 digested → 静默。
+  const openAnn = readAnnotations(root).filter((a) => a?.status === "open");
+  if (openAnn.length) warn(`${openAnn.length} 条用户批注待消化 —— mm-gsd web 查看,discuss/plan 开头消化`);
 }
 
 // ---- 输出 ----

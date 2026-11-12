@@ -65,6 +65,16 @@ node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --plan-check .plan
 - 仍非 0 → 把没清零的项**原样**报给用户:证据是命令输出与 PLAN-CHECK 的 findings 原文,
   不是你的转述。停在「⛔ 不能开工」,不进执行。
 
+## 点修轻量预审(R 票专用)
+
+点修票(`.planning/<NN>-Rk-PLAN.md`,挂原 phase)走**轻量预审**,不全维审 —— 修复票天生继承原 phase 已定决策面,全维审是重复劳动:**只审三件**
+
+1. **重验目标明确**:verify 指名要重验的那条 truth(引用原 VERIFICATION 的 truth 编号/名字),不写「修好再说」;
+2. **范围 ≤5 文件**:files_modified 超过 5 个就是升级信号,不是点修;
+3. **不扩 scope**:不新增 REQ、不改 CONTEXT 的 D-NN —— 修复若推翻决策,升级新 phase 走完整循环。
+
+其余维度(REQ 基线对账、研究消费、批图并行)对 R 票免审(机器门已放行:R 票不进批图、不触发研究门)。**复审 ≤2 轮**,与主预审同一上限;R 票 ≥3 张时 checker 会黄提醒强制升级 —— 预审看到该提醒应直接建议升级而不是继续放行。
+
 ## 红线
 
 - **不修计划**:发现是预审的事;改法归 plan,拍板归 discuss。你只校验、只转交。

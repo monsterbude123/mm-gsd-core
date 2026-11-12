@@ -105,6 +105,7 @@ ${C.b}mm-gsd${C.x} — 极简 GSD 核心安装器
       --local                 更新当前项目的 ./.agents/skills/(跳过宿主卡)
       --dir <path>            更新指定目录(跳过宿主卡)
       --home <dir>            覆盖家目录(测试用)
+  ${C.b}web${C.x}              过程看板:起本地服务(localhost)实时渲染各 phase/REQ/批注(只读+批注)
   ${C.b}--help${C.x}
 
 ${C.d}装完就能用:在项目里让 agent 调用 mm-gsd-discuss / plan / exec / verify / loop。${C.x}
@@ -327,6 +328,7 @@ const cmd = argv[0];
 if (!cmd || cmd === "install") process.exit(install());
 if (cmd === "doctor" || cmd === "--check" && argv.length === 1) process.exit(doctor());
 if (cmd === "update") process.exit(await update());
+if (cmd === "web") process.exit(spawnSync(process.execPath, [join(PKG_ROOT, "skills", "mm-gsd-loop", "scripts", "mm-gsd-web.mjs"), ...argv.slice(1)], { stdio: "inherit" }).status ?? 0);
 if (cmd === "check") process.exit(check());
 if (["stage", "summary", "commit", "wave-check"].includes(cmd)) {
   // 执行期工具转发(skills/mm-gsd-exec/scripts/,R-13:使用方手上只有 skills/)。

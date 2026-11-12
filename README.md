@@ -18,6 +18,7 @@ GSD Core 的设计我很喜欢——五步成环、fresh-context 子代理、规
 - [安装](#安装)
 - [五步成环](#五步成环)
 - [施工方与验收方:一条分工线](#施工方与验收方一条分工线)
+- [过程看板(Web)](#过程看板web)
 - [检查器](#检查器)
 - [遥测](#遥测)
 - [仓库结构](#仓库结构)
@@ -261,6 +262,17 @@ node $CK --plan-check .planning/<NN-MM>-PLAN.md     # 或:mm-gsd check --plan-ch
   改法与问题对不上，等于没给下一步
 
 ---
+
+## 过程看板(Web)
+
+`mm-gsd web` 起一个本机看板(零依赖,只绑 127.0.0.1,默认端口 4620,`--port` 可换),固定四区布局实时渲染 `.planning/` 的当前状态:
+
+1. **状态条** —— 声明 / 推导 / 活跃 phase(推导判定单一来源仍是检查器,看板不含推导);
+2. **REQ 溯源链** —— 每条需求一行:原话一句话 → 认领票;非 baseline 无人认领的 REQ 标红(「落差在验收才暴露」的对症面);
+3. **phase 卡网格** —— 每个 phase 的 PLAN/SUMMARY/预审/VERIFICATION/SHIP 生命周期,「用户原话」按钮展开 CONTEXT domain 原文;
+4. **批注区** —— 用户在页面上对 REQ / phase 提交批注(需求遗漏 / 方向不对 / 验收不过 / 备注)。
+
+**批注是唯一写通道**:看板对 `.planning/` 只读,POST /api/annotations 校验 schema 后落 `.planning/annotations.json`(status: open)。之后在 agent 会话里说「有新批注」——discuss/plan 开头消化(type→动作映射见各自 SKILL),消化后标 digested;type=验收不过 的 open 批注会让 checker 黄提醒走点修分流。已交付 phase 的单条细节没做好 → 走「点修」(R 票),不开新 phase。
 
 ## 遥测
 

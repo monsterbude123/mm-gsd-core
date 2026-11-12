@@ -9,7 +9,7 @@ description: "极简 GSD 主循环:discuss→plan→execute→verify→ship 五�
 
 ```
 .planning/
-├── STATE.md                        # 唯一状态入口;frontmatter.status ∈ {discussing,planning,executing,verifying,completed,shipped,paused}
+├── STATE.md                        # 唯一状态入口;frontmatter.status ∈ {discussing,planning,executing,verifying,completed,shipped,reopened,paused}
 ├── HANDOFF.md                      # 仅 paused 时存在
 ├── REQUIREMENTS.md                 # REQ-N 编号的唯一出处(discuss 落盘)
 └── <NN>-CONTEXT.md / <NN-MM>-PLAN.md / <NN-MM>-SUMMARY.md / <NN>-VERIFICATION.md / <NN-MM>-SHIP.md / <NN>-RESEARCH.md
@@ -102,6 +102,7 @@ node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --init "<一句话
 | PLAN 落盘 | `--plan` | 四件套 + read_first 齐、失败方向明确、文件清单可解析、预算未超;**预审门同批:PLAN-CHECK `status: passed` 才准进执行(双轨合一,见「五步成环」第 2 步)**;顺带打印本 phase 过程健康三数 |
 | 每步收尾 | 默认(无参数) | 声明与工件推导一致、无假完成信号、无交付缺口 |
 | 开多 worktree 前 | `--worktrees` | 跨 worktree 文件与 REQ 无冲突 |
+| 用户在 Web 批注后 | 默认(无参数) | open 批注 → 黄提醒「N 条待消化」;discuss/plan 开头消化(看板本身:`mm-gsd web`,只读 + 批注落盘) |
 | 改了模板或技能 | `--templates` / `--routes` | 6 份模板结构合规;每个技能都说清了自己的下一步 |
 | 排查 | `--stats` | 反复失败的同一个项目 = 死锁嫌疑 |
 | 改了检查器正则 | `--selfcheck` | 门禁对自己的用例仍全绿(防 admin 路径、全角括号那类判错) |
@@ -264,6 +265,24 @@ npx mm-gsd-core report "<一句话说清什么坏了>" --evidence "<你跑了什
 ### 跨波红窗(守卫跨波变红,计划期承载)
 
 红窗写进票面 frontmatter 的 `red_windows` 列表(`- <守卫或测试路径> | wave <N> | ticket <NN-MM> | close <判据>`,缺兑现票计划门判红,防永久豁免)。放行通道唯一:`mm-gsd commit --ticket` —— 先正常提交,失败项全落该票清单才 `--no-verify` 重试并标注受控放行,清单外失败 exit 2 停下(细节 `node skills/mm-gsd-exec/scripts/mm-gsd-commit.mjs --help`)。phase 收尾逐条核对清单里 `close` 判据是否兑现 —— 计划期声明的红窗机器可读,收尾对账不再人工整理。
+
+## 点修(已交付 phase 的快速修复)
+
+已交付的 phase 被发现某条细节没做到位(看板批注 type=验收不过、或 verify 新 gap),**不开新 phase、不贴疤** —— 走点修。触发后先分流,再开 R 票:
+
+**分流判据(三条全满足才点修,任一超出 → 升级新 phase 走完整循环;升级不是失败,是范围扩张的正确通道)**:
+
+1. 不新增 REQ(修复不引入新需求);
+2. 不改 CONTEXT 的 D-NN(修复不推翻已定决策);
+3. 修复面 ≤5 文件。
+
+**R 票形态**(命名钉死,checker 推导依赖它):`.planning/<NN>-Rk-PLAN.md` 挂原 phase(k 递增),四件套照填,verify 重验当时没达标的那条 truth;同名 `<NN>-Rk-SUMMARY.md` 收口;VERIFICATION 的「## 重验记录」节逐票追加 `- Rk: passed — 重验 <truth 名>`;关联批注标 digested。预审走点修轻量预审三查(mm-gsd-plan-check)。
+
+**STATE 翻转(推导依赖声明一致)**:R 票开出时 STATE status 改 reopened,重验 passed 后改回 shipped —— STATE 不许说谎,声明与推导不符 checker 照红,翻转是出口不是豁免。
+
+**上限(防疤叠疤)**:同一 truth/根因的 R 票 ≤2 张(全仓纪律数字 2);phase 累计 R 票 ≥3 → checker 黄提醒强制升级:重新 discuss 该 phase 或拆独立 phase。
+
+**与 fast 通道分清**:fast 不建工件、不进状态机;点修挂原 phase,批注→R票→重验→闭合全链可追溯。
 
 ## 假完成检测
 

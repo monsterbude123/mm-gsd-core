@@ -30,6 +30,14 @@ CONTEXT 里没被任何任务引用的 D-NN。**门禁报什么就改什么,不�
 
 **工件落点与归属**:`.planning/*` 是 agent 本地工作流记忆(STATE/CONTEXT/PLAN/SUMMARY/VERIFICATION),**本地不入库、不 push 远程**;项目 `.scratch/<主题>-<日期>/` 是**业务票面**(缺陷票/设计稿票),要入库共享给团队(该目录常被 git exclude,需 `git add -f`)。两者不可混放:流程记忆进 `.planning/`,业务产出进 `.scratch/`。
 
+## 用户批注消化(开头必做)
+
+拆票前先读 `.planning/annotations.json`:**status=open 的批注按 type 消化**,消化后把该条 status 改 digested(不消化,检查器一直黄提醒)。
+- **需求遗漏** → 回 mm-gsd-discuss 草拟 REQ 走确认门,REQ 进清单后本 phase 拆票认领;
+- **方向不对** → 回 mm-gsd-discuss 重开对应决策;
+- **备注** → 摘进相关票的 action 作为参考;
+- **验收不过** → 不在本批修,走 mm-gsd-loop 的「点修」分流(R 票);checker `--plan` 会对这类 open 批注黄提醒指名 target。
+
 ## codebase-map(入口级)
 
 拆票前生成 `.planning/codebase-map.md`(D-02),四节,**一屏内**:

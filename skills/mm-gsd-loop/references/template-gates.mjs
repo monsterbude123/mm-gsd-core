@@ -15,7 +15,7 @@
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
-const STATUSES = ["discussing", "planning", "executing", "verifying", "completed", "shipped", "paused"];
+const STATUSES = ["discussing", "planning", "executing", "verifying", "completed", "shipped", "reopened", "paused"];
 const SUMMARY_STATUSES = ["complete", "halted"];
 const VERIF_STATUSES = ["passed", "gaps_found", "human_needed"];
 const SHIP_STATUSES = ["shipped", "held"];
