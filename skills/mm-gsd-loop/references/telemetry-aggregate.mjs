@@ -65,6 +65,56 @@ export function runStats({ path, scope, all, log = console.log }) {
 }
 
 /**
+ * 工具级遥测聚合(REQ-18 / 20-CONTEXT D-04)—— checker --stats --tools 的呈现内核。
+ *
+ * 用户三问各对应一个数:grep 了多少次、子代理派发与角色分布、每个子代理跑多久。
+ * 近似时长的窗口终止符 = 该 cwd 的**下一个 Task 行**,末次派发标「进行中」(预审 F2:
+ * 宿主无 PostToolUse/UserPromptSubmit 可作精确终止符);记录器只 append,推导只在聚合层。
+ * 观测面:不判红不评分,也不与 runs.jsonl 的门禁分析混流(量级差一个数量级)。
+ */
+export function runToolStats({ path, log = console.log }) {
+  const rows = readRows(path);
+  if (!rows.length) {
+    log("尚无工具日志(" + path + ")。");
+    log("  跑 install --hooks 装上工具遥测(PreToolUse 机械记录,零上下文污染)后自然积累,再回来看 --stats --tools。");
+    return 0;
+  }
+  const byCwd = new Map();
+  for (const r of rows) {
+    const k = String(r.cwd ?? "(未知项目)");
+    if (!byCwd.has(k)) byCwd.set(k, []);
+    byCwd.get(k).push(r);
+  }
+  // grep 计数口径:Grep 工具行 + Bash 命令头含 grep/rg(词边界,免得 org/arge 误计)
+  const isGrep = (r) => r.tool === "Grep" || (r.tool === "Bash" && /\b(?:grep|rg)\b/.test(String(r.brief ?? "")));
+  const L = [
+    `\nmm-gsd 工具日志(${rows.length} 行,${byCwd.size} 个项目;日志 ${path})`,
+    "  时长为近似值:窗口 = Task 行 → 该项目下一个 Task 行,末次派发标「进行中」(宿主无 PostToolUse) —— 观测面,不判红",
+  ];
+  for (const [cwd, rs] of byCwd) {
+    const greps = rs.filter(isGrep).length;
+    const tasks = rs.filter((r) => r.tool === "Task");
+    const byType = {};
+    for (const t of tasks) { const k = String(t.subagent_type ?? "(未标)"); byType[k] = (byType[k] ?? 0) + 1; }
+    let mins = 0, open = null;
+    tasks.forEach((t, i) => {
+      const start = Date.parse(t.ts);
+      if (isNaN(start)) return;
+      const end = i + 1 < tasks.length ? Date.parse(tasks[i + 1].ts) : Date.now();
+      const m = Math.max(0, Math.round((end - start) / 60000));
+      if (i + 1 < tasks.length) mins += m;
+      else open = m;
+    });
+    L.push(`\n  ${cwd}`);
+    L.push(`    grep ${greps} 次(Grep 行 + Bash 含 grep/rg)   派发 ${tasks.length} 次(${Object.entries(byType).map(([k, v]) => k + "×" + v).join(", ") || "无"})`);
+    L.push(`    近似时长 ${mins}m${open !== null ? ` + 末次进行中 ${open}m` : "(无进行中的派发)"}`);
+  }
+  log(L.join("\n"));
+  log("");
+  return 0;
+}
+
+/**
  * phase 的过程健康三数:票数 / 受阻票数 / 缺口数。
  *
  * **量的来源是 phase 自己的工件历史(`.planning/` 下已落盘的文件),不是遥测**:

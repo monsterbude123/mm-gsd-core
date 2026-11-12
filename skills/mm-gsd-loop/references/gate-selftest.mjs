@@ -10,6 +10,7 @@ import { researchRequired, researchCompliant, checkResearchConsumed, checkResear
 import { checkBatchGraph, checkTicketBudget } from "./worktree-view.mjs";
 import { buildRouteBrief, pointerCard, listSkills } from "./agent-routing.mjs";
 import { extractTemplateBlock } from "./template-gates.mjs";
+import { runToolStats } from "./telemetry-aggregate.mjs";
 import { mkdtempSync, writeFileSync, rmSync, utimesSync, mkdirSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -574,6 +575,26 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
       && t().includes("## Known Stubs\n- src/a.ts:42 — 占位")
       && t().includes("## Deferred Issues\n- LF 归一")
       && t().includes("## Threat Flags\n- 新增 /admin 端点"), true, "notes 合法填进对应节(六字段与模板节字面一一对应,缺节按模板补建)");
+    rmSync(d, { recursive: true, force: true });
+  }
+  // ---- 工具日志聚合(REQ-18,20-01 T2):grep 计数与派发分布必须真的出得来(具名用例) ----
+  {
+    const d = mkdtempSync(join(tmpdir(), "mm-gsd-tstat-"));
+    const p = join(d, "tools.jsonl");
+    const row = (ts, cwd, tool, brief, extra = {}) => JSON.stringify({ ts, cwd, tool, brief, ...extra });
+    writeFileSync(p, [
+      row("2026-11-12T00:00:00.000Z", "P1", "Bash", "grep -rn foo src"),
+      row("2026-11-12T00:01:00.000Z", "P1", "Grep", "foo"),
+      row("2026-11-12T00:02:00.000Z", "P1", "Task", "施工", { subagent_type: "mm-gsd-exec", prompt_head: "照 PLAN" }),
+      row("2026-11-12T00:32:00.000Z", "P1", "Task", "验收", { subagent_type: "mm-gsd-verify", prompt_head: "推翻" }),
+      row("2026-11-12T01:00:00.000Z", "P1", "Bash", "cat f | rg bar"),
+    ].join("\n") + "\n");
+    let out = "";
+    runToolStats({ path: p, log: (s) => (out += s + "\n") });
+    eqN(/grep 3 次/.test(out), true, "工具日志聚合出 grep 计数(Grep 行 + Bash 含 grep/rg,rg 也计)");
+    eqN(out.includes("mm-gsd-exec×1") && out.includes("mm-gsd-verify×1"), true, "工具日志聚合出派发角色分布(subagent_type)");
+    eqN(out.includes("派发 2 次") && out.includes("近似时长"), true, "派发计数与近似时长口径在场");
+    eqN(out.includes("进行中"), true, "末次派发标「进行中」(预审 F2:无 PostToolUse/UserPromptSubmit 终止符)");
     rmSync(d, { recursive: true, force: true });
   }
   console.log(st.bad ? `\n${st.bad} 项自测不过 —— 门禁本身是坏的,先修门禁` : "\n✓ 门禁自测全过");

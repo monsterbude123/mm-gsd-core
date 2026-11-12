@@ -4,7 +4,7 @@
 //   npx mm-gsd-core                 安装(等价于 npx mm-gsd-core install)
 //   npx mm-gsd-core install         同上
 //   npx mm-gsd-core install --local 装到当前项目 ./.agents/skills/
-//   npx mm-gsd-core install --hooks 顺带装宿主 hook(危险 git 拦截)
+//   npx mm-gsd-core install --hooks 顺带装宿主 hook(危险 git 拦截 + 工具遥测)
 //   npx mm-gsd-core doctor          体检宿主环境与已装状态(只读)
 //   npx mm-gsd-core check [--plan]  跑状态检查器(转发)
 //   npx mm-gsd-core update          机械覆盖更新:整删重拷技能 + 无条件刷新自己的卡(零提问零判断)
@@ -94,14 +94,14 @@ ${C.b}mm-gsd${C.x} — 极简 GSD 核心安装器
   ${C.b}install${C.x}            把技能装到 ~/.agents/skills/(默认)
       --local                 装到当前项目的 ./.agents/skills/
       --dir <path>            装到指定目录
-      --hooks                 顺带装宿主 hook(危险 git 拦截,环境级)
+      --hooks                 顺带装宿主 hook(危险 git 拦截 + 工具遥测,环境级)
       --yes                   不问,全默认
       --uninstall             移除已装的技能
       --home <dir>            覆盖家目录(测试用;Windows 上 HOME 环境变量不生效,必须用这个)
   ${C.b}doctor${C.x}             体检:宿主环境、已装状态、hooks(只读,不改任何东西)
-  ${C.b}check${C.x} [args]       跑状态检查器(转发 --plan / --plan-check / --phases / --worktrees / --stats / --templates)
+  ${C.b}check${C.x} [args]       跑状态检查器(转发 --plan / --plan-check / --phases / --worktrees / --stats / --stats --tools / --templates)
   ${C.b}check --plan-check${C.x} <PLAN>  显式校验一份计划:现在能不能开工(退出码 0 = 能)
-  ${C.b}update${C.x}             机械覆盖更新:技能整删重拷、自己的宿主卡无条件刷新、守卫脚本刷新
+  ${C.b}update${C.x}             机械覆盖更新:技能整删重拷、自己的宿主卡无条件刷新、守卫/工具遥测脚本刷新
       --local                 更新当前项目的 ./.agents/skills/(跳过宿主卡)
       --dir <path>            更新指定目录(跳过宿主卡)
       --home <dir>            覆盖家目录(测试用)
@@ -190,7 +190,7 @@ function install() {
       log(out);
     } catch (e) { bad("hook 安装失败:\n" + String(e.stdout || "") + String(e.stderr || e.message)); }
   } else {
-    log(`\n  ${C.d}要装危险 git 拦截(host hook,环境级),加 --hooks${C.x}`);
+    log(`\n  ${C.d}要装宿主 hook(危险 git 拦截 + 工具遥测,环境级),加 --hooks${C.x}`);
   }
 
   head("接下来");
@@ -246,13 +246,15 @@ async function update() {
     if (!cards) warn("没有探测到任何宿主 agent 卡目录 —— 卡未更新(装卡用 install)");
   }
 
-  // 3) 守卫脚本:公共区文件刷新(各宿主 hook 配置指向它,配置本身不动 —— 那是 install --hooks 的活)
+  // 3) 守卫/遥测脚本:公共区文件刷新(各宿主 hook 配置指向它,配置本身不动 —— 那是 install --hooks 的活)
   if (!local && !has("--dir")) {
-    const guardSrc = join(SKILLS_SRC, "mm-gsd-loop", "hooks", "guard-dangerous-git.mjs");
-    const guardDst = join(HOME, ".agents", "hooks", "guard-dangerous-git.mjs");
-    mkdirSync(join(HOME, ".agents", "hooks"), { recursive: true });
-    cpSync(guardSrc, guardDst);
-    log(`  ${C.g}+${C.x} 守卫脚本已刷新 → ${guardDst}(hook 配置不动;要接线用 install --hooks)`);
+    const hooksDir = join(HOME, ".agents", "hooks");
+    mkdirSync(hooksDir, { recursive: true });
+    for (const f of ["guard-dangerous-git.mjs", "mm-gsd-tool-telemetry.mjs"]) {
+      const src = join(SKILLS_SRC, "mm-gsd-loop", "hooks", f);
+      if (existsSync(src)) cpSync(src, join(hooksDir, f));
+    }
+    log(`  ${C.g}+${C.x} 守卫/工具遥测脚本已刷新 → ${hooksDir}(hook 配置不动;要接线用 install --hooks)`);
   }
 
   head("完成");

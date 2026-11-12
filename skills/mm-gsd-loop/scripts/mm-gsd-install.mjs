@@ -157,15 +157,26 @@ if (!HOOKS_ONLY && !AGENTS_ONLY) {
   }
 }
 
-// ---------- 动作 2:危险 git 拦截(按宿主格式) ----------
+// ---------- 动作 2:宿主 hook(危险 git 拦截 + 工具遥测,按宿主格式) ----------
+// 幂等按条目名(20 预审 F1):守卫与遥测各自按命令特征串检测已装与否,缺哪个补哪个。
+// 旧检查只认 guard-dangerous-git 且已装即整段跳过 —— 守卫已装的机器上遥测永远装不上(20-RESEARCH §3)。
 if (!SKILLS_ONLY && !AGENTS_ONLY) {
-  const guardDest = H(".agents", "hooks", "guard-dangerous-git.mjs"); // 脚本放公共区,各宿主配置指向它
-  if (!existsSync(GUARD_SRC)) {
-    warns.push("未找到 guard-dangerous-git.mjs(技能主仓不完整)——为避免装出指向不存在脚本的死配置,跳过所有 hooks 安装");
+  const hooksDir = H(".agents", "hooks");                              // 脚本放公共区,各宿主配置指向它(守卫先例,F8)
+  const guardDest = join(hooksDir, "guard-dangerous-git.mjs");
+  const teleDest = join(hooksDir, "mm-gsd-tool-telemetry.mjs");
+  const TELEMETRY_SRC = join(MASTER, "mm-gsd-loop", "hooks", "mm-gsd-tool-telemetry.mjs");
+  const SRCS = [["守卫", GUARD_SRC, guardDest], ["工具遥测", TELEMETRY_SRC, teleDest]];
+  if (!SRCS.some(([, src]) => existsSync(src))) {
+    warns.push("未找到任何 hook 脚本(技能主仓不完整)——为避免装出指向不存在脚本的死配置,跳过所有 hooks 安装");
   } else {
-    if (existsSync(guardDest)) oks.push("危险 git 守卫脚本已就位(" + guardDest + ")");
-    else { mkdirSync(H(".agents", "hooks"), { recursive: true }); copyFileSync(GUARD_SRC, guardDest); changes.push("守卫脚本已放置 " + guardDest); }
-
+    mkdirSync(hooksDir, { recursive: true });
+    for (const [label, src, dst] of SRCS) {
+      if (!existsSync(src)) { warns.push("未找到 " + label + "脚本,跳过它的分发与接线"); continue; }
+      if (existsSync(dst)) oks.push(label + "脚本已就位(" + dst + ")");
+      else { copyFileSync(src, dst); changes.push(label + "脚本已放置 " + dst); }
+    }
+    // matcher 按工具名枚举(20 预审 F4):仓内先例只有具名 "Bash",无 "*" 证据,不猜
+    const TOOLS = ["Bash", "Grep", "Glob", "Read", "Task", "Write", "Edit", "Skill"];
     for (const [name, v] of targets) {
       if (!v.hook) { skips.push(name + " hooks:" + v.dist); continue; }
       const cfgPath = H(v.config);
@@ -174,27 +185,39 @@ if (!SKILLS_ONLY && !AGENTS_ONLY) {
         ? (cfg?.hooks && typeof cfg.hooks === "object" && !Array.isArray(cfg.hooks) ? cfg.hooks : null)          // settings.json: hooks.PreToolUse
         : (cfg?.hooks?.events ?? null);                                                                            // zcode: hooks.events.PreToolUse
       const list = eventsMap?.PreToolUse;
-      const installed = Array.isArray(list) && JSON.stringify(list).includes("guard-dangerous-git");
-      if (installed) { oks.push(name + " hooks:危险 git 拦截已启用"); continue; }
+      const has = (needle) => Array.isArray(list) && JSON.stringify(list).includes(needle);
+      const guardIn = has("guard-dangerous-git"), teleIn = has("mm-gsd-tool-telemetry");
+      if (guardIn && teleIn) { oks.push(name + " hooks:危险 git 拦截 + 工具遥测已启用"); continue; }
+      const missing = [!guardIn && "危险 git 拦截(reset --hard / force push 等先拦)", !teleIn && "工具遥测(机械记录工具调用,零上下文污染)"].filter(Boolean).join(" + ");
+      const want = await confirm(`给 ${name} 安装宿主 hook?缺的补:${missing}`, true);
+      if (!want) { skips.push(name + " hooks:未补齐(缺:" + missing + ")"); continue; }
 
-      const want = await confirm(`给 ${name} 安装危险 git 拦截?(reset --hard / clean -f / stash drop / force push / 删分支 / 全量 checkout 会先被拦下并给出更安全的替代)`, true);
-      if (!want) { skips.push(name + " hooks:未安装(破坏性 git 仍靠文本纪律)"); continue; }
-
-      const nodeCmd = "node \"" + guardDest + "\"";
+      // 只补缺的:源在(上面已复制)才进清单,避免装出指向不存在脚本的死配置
+      const addCmds = [];
+      if (!guardIn && existsSync(guardDest)) addCmds.push("node \"" + guardDest + "\"");
+      if (!teleIn && existsSync(teleDest)) addCmds.push("node \"" + teleDest + "\"");
+      const hookOf = (cmd) => v.hook === "zcode" ? { type: "command", command: cmd, timeout: 10 } : { type: "command", command: cmd };
+      const wire = (arr) => {
+        for (const t of TOOLS) {
+          let entry = arr.find((e) => e?.matcher === t && Array.isArray(e.hooks));
+          if (!entry) { entry = { matcher: t, hooks: [] }; arr.push(entry); }
+          for (const c of addCmds) if (!entry.hooks.some((h) => String(h?.command ?? "") === c)) entry.hooks.push(hookOf(c));
+        }
+      };
       if (v.hook === "claude") {
         if (!cfgPath || !cfg) { warns.push(name + ":读不到/解析不了 " + v.config + ",跳过(手动加 hooks 段)"); continue; }
         cfg.hooks = cfg.hooks ?? {};
         cfg.hooks.PreToolUse = Array.isArray(cfg.hooks.PreToolUse) ? cfg.hooks.PreToolUse : [];
-        cfg.hooks.PreToolUse.push({ matcher: "Bash", hooks: [{ type: "command", command: nodeCmd }] });
+        wire(cfg.hooks.PreToolUse);
         writeJsonSafe(cfgPath, cfg);
-        changes.push(name + " hooks:已写入 " + v.config + " 的 PreToolUse(Bash)");
+        changes.push(name + " hooks:已写入 " + v.config + " 的 PreToolUse(" + TOOLS.join("/") + ")");
       } else if (v.hook === "zcode") {
         if (!cfgPath || !cfg) { warns.push(name + ":读不到/解析不了 " + v.config + ",跳过"); continue; }
         cfg.hooks = cfg.hooks ?? {};
         cfg.hooks.enabled = true;
         cfg.hooks.events = cfg.hooks.events ?? {};
         cfg.hooks.events.PreToolUse = Array.isArray(cfg.hooks.events.PreToolUse) ? cfg.hooks.events.PreToolUse : [];
-        cfg.hooks.events.PreToolUse.push({ matcher: "Bash", hooks: [{ type: "command", command: nodeCmd, timeout: 10 }] });
+        wire(cfg.hooks.events.PreToolUse);
         writeJsonSafe(cfgPath, cfg);
         changes.push(name + " hooks:已写入 " + v.config + " 的 hooks.events.PreToolUse(需 hooks.enabled=true)");
       }

@@ -279,14 +279,14 @@ node ~/.agents/skills/mm-gsd-loop/scripts/mm-gsd-install.mjs            # 交互
 node ~/.agents/skills/mm-gsd-loop/scripts/mm-gsd-install.mjs --check    # 只体检,不改任何东西
 ```
 
-它做:检测项目现状 + 跑一遍检查器列出待修项 + 按需装宿主 hook(危险 git 拦截)+ 询问是否装 pre-commit(默认否,检查器已覆盖其阻断项)。
+它做:检测项目现状 + 跑一遍检查器列出待修项 + 按需装宿主 hook(守卫阻断 + 工具遥测纯记录)+ 询问是否装 pre-commit(默认否,检查器已覆盖其阻断项)。
 **不负责冷启动**(建 STATE 是 mm-gsd-loop 的活)。已实测:幂等、合并不覆盖既有配置、备份只留最初原件。
 
 ## 三层门禁(各管一段,互不替代)
 
 | 层 | 时点 | 管什么 | 强度 |
 |---|---|---|---|
-| **宿主 hook**(PreToolUse/Bash) | 命令执行前 | 破坏性 git(reset --hard / clean -f / stash drop / force push / 删分支 / 全量 checkout) | 环境级,agent 无法绕过 |
+| **宿主 hook**(PreToolUse) | 命令执行前 | 守卫:破坏性 git(reset --hard / clean -f / stash drop / force push / 删分支 / 全量 checkout);工具遥测:纯记录每次工具调用(零上下文污染) | 环境级,agent 无法绕过 |
 | **gsd-state-check**(每步收尾) | 工件写完 | 工件契约 + 状态一致性 + 假完成信号 + **交付缺口** | 流程级 |
 | **gsd-state-check `--plan`** | PLAN 落盘 | 四件套 + read_first 完整性 / fails_when 失败方向 / files_modified 可解析 / 任务预算 / 决策保真 | 流程级 |
 | **gsd-state-check `--phases` / `--worktrees`** | 并行开工前 | depends_on 环与波次 / 同波次零重叠 / 跨 worktree 文件与 REQ 冲突 | 流程级 |
@@ -301,7 +301,7 @@ node ~/.agents/skills/mm-gsd-loop/scripts/mm-gsd-install.mjs   # 自动探测宿
 
 安装器已适配的宿主与 hooks 落点:
 
-| 宿主 | 技能 | 危险 git 拦截 |
+| 宿主 | 技能 | 宿主 hook(守卫 + 工具遥测) |
 |---|---|---|
 | ZCode | 主仓原生(`~/.agents/skills/`) | ✅ `~/.zcode/cli/config.json` → `hooks.events.PreToolUse`(需 `hooks.enabled: true`) |
 | Claude Code | ✅ → `~/.claude/skills/` | ✅ `~/.claude/settings.json` → `hooks.PreToolUse` |
@@ -309,7 +309,12 @@ node ~/.agents/skills/mm-gsd-loop/scripts/mm-gsd-install.mjs   # 自动探测宿
 | Trae / Cursor | ✅ → 各自 `skills/` | ❌ 跳过(未验证 hooks 机制) |
 | MiniMax | — | ❌ 跳过(未发现 skills 目录约定) |
 
-用别的宿主?只要它读 `SKILL.md`,把 `~/.agents/skills/mm-gsd-*` 链到它的技能目录即可;hooks 那层对照它的文档手动加一条 PreToolUse(Bash)即可(守卫脚本本身是宿主无关的 node)。
+用别的宿主?只要它读 `SKILL.md`,把 `~/.agents/skills/mm-gsd-*` 链到它的技能目录即可;hooks 那层对照它的文档手动加 PreToolUse 条目即可(守卫/遥测脚本本身是宿主无关的 node)。
+
+工具遥测是纯观测面:记录器只 append 一行 JSON 就 exit 0,永不阻断、永不进模型上下文;
+聚合看 `node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --stats --tools`
+(grep 次数 / 派发角色 / 近似时长 —— 时长是近似值,窗口 = Task 行到该项目下一个 Task 行,末次标「进行中」)。
+隐私:只记工具名与命令头(截 140),不记文件内容全文;`GSD_TOOL_TELEMETRY=0` 全停。
 
 阻断时给出理由和更安全的替代(丢工作用 stash / 要存 WIP 用分支 / 强推用 --force-with-lease)。真需要执行时:改写命令避开匹配,或临时禁用该条 hook。
 

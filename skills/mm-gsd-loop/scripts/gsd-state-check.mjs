@@ -9,7 +9,7 @@
 //   --json    机读:{state, derived, errors, warnings}     --quiet  只退出码(CI)
 //   --init    建 STATE.md          --plan  校验 PLAN 文件          --phases 算波次
 //   --plan-check <PLAN>  显式校验:这份计划现在能不能开工(退出码 0 = 能)
-//   --worktrees 跨 worktree 冲突  --templates 模板自检            --stats   遥测聚合
+//   --worktrees 跨 worktree 冲突  --templates 模板自检            --stats   遥测聚合(--tools 工具级视图)
 //   --selfcheck  门禁对自己的正则自测(见 references/gate-selftest.mjs)
 //
 // 零依赖、跨平台(Windows/macOS/Linux)。GSD 原版等价物:verify.plan-structure +
@@ -38,6 +38,8 @@ const SKILL_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 const TELEMETRY = process.env.GSD_TELEMETRY !== "0";
 // GSD_TELEMETRY_PATH:测试注入点 —— 自测要在临时路径验证「失败行必须带原因」,不能写真家目录
 const TELEMETRY_PATH = process.env.GSD_TELEMETRY_PATH || join(homedir(), ".agents", "mm-gsd-runs.jsonl");
+// 工具级遥测日志(REQ-18,hook 脚本 mm-gsd-tool-telemetry.mjs 写入);同构注入先例,缺省与 hook 一致
+const TOOL_TELEMETRY_PATH = process.env.GSD_TOOL_TELEMETRY_PATH || join(homedir(), ".agents", "mm-gsd-tools.jsonl");
 // sandbox 标记:由**跑沙箱的一方**声明,不由被观测方猜路径。
 // 为什么不用「路径含 Temp 就当沙箱」:用户自己建在临时目录里的真项目会被误排除,
 // 而自测沙箱也可能被挪到别处。声明式标记不会骗人。
@@ -488,8 +490,10 @@ if (process.argv.includes("--phases")) {
 }
 
 // ---- --stats:遥测聚合。读用户级日志,跨项目可比(项目级日志已被自动遥测取代)----
+// --tools:工具级视图(REQ-18,20-CONTEXT D-04)—— grep 计数 / 派发分布 / 近似时长,只呈现不判红
 if (process.argv.includes("--stats")) {
-  const { runStats } = await import("../references/telemetry-aggregate.mjs");
+  const { runStats, runToolStats } = await import("../references/telemetry-aggregate.mjs");
+  if (process.argv.includes("--tools")) process.exit(runToolStats({ path: TOOL_TELEMETRY_PATH }));
   process.exit(runStats({ path: TELEMETRY_PATH, scope: root, all: process.argv.includes("--all") }));
 }
 

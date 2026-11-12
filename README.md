@@ -56,7 +56,7 @@ GSD Core 的设计我很喜欢——五步成环、fresh-context 子代理、规
 ```bash
 npx mm-gsd-core                 # 装到 ~/.agents/skills/
 npx mm-gsd-core install --local # 装到当前项目的 ./.agents/skills/
-npx mm-gsd-core install --hooks # 顺带装宿主 hook(危险 git 拦截)
+npx mm-gsd-core install --hooks # 顺带装宿主 hook(危险 git 拦截 + 工具遥测)
 npx mm-gsd-core update          # 机械覆盖更新:已装技能/宿主卡直接盖成包里这份(零提问,零判断)
 npx mm-gsd-core doctor          # 体检宿主环境与已装状态(只读)
 npx mm-gsd-core check --plan    # 直接跑状态检查器
@@ -86,13 +86,25 @@ npx mm-gsd-core check --plan    # 直接跑状态检查器
 git clone <this-repo>
 cp -r skills/mm-gsd-* ~/.agents/skills/
 
-# 危险 git 拦截(host hook,环境级,agent 无法绕过)
+# 危险 git 拦截 + 工具遥测(host hook,环境级)
 node ~/.agents/skills/mm-gsd-loop/scripts/mm-gsd-install.mjs --check   # 只体检
 node ~/.agents/skills/mm-gsd-loop/scripts/mm-gsd-install.mjs           # 装
 ```
 
 安装器覆盖 ZCode / Claude Code / Codex / Trae / Cursor，按各家格式写入；
 hooks 机制没验证过的宿主只装技能、不装 hook（fail-closed，宁可不装也不写坏配置）。
+
+**`install --hooks` 装两件**（同一 PreToolUse 通道，matcher 按工具名枚举
+Bash/Grep/Glob/Read/Task/Write/Edit/Skill，按条目名幂等——缺哪个补哪个，重跑不重复）：
+
+1. **危险 git 拦截**——阻断 reset --hard / clean -f 等破坏性命令（环境级，agent 无法绕过）；
+2. **工具遥测**——纯记录：机械记下每次工具调用 `{ts, cwd, tool, brief}`（零上下文污染，永不阻断），
+   Task 行另加独立字段 subagent_type 与 prompt 头。之后 `mm-gsd check --stats --tools` 聚合呈现：
+   grep 次数（Grep 行 + Bash 含 grep/rg）、子代理派发与角色分布、近似时长
+   （时长是**近似值**：窗口 = Task 行到该项目的下一个 Task 行，末次派发标「进行中」）。
+
+隐私口径：只记工具名与命令头（截 140），**不记文件内容全文**；日志 `~/.agents/mm-gsd-tools.jsonl`
+（超 8MB 轮转 .old，与门禁运行日志分文件）；`GSD_TOOL_TELEMETRY=0` 全停零写入。
 
 **这个仓库是真理源，`~/.agents/skills/` 是派生产物。** 改了逻辑先改这里，再同步过去。
 npm 包同样是从这里打的：`npm run pack:check` 会模拟一次真实安装，
