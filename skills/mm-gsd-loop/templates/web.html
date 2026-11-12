@@ -80,6 +80,24 @@
     border-radius: 7px; padding: 5px 10px; font-size: 13px; color: var(--fg-mut); }
   .viewnav button:hover { color: var(--fg); border-color: var(--border); }
   .viewnav button.active { background: var(--muted); color: var(--fg); border-color: var(--border); }
+
+  /* ── 总览(D-05):对账黄条 + 筛选条 + phase 总览表 + 详情面板 ── */
+  .psw { background: var(--amb-bg); color: var(--amb); border: 1px solid color-mix(in srgb, var(--amb) 40%, var(--border));
+    border-radius: 10px; padding: 8px 12px; margin-bottom: 12px; font-size: 13px; }
+  .psw div { margin: 2px 0; }
+  .fbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+  .fbar select { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 4px 8px; font-size: 13px; }
+  #phOverview tbody tr { cursor: pointer; }
+  .sdot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--fg-dim); margin-right: 4px; }
+  .sdot.on { background: var(--grn); border-color: var(--grn); }
+  .sdot.warn { background: var(--amb); border-color: var(--amb); }
+  .pddetail { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-top: 12px; }
+  .pddetail h4 { font-size: 13px; color: var(--fg-mut); margin: 14px 0 6px; }
+  .pd-plan { padding: 4px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
+  .pd-plan:last-child { border-bottom: 0; }
+  .pill.mut { background: var(--muted); color: var(--fg-dim); }
+  #debt-parked summary { font-size: 13px; color: var(--fg-mut); font-weight: 600; }
+  #debt-parked[open] > summary { margin-bottom: 8px; }
   h2 { font-size: 16px; margin: 26px 0 10px; display: flex; align-items: baseline; gap: 8px; }
   h2 small { font-size: 12px; font-weight: 400; color: var(--fg-dim); }
 
@@ -241,6 +259,7 @@
 </aside>
 <main>
   <section id="view-overview" class="view" aria-label="总览视图">
+  <div id="pswBar" class="psw" hidden></div>
   <section class="kpis" aria-label="概览">
     <button class="kpi" id="kReq" type="button" title="分母只算新增需求(baseline 是已交付的基线能力,不参与认领)"><span class="n" id="nReq">—</span><span class="t">REQ 已认领 / 新增需求</span><span class="bar"><i id="barReq" style="width:0%"></i></span></button>
     <button class="kpi" id="kPh" type="button"><span class="n" id="nPh">—</span><span class="t">phase 已交付(SHIP 工件)/ 总数</span><span class="bar"><i id="barPh" style="width:0%"></i></span></button>
@@ -250,12 +269,24 @@
     <button class="kpi" id="kDebt" type="button"><span class="n" id="nDebt">—</span><span class="t">欠账合计(问题/批注/挂条件)</span></button>
   </section>
 
-  <h2 id="hPh">Phases <small>五步 = 工件在场(讨论/计划/执行/验收/交付);判定以检查器为准</small></h2>
-  <div id="phases" class="grid"></div>
+  <h2 id="hPh">Phases 总览 <small>五步 = 工件在场(讨论/计划/执行/验收/交付);判定以检查器为准;点行看详情</small></h2>
+  <div class="fbar">
+    <label class="hint" for="fPhase">phase</label>
+    <select id="fPhase"><option value="all">全部</option><option value="active">进行中</option><option value="shipped">已交付</option></select>
+    <label class="hint" for="fDebt">挂账</label>
+    <select id="fDebt"><option value="all">全部</option><option value="debt">只看有挂账</option></select>
+    <label class="hint" for="fReq">REQ</label>
+    <select id="fReq"><option value="all">全部</option><option value="claimed">已认领</option><option value="unclaimed">未认领</option><option value="disposed">已处置</option></select>
+  </div>
+  <table id="phOverview">
+    <thead><tr><th scope="col">phase</th><th scope="col">标题</th><th scope="col">五步</th><th scope="col">票数</th><th scope="col">REQ 认领</th><th scope="col">SHIP</th><th scope="col" title="该 phase 工件里的未清偿 deferred 条数">挂账</th></tr></thead>
+    <tbody id="phRows"></tbody>
+  </table>
+  <section id="phase-detail" class="pddetail" hidden aria-label="phase 详情"></section>
   </section>
 
   <section id="view-debt" class="view" aria-label="欠账视图" hidden>
-  <h2 id="hDebt">欠账 <small>未闭环本地账问题 + 待消化批注 + 挂条件项;口径以台账处置为准</small></h2>
+  <h2 id="hDebt">欠账 <small>未闭环本地账问题 + 待消化批注 + 未清偿挂账;口径以台账处置为准(挂条件 / 关闭在下方折叠区,不计数)</small></h2>
   <div id="debt" class="debt">
     <section class="debtsec" id="debt-issues">
       <h3>本地账未闭环 <span class="cnt" id="cntDebtIssues">—</span></h3>
@@ -266,7 +297,7 @@
       <div class="debtsum" id="listDebtAnns"></div>
     </section>
     <section class="debtsec wide" id="debt-deferred">
-      <h3>挂条件 / 关闭项 <span class="cnt" id="cntDebtDeferred">—</span></h3>
+      <h3>未清偿挂账 <span class="cnt" id="cntDebtDeferred">—</span></h3>
       <div class="dscroll">
         <table>
           <thead><tr><th scope="col">项</th><th scope="col">分类</th><th scope="col">触发条件或关闭理由</th><th scope="col">归属</th><th scope="col">来源文件</th></tr></thead>
@@ -275,6 +306,16 @@
       </div>
     </section>
   </div>
+
+  <details id="debt-parked" class="debtsec wide">
+    <summary>挂条件 / 关闭 <span class="cnt" id="cntDebtParked">—</span> <small>已有触发条件 / 关闭理由的项,不计入欠账合计(D-03)</small></summary>
+    <div class="dscroll">
+      <table>
+        <thead><tr><th scope="col">项</th><th scope="col">分类</th><th scope="col">触发条件或关闭理由</th><th scope="col">归属</th><th scope="col">来源文件</th></tr></thead>
+        <tbody id="tblDebtParked"></tbody>
+      </table>
+    </div>
+  </details>
 
   <h2 id="hIss">本地账问题 <small>agent 记下但还没闭环的问题;闭环后本区自动清空</small></h2>
   <div id="issues" class="isslist"></div>
@@ -416,6 +457,109 @@ function stepsHtml(p) {
   return '<div class="steps" role="img" aria-label="生命周期:讨论' + (steps[0][1] ? "已落盘" : "未落盘") + "、计划" + (plan ? "已落盘" : "未落盘") + "、执行" + (sum ? "有 SUMMARY" : "未收口") + "、验收" + (ver ? "已落盘" : "未落盘") + "、交付" + (ship ? "已落盘" : "未落盘") + '">' + html.join("") + "</div>";
 }
 
+/* ── 总览(D-05):phase 总览表 + 详情面板 ──
+   挂账列口径唯一 = phases[].debt(服务端按 deferred source 的 <NN>- 前缀归 phase,未清偿口径);
+   REQ 处置 pill 数据 = reqs[].disposition(23-01 台账读端:active/delivered/superseded/obsolete)。 */
+let detailPhase = null;
+const PILL_BY_DISP = { delivered: "ship", superseded: "info", obsolete: "rep", active: "mut" };
+const dispPill = (d) => '<span class="pill ' + (PILL_BY_DISP[d] || "mut") + '">' + esc(d || "?") + "</span>";
+
+function coveredReqs(p) {
+  return (last.reqs || []).filter((r) => p.plans.some((pl) => r.claimed.some((t) => t.startsWith(pl.plan + " "))));
+}
+
+/* 总览表里的五步:纯圆点(文字版 stepsHtml 留给详情面板) */
+function stepsDots(p) {
+  const plan = p.plans.length > 0, sum = p.plans.some((x) => x.summary),
+    ver = Boolean(p.verification), ship = Boolean(p.ship);
+  return [["讨论", true, ""], ["计划", plan, ""], ["执行", sum, !sum && plan ? "warn" : ""], ["验收", ver, ""], ["交付", ship, ""]]
+    .map(([name, on, cls]) => '<i class="sdot ' + (on ? "on" : cls) + '" title="' + name + (on ? "已落盘" : "未落盘") + '"></i>')
+    .join("");
+}
+
+function renderOverview() {
+  if (!last) return;
+  const fPh = $("fPhase").value, fDb = $("fDebt").value, fRq = $("fReq").value;
+  const tb = $("phRows");
+  tb.innerHTML = "";
+  for (const p of last.phases || []) {
+    const shipped = p.ship?.status === "shipped" || p.done;
+    if (fPh === "active" && shipped) continue;
+    if (fPh === "shipped" && !shipped) continue;
+    if (fDb === "debt" && !(p.debt > 0)) continue;
+    const cov = coveredReqs(p);
+    const claimedN = cov.filter((r) => r.claimed.length).length;
+    if (fRq === "claimed" && !claimedN) continue;
+    if (fRq === "unclaimed" && claimedN) continue;
+    if (fRq === "disposed" && !(cov.length && cov.every((r) => r.disposition && r.disposition !== "active"))) continue;
+    const tr = tb.insertRow();
+    tr.dataset.phase = p.phase;
+    const tickets = p.plans.reduce((n, x) => n + x.tickets.length, 0);
+    const ship = p.ship ? (p.ship.status === "shipped" ? '<span class="pill ship">shipped</span>' : '<span class="pill warn">' + esc(p.ship.status) + "</span>") : '<span style="color:var(--fg-dim)">—</span>';
+    tr.insertCell().innerHTML = (p.debt > 0 ? '<span class="dot miss" title="有未清偿挂账"></span>' : "") + "<b>" + esc(p.phase) + "</b>";
+    tr.insertCell().innerHTML = '<span class="reqtext">' + esc(p.title || "") + "</span>";
+    tr.insertCell().innerHTML = stepsDots(p);
+    tr.insertCell().textContent = tickets;
+    tr.insertCell().textContent = claimedN + " / " + cov.length;
+    tr.insertCell().innerHTML = ship;
+    tr.insertCell().innerHTML = p.debt > 0 ? '<strong style="color:var(--amb)">' + p.debt + "</strong>" : "0";
+  }
+  if (!tb.rows.length) tb.innerHTML = '<tr><td colspan="7" class="empty">没有匹配筛选条件的 phase。</td></tr>';
+  if (detailPhase) renderDetail();
+}
+
+function renderDetail() {
+  const box = $("phase-detail");
+  const p = (last.phases || []).find((x) => x.phase === detailPhase);
+  if (!p) { box.hidden = true; detailPhase = null; return; }
+  box.hidden = false;
+  const ship = p.ship ? (p.ship.status === "shipped" ? '<span class="pill ship">shipped</span>' : '<span class="pill warn">' + esc(p.ship.status) + "</span>") : "";
+  const openRep = p.plans.filter((x) => x.isRepair && !x.summary).length;
+  const rep = openRep ? '<span class="pill rep">R×' + openRep + " 修复中</span>" : "";
+  const checks = p.plans.filter((x) => x.check).map((x) => x.plan + " " + esc(x.check.status)).join(" · ");
+  const cov = coveredReqs(p);
+  const covIds = cov.map((r) => "REQ:" + r.id);
+  const relAnns = (last.annotations || []).filter((a) => a.target === "phase:" + p.phase || covIds.includes(a.target));
+  box.innerHTML =
+    '<div class="ph"><b>' + esc(p.phase) + '</b><span class="title">' + esc(p.title || "") + "</span>" + ship + rep +
+    ' <button type="button" class="ghost" id="pdClose">收起</button></div>' +
+    stepsHtml(p) +
+    '<div class="meta"><span>' + p.plans.reduce((n, x) => n + x.tickets.length, 0) + " 票</span>" +
+    (p.verification ? "<span>验收 " + esc(p.verification.status) + "</span>" : "") +
+    (checks ? "<span>预审 " + checks + "</span>" : "") + "</div>" +
+    "<h4>工件清单</h4>" +
+    (p.plans.map((pl) =>
+      '<div class="pd-plan"><span class="tk">' + esc(pl.plan) + "</span>" +
+      (pl.isRepair ? ' <span class="pill rep">点修</span>' : "") +
+      (pl.summary ? ' <span class="pill ship">已收口</span>' : "") +
+      ' <span class="reqtext">' + esc(pl.goal || "") + "</span>" +
+      (pl.tickets.length ? '<div class="meta">' + pl.tickets.map((t) => '<span class="tk" title="' + esc(t.title) + '">' + esc(t.id) + "</span>").join("") + "</div>" : "") +
+      "</div>").join("") || '<div class="empty">无工件。</div>') +
+    "<h4>covers 的 REQ</h4>" +
+    (cov.length ? cov.map((r) =>
+      '<div class="drow"><b>' + esc(r.id) + "</b>" + dispPill(r.disposition) +
+      '<span class="dtxt reqtext">' + esc(r.text) + "</span>" +
+      '<span class="dmut">' + esc(r.claimed.join(" ")) + "</span></div>").join("")
+      : '<div class="empty">本 phase 没有 covers 的 REQ。</div>') +
+    "<h4>相关批注</h4>" +
+    (relAnns.length ? relAnns.map((a) =>
+      '<div class="ann ' + (a.status === "open" ? "open" : "digested") + '"><span class="who"><span class="pill ' +
+      (a.status === "open" ? "warn" : "ship") + '">' + esc(a.type) + "</span><br><span style=\"color:var(--fg-dim)\">" + esc(a.target) + "</span></span>" +
+      '<span class="txt">' + esc(a.text) + "</span>" +
+      '<span class="when" title="' + esc(a.ts) + '">' + relTime(a.ts) + "</span></div>").join("")
+      : '<div class="empty">无相关批注。</div>') +
+    '<details><summary>用户原话 / CONTEXT</summary><div class="ctx">' +
+    (last.contexts && last.contexts[p.phase] ? esc(String(last.contexts[p.phase]).slice(0, 2000)) : "(无 CONTEXT domain 原文)") + "</div></details>" +
+    '<div class="cardfoot"><button type="button" class="ghost" data-t="' + esc("phase:" + p.phase) + '">批注此 phase</button></div>';
+  $("pdClose").onclick = () => { detailPhase = null; box.hidden = true; };
+}
+
+function phaseDetail(phase) {
+  detailPhase = phase;
+  renderDetail();
+  $("phase-detail").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+}
+
 let last = null;
 async function load() {
   let st;
@@ -514,6 +658,33 @@ async function load() {
     td.textContent = "没有登记的挂条件 / 关闭项。";
   }
   $("cntDebtDeferred").textContent = debt.deferred.length + " 条";
+
+  /* ── 挂条件 / 关闭折叠区(D-03):数据 = debt.parked,不计数 —— 已有机器可读的处置理由 ── */
+  const parked = debt.parked || [];
+  const pdp = $("tblDebtParked");
+  pdp.innerHTML = "";
+  for (const d of parked) {
+    const tr = pdp.insertRow();
+    const c0 = tr.insertCell();
+    const box = document.createElement("div");
+    box.className = "clip";
+    box.textContent = d.text || "";
+    box.title = d.text || "";
+    c0.appendChild(box);
+    tr.insertCell().textContent = d.kind || "";
+    tr.insertCell().textContent = d.condition || "";
+    tr.insertCell().textContent = d.owner || "";
+    tr.insertCell().textContent = d.source || "";
+  }
+  if (!pdp.rows.length) {
+    const tr = pdp.insertRow();
+    const td = tr.insertCell();
+    td.colSpan = 5;
+    td.className = "empty";
+    td.textContent = "没有挂条件 / 关闭项。";
+  }
+  $("cntDebtParked").textContent = parked.length + " 条";
+
   const debtTotal = debt.counts && debt.counts.total != null
     ? debt.counts.total
     : debt.localIssues.length + debt.openAnnotations.length + debt.deferred.length;
@@ -557,7 +728,7 @@ async function load() {
     if (!r.baseline && !r.claimed.length) tr.className = "miss";
     const mark = r.baseline ? '<span class="dot base" title="baseline 已交付"></span>'
       : r.claimed.length ? '<span class="dot ok" title="已认领"></span>' : '<span class="dot miss" title="无人认领"></span>';
-    tr.insertCell().innerHTML = mark + "<b>" + esc(r.id) + "</b>" + (r.baseline ? ' <span class="pill info">baseline</span>' : "");
+    tr.insertCell().innerHTML = mark + "<b>" + esc(r.id) + "</b>" + (r.baseline ? ' <span class="pill info">baseline</span>' : "") + " " + dispPill(r.disposition);
     tr.insertCell().innerHTML = '<span class="reqtext">' + esc(r.text) + "</span>";
     const show = r.claimed.slice(0, 6), rest = r.claimed.length - show.length;
     tr.insertCell().innerHTML = r.claimed.length ? show.map(MONO_ID).join("") + (rest > 0 ? ' <span class="tk" title="' + esc(r.claimed.slice(6).join(", ")) + '">+' + rest + '</span>' : "")
@@ -568,30 +739,12 @@ async function load() {
   $("qCount").textContent = q ? "命中 " + tb.rows.length + " / " + st.reqs.length + " 条" : "";
   if (!tb.rows.length) tb.innerHTML = '<tr><td colspan="4" class="empty">没有匹配的 REQ。</td></tr>';
 
-  /* ── phase 卡网格 ── */
-  const ph = $("phases");
-  ph.innerHTML = "";
-  for (const p of st.phases) {
-    const div = document.createElement("div");
-    div.className = "card phase-card" + (p.done ? " done" : "");
-    const ship = p.ship ? (p.ship.status === "shipped" ? '<span class="pill ship">shipped</span>'
-      : '<span class="pill warn">' + esc(p.ship.status) + "</span>") : "";
-    const openRep = p.plans.filter((x) => x.isRepair && !x.summary).length;
-    const rep = openRep ? '<span class="pill rep">R×' + openRep + " 修复中</span>" : "";
-    const tickets = p.plans.reduce((n, x) => n + x.tickets.length, 0);
-    const checks = p.plans.filter((x) => x.check).map((x) => x.plan + " " + esc(x.check.status)).join(" · ");
-    div.innerHTML =
-      '<div class="ph"><b>' + esc(p.phase) + '</b><span class="title">' + esc(p.title || "") + "</span>" + ship + rep + "</div>" +
-      stepsHtml(p) +
-      '<div class="meta"><span>' + tickets + " 票</span>" +
-      (p.verification ? "<span>验收 " + esc(p.verification.status) + "</span>" : "") +
-      (checks ? "<span>预审 " + checks + "</span>" : "") + "</div>" +
-      '<details><summary>用户原话 / CONTEXT</summary><div class="ctx">' +
-      (st.contexts && st.contexts[p.phase] ? esc(String(st.contexts[p.phase]).slice(0, 2000)) : "(无 CONTEXT domain 原文)") + "</div></details>" +
-      '<div class="cardfoot"><button type="button" class="ghost" data-t="' + esc("phase:" + p.phase) + '">批注此 phase</button></div>';
-    ph.appendChild(div);
-  }
-  if (!st.phases.length) ph.innerHTML = '<div class="card empty">还没有 phase 工件。</div>';
+  /* ── 总览上屏(D-05):对账黄条 + phase 总览表(卡片的用户原话/CONTEXT 折叠、R 票修复中 pill、
+     预审/验收 meta 三处能力随迁进详情面板 renderDetail,不许丢)── */
+  const psw = st.productSurfaceWarn || [];
+  $("pswBar").hidden = !psw.length;
+  $("pswBar").innerHTML = psw.length ? "<div><b>product_surface 对账:</b>以下 REQ 已随 SHIP 声明产品面,但 req-ledger 还没有 delivered 行</div>" + psw.map((w) => "<div>" + esc(w) + "</div>").join("") : "";
+  renderOverview();
 
   /* ── 批注目标下拉 + 列表 ── */
   const sel = $("a-target");
@@ -650,17 +803,24 @@ $("annForm").addEventListener("submit", async (e) => {
     msg.textContent = "拒绝:" + (r.problems || []).join("; ");
   }
 });
-/* 事件委托:表格/卡片里的「批注」按钮 → 预填目标并聚焦 */
+/* 事件委托:表格/卡片里的「批注」按钮 → 预填目标、切到批注视图并聚焦 */
 document.addEventListener("click", (e) => {
   const b = e.target.closest("button[data-t]");
   if (!b) return;
   $("a-target").value = b.dataset.t;
   $("a-text").focus();
-  $("hAnn").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+  goView("annotations");
 });
-/* KPI 点击 → 滚到对应区块 */
-for (const [id, target] of [["kReq", "hReq"], ["kPh", "hPh"], ["kAnn", "hAnn"], ["kIss", "hIss"], ["kRep", "hPh"], ["kDebt", "hDebt"]])
-  $(id).onclick = () => $(target).scrollIntoView({ block: "start" });
+/* KPI 点击 → 跳对应视图(D-05 总览优先) */
+const goView = (v) => { if (routeFromHash() !== v) location.hash = "#" + v; else showView(v); };
+for (const [id, v] of [["kReq", "reqs"], ["kPh", "overview"], ["kAnn", "annotations"], ["kIss", "debt"], ["kRep", "overview"], ["kDebt", "debt"]])
+  $(id).onclick = () => goView(v);
+/* 总览:行点击 → 详情面板;筛选条变化 → 只重排总览表 */
+$("phOverview").addEventListener("click", (e) => {
+  const tr = e.target.closest("tr[data-phase]");
+  if (tr) phaseDetail(tr.dataset.phase);
+});
+for (const id of ["fPhase", "fDebt", "fReq"]) $(id).addEventListener("change", () => renderOverview());
 $("q").addEventListener("input", () => last && load());
 
 /* 自动刷新 15s,可暂停;reduced-motion 不影响数据刷新,只影响滚动动画 */
