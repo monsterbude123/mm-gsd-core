@@ -547,6 +547,31 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
     eqN(r.code === 0 && (r.j?.errors.length ?? 1) === 0 && (r.j?.warnings.length ?? 1) === 0, true, "scope 齐全 → 无警告(scoped 与 commits 同口径命中)");
     rmSync(d, { recursive: true, force: true });
   }
+  // ---- 票外实碰对账只认本批次的提交(phase 22 修):提交块按 %x1e 切,不靠主题行首 "(" ----
+  // 旧写法按行首 "(" 切块 → 主题开头没有 "(" 时整段 git log 变成一块,后面每一笔提交的文件
+  // 全算到最新那笔头上 → 别的批次的文件被报成"票外实碰"(实测把 22-01 的 8 个文件算到 22-02 头上)。
+  {
+    const d = mkdtempSync(join(tmpdir(), "mm-gsd-scope2-"));
+    const sh = (args) => { const r = spawnSync("git", args, { cwd: d, encoding: "utf8" }); if (r.status !== 0) throw new Error("git " + args.join(" ") + ": " + r.stderr); return r.stdout; };
+    sh(["init", "-q"]); sh(["config", "user.name", "t"]); sh(["config", "user.email", "t@t"]);
+    mkdirSync(join(d, ".planning"), { recursive: true });
+    writeFileSync(join(d, "a.mjs"), "export const a = 1;\n");
+    sh(["add", "-A"]); sh(["commit", "-q", "-m", "feat(99-01): 另一批"]);
+    writeFileSync(join(d, "b.md"), "b\n");
+    sh(["add", "-A"]); sh(["commit", "-q", "-m", "docs(99-02): 本批"]);
+    writeFileSync(join(d, ".planning", "STATE.md"), '---\nstatus: discussing\nactive_phase: "99"\n---\n');
+    writeFileSync(join(d, ".planning", "99-02-PLAN.md"), '---\nphase: "99"\nplan: "02"\ngoal: g\nrollback: r\nfiles_modified:\n  - b.md\n---\n');
+    writeFileSync(join(d, ".planning", "99-02-PLAN-CHECK.md"), '---\nstatus: passed\n---\n');
+    writeFileSync(join(d, ".planning", "99-02-SUMMARY.md"), '---\nphase: "99"\nplan: "02"\nstatus: complete\ncommits: 1\n---\n\n## One-liner\n\nx\n\n## Self-Check: PASSED\n');
+    const r = spawnSync(process.execPath, [CHECKER, "--json"], { cwd: d, encoding: "utf8" });
+    const out = String(r.stdout || "") + String(r.stderr || "");
+    let j = null;
+    try { j = JSON.parse(out.slice(out.indexOf("{"))); } catch {}
+    const stray = (j?.warnings ?? []).filter((w) => w.message.includes("票外实碰文件"));
+    eqN(stray.length, 0, "票外实碰对账只算本批次的提交(别的批次文件不算账)");
+    eqN(out.includes("a.mjs"), false, "票外实碰对账不把别的批次的文件算进来");
+    rmSync(d, { recursive: true, force: true });
+  }
   // ---- summary notes schema(phase 15 D-03):未知字段/类型错一次列全并拒绝;合法填进模板字面节 ----
   {
     const d = mkdtempSync(join(tmpdir(), "mm-gsd-notes-"));

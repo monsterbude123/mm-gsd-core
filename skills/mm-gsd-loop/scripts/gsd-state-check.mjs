@@ -822,13 +822,14 @@ const artifactInfo = { context: null, plans: [], summaries: [], verification: nu
             for (const f of parsePlanFile(readFileSync(J(pn), "utf8")).files) planFiles.add(f.replace(/\\/g, "/"));
           }
           if (planFiles.size) {
-            const r2 = spawnSync("git", ["log", "--name-only", "--format=%s"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+            // 提交块用 %x1e(记录分隔符)切,不要靠行首 "(" 切 —— 主题开头有没有 "(" 取决于作者怎么写,
+            // 靠它切块会把后面每一笔提交的文件全算到最新那笔头上(实测:别的批次的文件被报成"票外实碰")。
+            const r2 = spawnSync("git", ["log", "--name-only", "--format=%x1e%s"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
             if (r2.status === 0) {
               const touched = new Set();
-              // git log --format=%s --name-only 输出形状(实测):主题 \n 空行 \n 文件行 \n 主题 \n 空行 \n 文件行…
-              // 按行首 "(" 前瞻切分出每笔提交的块,块内首行=主题,其余=文件
-              for (const block of String(r2.stdout || "").split(/\r?\n(?=\()/)) {
-                const bl = block.split(/\r?\n/).filter((x) => x.trim());
+              // git log --format=%x1e%s --name-only 输出形状(实测):\x1e主题 \n 空行 \n 文件行 \n\x1e主题 …
+              for (const block of String(r2.stdout || "").split("\x1e")) {
+                const bl = block.split(/\r?\n/).map((x) => x.trim()).filter((x) => x);
                 if (!bl.length) continue;
                 if (!ids.some((id) => bl[0].includes(`(${id}):`))) continue;
                 for (const f of bl.slice(1)) touched.add(f.replace(/\\/g, "/"));
