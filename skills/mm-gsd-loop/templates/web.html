@@ -75,6 +75,11 @@
   .proj:hover { border-color: var(--border); color: var(--fg); }
   .proj.cur { background: var(--muted); color: var(--fg); border-color: var(--border); }
   .proj.off { opacity: .45; }
+  .viewnav { display: grid; gap: 2px; }
+  .viewnav button { display: block; width: 100%; text-align: left; background: transparent; border: 1px solid transparent;
+    border-radius: 7px; padding: 5px 10px; font-size: 13px; color: var(--fg-mut); }
+  .viewnav button:hover { color: var(--fg); border-color: var(--border); }
+  .viewnav button.active { background: var(--muted); color: var(--fg); border-color: var(--border); }
   h2 { font-size: 16px; margin: 26px 0 10px; display: flex; align-items: baseline; gap: 8px; }
   h2 small { font-size: 12px; font-weight: 400; color: var(--fg-dim); }
 
@@ -222,12 +227,20 @@
 </header>
 <div class="shell">
 <aside>
+  <nav id="views" class="viewnav" aria-label="视图">
+    <button type="button" data-view="overview">总览</button>
+    <button type="button" data-view="reqs">REQ</button>
+    <button type="button" data-view="debt">欠账</button>
+    <button type="button" data-view="telemetry">遥测</button>
+    <button type="button" data-view="annotations">批注</button>
+  </nav>
   <section class="sidebox" id="projBox" aria-label="项目">
     <h3>项目</h3>
     <div class="projlist" id="projList"></div>
   </section>
 </aside>
 <main>
+  <section id="view-overview" class="view" aria-label="总览视图">
   <section class="kpis" aria-label="概览">
     <button class="kpi" id="kReq" type="button" title="分母只算新增需求(baseline 是已交付的基线能力,不参与认领)"><span class="n" id="nReq">—</span><span class="t">REQ 已认领 / 新增需求</span><span class="bar"><i id="barReq" style="width:0%"></i></span></button>
     <button class="kpi" id="kPh" type="button"><span class="n" id="nPh">—</span><span class="t">phase 已交付(SHIP 工件)/ 总数</span><span class="bar"><i id="barPh" style="width:0%"></i></span></button>
@@ -237,6 +250,11 @@
     <button class="kpi" id="kDebt" type="button"><span class="n" id="nDebt">—</span><span class="t">欠账合计(问题/批注/挂条件)</span></button>
   </section>
 
+  <h2 id="hPh">Phases <small>五步 = 工件在场(讨论/计划/执行/验收/交付);判定以检查器为准</small></h2>
+  <div id="phases" class="grid"></div>
+  </section>
+
+  <section id="view-debt" class="view" aria-label="欠账视图" hidden>
   <h2 id="hDebt">欠账 <small>未闭环本地账问题 + 待消化批注 + 挂条件项;口径以台账处置为准</small></h2>
   <div id="debt" class="debt">
     <section class="debtsec" id="debt-issues">
@@ -258,6 +276,11 @@
     </section>
   </div>
 
+  <h2 id="hIss">本地账问题 <small>agent 记下但还没闭环的问题;闭环后本区自动清空</small></h2>
+  <div id="issues" class="isslist"></div>
+  </section>
+
+  <section id="view-telemetry" class="view" aria-label="遥测视图" hidden>
   <h2 id="hTel">工具遥测 <small>本机工具调用按天计数(本地日);数据源 ~/.agents/mm-gsd-tools.jsonl,只读</small></h2>
   <div id="telemetry" class="debt">
     <section class="debtsec wide" id="tel-chart">
@@ -270,6 +293,9 @@
     </section>
   </div>
 
+  </section>
+
+  <section id="view-reqs" class="view" aria-label="REQ 视图" hidden>
   <h2 id="hReq">REQ 溯源链 <small>原话一句话 → 认领票;红点 = 无人认领(需求遗漏)</small></h2>
   <div class="tools"><input id="q" type="search" placeholder="过滤 REQ / 原话 / 票号…" aria-label="过滤需求清单"></div><span id="qCount" class="hint" role="status"></span>
   <table id="reqs">
@@ -277,9 +303,9 @@
     <tbody></tbody>
   </table>
 
-  <h2 id="hPh">Phases <small>五步 = 工件在场(讨论/计划/执行/验收/交付);判定以检查器为准</small></h2>
-  <div id="phases" class="grid"></div>
+  </section>
 
+  <section id="view-annotations" class="view" aria-label="批注视图" hidden>
   <h2 id="hAnn">批注 <small>用户审核 → agent 消化;验收不过会触发点修分流</small></h2>
   <div class="annbox">
     <form class="annform" id="annForm">
@@ -299,8 +325,6 @@
     <div class="annlist" id="anns"></div>
   </div>
 
-  <h2 id="hIss">本地账问题 <small>agent 记下但还没闭环的问题;闭环后本区自动清空</small></h2>
-  <div id="issues" class="isslist"></div>
 </main>
 </div>
 <script>
@@ -322,6 +346,23 @@ const MONO_ID = (s) => '<span class="tk">' + esc(s) + "</span>";
     localStorage.setItem("mmgsd-theme", next);
   };
 })();
+
+/* ── 视图路由(D-05):五个视图容器 + 原生 hash 路由,刷新保持视图 ── */
+const VIEWS = ["overview", "reqs", "debt", "telemetry", "annotations"];
+function showView(v) {
+  const cur = VIEWS.includes(v) ? v : "overview";
+  for (const name of VIEWS) {
+    const el = $("view-" + name);
+    if (el) el.hidden = name !== cur;
+  }
+  for (const b of document.querySelectorAll("#views button[data-view]"))
+    b.classList.toggle("active", b.dataset.view === cur);
+}
+const routeFromHash = () => (location.hash || "#overview").slice(1);
+window.addEventListener("hashchange", () => showView(routeFromHash()));
+for (const b of document.querySelectorAll("#views button[data-view]"))
+  b.addEventListener("click", () => { location.hash = "#" + b.dataset.view; });
+showView(routeFromHash());
 
 /* 当前项目(D-04):?project= 跟随页面;批注提交与状态拉取都带上 */
 const projQuery = () => {

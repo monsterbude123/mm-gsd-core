@@ -278,6 +278,16 @@ function buildState(root) {
 
   // state 条(21-01 PLAN 契约):声明 / phase / 工件计数(含 R 票 pending 数)——
   // 只有计数,不含推导判定:推导单一来源是 checker(预审 F3)
+  // phase 挂账数(D-05,REQ-28 总览列唯一口径):该 phase 工件里的未清偿 deferred 条数,
+  // 按 deferred 条目 source 路径的 <NN>- 前缀归 phase;取分类感知后的未清偿口径(buildDebt 的
+  // deferred,parked 已剔除)。总览「挂账」列与「只看有挂账」筛选都消费这一字段 —— 屏上不出现第二个口径。
+  const debtByPhase = {};
+  for (const d of debt.deferred) {
+    const m = String(d.source ?? "").match(/(?:^|\/)(\d{2})-/);
+    if (m) debtByPhase[m[1]] = (debtByPhase[m[1]] ?? 0) + 1;
+  }
+  const phaseList = [...phases.values()].sort((a, b) => a.phase.localeCompare(b.phase));
+  for (const p of phaseList) p.debt = debtByPhase[p.phase] ?? 0;
   const allPlans = [...phases.values()].flatMap((p) => p.plans);
   return {
     generated: new Date().toISOString(),
@@ -291,7 +301,7 @@ function buildState(root) {
       summaries: allPlans.filter((x) => x.summary).length,
       repairsPending: allPlans.filter((x) => x.isRepair && !x.summary).length,
     },
-    phases: [...phases.values()].sort((a, b) => a.phase.localeCompare(b.phase)),
+    phases: phaseList,
     contexts,
     reqs, annotations,
     issuesOpen, issues,
