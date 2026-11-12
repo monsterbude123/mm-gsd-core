@@ -122,7 +122,7 @@
   .ctx { white-space: pre-wrap; font-size: 12px; color: var(--fg-mut); background: var(--muted);
     border-radius: 8px; padding: 8px 10px; margin: 6px 0; max-height: 220px; overflow: auto; }
   .cardfoot { display: flex; justify-content: flex-end; margin-top: 6px; }
-  .ghost { border: 1px solid var(--border); background: transparent; border-radius: 7px; padding: 2px 10px; font-size: 12px; color: var(--fg-mut); }
+  .ghost { border: 1px solid var(--border); background: transparent; border-radius: 7px; padding: 2px 10px; font-size: 12px; color: var(--fg-mut); white-space: nowrap; }
   .ghost:hover { color: var(--fg); border-color: var(--fg-dim); }
 
   /* ── 批注区 ── */
@@ -136,8 +136,13 @@
   .primary { background: var(--grn); color: #fff; border: 0; border-radius: 8px; padding: 5px 16px; font-weight: 500; }
   .primary:hover { filter: brightness(1.1); }
   .annform .msg { font-size: 12px; color: var(--fg-dim); min-height: 1em; }
+  .hint { font-size: 12px; color: var(--fg-dim); }
   .annform .msg.err { color: var(--red); }
   .annlist { margin-top: 12px; display: grid; gap: 6px; }
+  .isslist { display: grid; gap: 6px; }
+  .iss { display: flex; gap: 10px; align-items: center; padding: 8px 12px; }
+  .iss .itxt { flex: 1; font-size: 13px; }
+  .iss .mutd { font-family: var(--mono); font-size: 11px; color: var(--fg-dim); }
   .ann { display: flex; gap: 10px; align-items: flex-start; background: var(--muted); border-left: 3px solid var(--border);
     border-radius: 8px; padding: 7px 10px; }
   .ann.open { border-left-color: var(--amb); }
@@ -167,15 +172,15 @@
 </header>
 <main>
   <section class="kpis" aria-label="概览">
-    <button class="kpi" id="kReq" type="button"><span class="n" id="nReq">—</span><span class="t">REQ 已认领 / 总数</span><span class="bar"><i id="barReq" style="width:0%"></i></span></button>
-    <button class="kpi" id="kPh" type="button"><span class="n" id="nPh">—</span><span class="t">phase 已交付 / 总数</span><span class="bar"><i id="barPh" style="width:0%"></i></span></button>
+    <button class="kpi" id="kReq" type="button" title="分母只算新增需求(baseline 是已交付的基线能力,不参与认领)"><span class="n" id="nReq">—</span><span class="t">REQ 已认领 / 新增需求</span><span class="bar"><i id="barReq" style="width:0%"></i></span></button>
+    <button class="kpi" id="kPh" type="button"><span class="n" id="nPh">—</span><span class="t">phase 已交付(SHIP 工件)/ 总数</span><span class="bar"><i id="barPh" style="width:0%"></i></span></button>
     <button class="kpi" id="kAnn" type="button"><span class="n" id="nAnn">—</span><span class="t">open 批注待消化</span></button>
     <button class="kpi" id="kIss" type="button"><span class="n" id="nIss">—</span><span class="t">open 本地账问题</span></button>
     <button class="kpi" id="kRep" type="button"><span class="n" id="nRep">—</span><span class="t">点修票挂起(R 票)</span></button>
   </section>
 
   <h2 id="hReq">REQ 溯源链 <small>原话一句话 → 认领票;红点 = 无人认领(需求遗漏)</small></h2>
-  <div class="tools"><input id="q" type="search" placeholder="过滤 REQ / 原话 / 票号…" aria-label="过滤需求清单"></div>
+  <div class="tools"><input id="q" type="search" placeholder="过滤 REQ / 原话 / 票号…" aria-label="过滤需求清单"></div><span id="qCount" class="hint" role="status"></span>
   <table id="reqs">
     <thead><tr><th scope="col">REQ</th><th scope="col">原话一句话</th><th scope="col">认领票</th><th scope="col"><span class="sr">操作</span></th></tr></thead>
     <tbody></tbody>
@@ -194,6 +199,7 @@
         </select>
       </div>
       <textarea id="a-text" placeholder="批注内容…(验收不过 → 触发点修分流)" aria-label="批注内容"></textarea>
+      <div class="hint">类型怎么选:需求遗漏 → 补 REQ 走确认门 · 方向不对 → 回讨论重开决策 · 验收不过 → 点修分流 · 备注 → 记录参考</div>
       <div class="go">
         <button type="submit" class="primary">提交批注</button>
         <span id="a-msg" class="msg" role="status"></span>
@@ -201,6 +207,9 @@
     </form>
     <div class="annlist" id="anns"></div>
   </div>
+
+  <h2 id="hIss">本地账问题 <small>agent 记下但还没闭环的问题;闭环后本区自动清空</small></h2>
+  <div id="issues" class="isslist"></div>
 </main>
 <script>
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
@@ -227,6 +236,11 @@ async function post(target, type, text) {
   return r.json();
 }
 const fmtTime = (iso) => { const d = new Date(iso); return isNaN(d) ? esc(iso) : d.toLocaleTimeString("zh-CN", { hour12: false }); };
+const relTime = (iso) => { const d = new Date(iso); if (isNaN(d)) return esc(iso);
+  const s = (Date.now() - d.getTime()) / 1000;
+  if (s < 60) return "刚刚"; if (s < 3600) return Math.floor(s / 60) + " 分钟前";
+  if (s < 86400) return Math.floor(s / 3600) + " 小时前"; if (s < 604800) return Math.floor(s / 86400) + " 天前";
+  return d.toLocaleDateString("zh-CN"); };
 
 /* 生命周期五步:呈现工件在场(不判对错,推导归 checker) */
 function stepsHtml(p) {
@@ -251,8 +265,11 @@ async function load() {
   $("liveText").textContent = "每 15s 刷新 · 更新于 " + fmtTime(st.generated);
 
   /* ── 状态条 ── */
-  $("declared").textContent = st.declared ?? "—";
+  const noState = !st.declared;
+  $("declared").textContent = st.declared ?? "缺 STATE.md";
+  $("declared").title = noState ? '项目还没有 .planning/STATE.md —— 跑 mm-gsd check --init "<项目目标>" 一条命令建好(阶段卡仍按工件推导)' : "";
   $("phase").textContent = st.activePhase ?? "—";
+  $("phase").title = noState ? "初始化并填好 Phases 清单后显示活跃 phase" : "";
   $("arts").textContent = st.state ? st.state.plans + " 票 / " + st.state.summaries + " 收口" : "—";
 
   /* ── KPI ── */
@@ -261,7 +278,7 @@ async function load() {
   $("nReq").innerHTML = claimed + ' <small>/ ' + claimable.length + "</small>";
   $("barReq").style.width = (claimable.length ? Math.round(100 * claimed / claimable.length) : 0) + "%";
   $("kReq").className = "kpi" + (claimable.length && claimed < claimable.length ? " warn" : "");
-  const donePh = st.phases.filter((p) => p.done).length;
+  const donePh = st.phases.filter((p) => p.ship?.status === "shipped" || p.done).length;
   $("nPh").innerHTML = donePh + ' <small>/ ' + st.phases.length + "</small>";
   $("barPh").style.width = (st.phases.length ? Math.round(100 * donePh / st.phases.length) : 0) + "%";
   const openAnn = st.annotations.filter((a) => a.status === "open").length;
@@ -289,6 +306,7 @@ async function load() {
     const c = tr.insertCell();
     c.innerHTML = '<button type="button" class="ghost" data-t="' + esc("REQ:" + r.id) + '">批注</button>';
   }
+  $("qCount").textContent = q ? "命中 " + tb.rows.length + " / " + st.reqs.length + " 条" : "";
   if (!tb.rows.length) tb.innerHTML = '<tr><td colspan="4" class="empty">没有匹配的 REQ。</td></tr>';
 
   /* ── phase 卡网格 ── */
@@ -304,7 +322,7 @@ async function load() {
     const tickets = p.plans.reduce((n, x) => n + x.tickets.length, 0);
     const checks = p.plans.filter((x) => x.check).map((x) => x.plan + " " + esc(x.check.status)).join(" · ");
     div.innerHTML =
-      '<div class="ph"><b>' + esc(p.phase) + '</b><span class="title">' + esc(p.title || "(未命名)") + "</span>" + ship + rep + "</div>" +
+      '<div class="ph"><b>' + esc(p.phase) + '</b><span class="title">' + esc(p.title || "") + "</span>" + ship + rep + "</div>" +
       stepsHtml(p) +
       '<div class="meta"><span>' + tickets + " 票</span>" +
       (p.verification ? "<span>验收 " + esc(p.verification.status) + "</span>" : "") +
@@ -320,8 +338,9 @@ async function load() {
   const sel = $("a-target");
   const prev = sel.value;
   sel.innerHTML = '<option value="">目标…</option>' +
-    st.reqs.map((r) => '<option value="REQ:' + esc(r.id) + '">REQ:' + esc(r.id) + "</option>").join("") +
-    st.phases.map((p) => '<option value="phase:' + esc(p.phase) + '">phase:' + esc(p.phase) + "</option>").join("");
+    (st.reqs.length ? '<optgroup label="需求">' + st.reqs.map((r) => '<option value="REQ:' + esc(r.id) + '">REQ:' + esc(r.id) + "</option>").join("") + "</optgroup>" : "") +
+    (st.phases.length ? '<optgroup label="Phase">' + st.phases.map((p) => '<option value="phase:' + esc(p.phase) + '">phase:' + esc(p.phase) + "</option>").join("") + "</optgroup>" : "") +
+    ((st.issues || []).length ? '<optgroup label="本地账问题">' + st.issues.map((i) => '<option value="issue:' + esc(i.id) + '">' + esc(i.id) + "</option>").join("") + "</optgroup>" : "");
   sel.value = prev;
   const an = $("anns");
   an.innerHTML = st.annotations.length ? "" : '<div class="empty">还没有批注 —— 在上面提交一条,或在 agent 会话里说「有新批注」触发消化。</div>';
@@ -331,8 +350,22 @@ async function load() {
     div.innerHTML = '<span class="who"><span class="pill ' + (a.status === "open" ? "warn" : "ship") + '">' + esc(a.type) + "</span><br>" +
       '<span style="color:var(--fg-dim)">' + esc(a.target) + "</span></span>" +
       '<span class="txt">' + esc(a.text) + "</span>" +
-      '<span class="when">' + fmtTime(a.ts) + (a.status === "open" ? " · 待消化" : " · 已消化") + "</span>";
+      '<span class="when" title="' + esc(a.ts) + '">' + relTime(a.ts) + (a.status === "open" ? " · 待消化" : " · 已消化") + "</span>";
     an.appendChild(div);
+  }
+
+  /* ── 本地账问题清单 ── */
+  const ib = $("issues");
+  const openIss = (st.issues || []).filter((i) => i.open);
+  ib.innerHTML = openIss.length ? "" : '<div class="card empty">没有未闭环的本地账问题。</div>';
+  for (const i of openIss) {
+    const div = document.createElement("div");
+    div.className = "card iss";
+    div.innerHTML = '<span class="tk">' + esc(i.id) + "</span>" +
+      '<span class="itxt">' + esc(i.title) + "</span>" +
+      '<span class="mutd">' + esc(i.file) + "</span>" +
+      '<button type="button" class="ghost" data-t="issue:' + esc(i.id) + '">批注</button>';
+    ib.appendChild(div);
   }
 }
 
@@ -360,7 +393,7 @@ document.addEventListener("click", (e) => {
   $("hAnn").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
 });
 /* KPI 点击 → 滚到对应区块 */
-for (const [id, target] of [["kReq", "hReq"], ["kPh", "hPh"], ["kAnn", "hAnn"], ["kRep", "hPh"]])
+for (const [id, target] of [["kReq", "hReq"], ["kPh", "hPh"], ["kAnn", "hAnn"], ["kIss", "hIss"], ["kRep", "hPh"]])
   $(id).onclick = () => $(target).scrollIntoView({ block: "start" });
 $("q").addEventListener("input", () => last && load());
 

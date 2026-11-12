@@ -669,14 +669,24 @@ if (process.argv.includes("--init")) {
   process.exit(0);
 }
 
+// ---- 批注提醒(D-04 后半):独立于状态机 —— 未初始化(无 STATE)的项目也该看见待消化批注 ----
+// 实测教训:提醒原本住在 artifactInfo 块里,无 STATE 的项目在下面的早退分支出去,提醒永远不出现。
+{
+  const { readAnnotations } = await import("../references/repair-gates.mjs");
+  const openAnn = readAnnotations(root).filter((a) => a?.status === "open");
+  if (openAnn.length) warn(`${openAnn.length} 条用户批注待消化 —— mm-gsd web 查看,discuss/plan 开头消化`);
+}
+
 // ---- STATE ----
 if (!existsSync(P("STATE.md"))) {
   if (process.argv.includes("--json")) {
-    console.log(JSON.stringify({ state: null, derived: null, errors: [{ message: ".planning/STATE.md 不存在", fix: "跑 gsd-state-check.mjs --init 一条命令建好,别手搓" }], warnings: [] }));
+    console.log(JSON.stringify({ state: null, derived: null, errors: [{ message: ".planning/STATE.md 不存在", fix: "跑 gsd-state-check.mjs --init 一条命令建好,别手搓" }], warnings }));
   } else {
     console.log("mm-gsd 状态机:未初始化(无 .planning/STATE.md)。");
-    console.log("  → 跑 `node <本脚本> --init \"<项目目标>\"` 即可建好,不必手搓模板。");
+    console.log("  → 跑 `node <本脚本> --init \"<项目目标>\" 即可建好,不必手搓模板。");
     console.log("    (建 STATE 不是门禁的执行方该干的活 —— 门禁要的东西做不到,门禁就是死锁而不是门禁。)");
+    // 早退路径也要把已产生的警告带出去(批注提醒在这里产生,不打印等于没提醒)
+    for (const w of warnings) console.log(`  ! ${w.message}${w.fix ? `\n      → ${w.fix}` : ""}`);
   }
   err(".planning/STATE.md 不存在", "跑 gsd-state-check.mjs --init 一条命令建好,别手搓");
   process.exit(1);
@@ -740,7 +750,7 @@ const artifactInfo = { context: null, plans: [], summaries: [], verification: nu
   // 「收口(SUMMARY complete)+ 重验 passed(VERIFICATION 重验节 - Rk: passed)」 → reopened。
   // 必须排在 executing 判定之前 —— R 票会撑大 plans 数,summaries < plans 的老判据
   // 会把一个已交付 phase 错推回 executing(21-RESEARCH 实测约束)。
-  const { repairStatus, readAnnotations } = await import("../references/repair-gates.mjs");
+  const { repairStatus } = await import("../references/repair-gates.mjs");
   const repairs = repairStatus({
     plans: artifactInfo.plans,
     verificationText: artifactInfo.verification ? readFileSync(J(artifactInfo.verification), "utf8") : "",
@@ -899,11 +909,6 @@ const artifactInfo = { context: null, plans: [], summaries: [], verification: nu
     const text = readFileSync(J(f), "utf8");
     if (PLACEHOLDER.test(text)) warn(`${f}: 含占位文本 —— 判假完成风险(Known Stubs 节里的合法描述可忽略)`, "填真实内容或移到 Known Stubs 并说明原因");
   }
-
-  // ---- 批注提醒(D-04 后半):open 批注是用户 Web 审核落盘的待办 —— 黄不拦红(观测面) ----
-  // 消化动作在 discuss/plan SKILL 开头(按 type 分流);全 digested → 静默。
-  const openAnn = readAnnotations(root).filter((a) => a?.status === "open");
-  if (openAnn.length) warn(`${openAnn.length} 条用户批注待消化 —— mm-gsd web 查看,discuss/plan 开头消化`);
 }
 
 // ---- 输出 ----

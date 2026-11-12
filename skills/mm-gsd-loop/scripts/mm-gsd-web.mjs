@@ -164,13 +164,19 @@ function buildState() {
     if (m) contexts[phase] = m[1].trim().slice(0, 6000);
   }
 
-  let issuesOpen = 0;
+  // 本地账问题(issues/I-*.md):只有计数没有清单 = 用户看到一个数字没法动手 —— 一起给出
+  const issues = [];
   const issDir = P("issues");
   if (existsSync(issDir)) {
-    for (const f of readdirSync(issDir).filter((x) => /^I-.*\.md$/.test(x))) {
-      if (/^open$/m.test(readFileSync(join(issDir, f), "utf8"))) issuesOpen++;
+    for (const f of readdirSync(issDir).filter((x) => /^I-.*\.md$/.test(x)).sort()) {
+      const txt = readFileSync(join(issDir, f), "utf8");
+      const status = (txt.match(/##\s*状态\s*\n+([^\n]+)/) || [])[1]?.trim() ?? "?";
+      const title = (txt.match(/^#\s+(.+)$/m) || [])[1]?.trim() ?? f;
+      const id = f.replace(/\.md$/, "");
+      issues.push({ id, title: title.replace(new RegExp(`^${id}\\s*`), ""), status, open: /^open$/i.test(status), file: f });
     }
   }
+  const issuesOpen = issues.filter((i) => i.open).length;
 
   // state 条(21-01 PLAN 契约):声明 / phase / 工件计数(含 R 票 pending 数)——
   // 只有计数,不含推导判定:推导单一来源是 checker(预审 F3)
@@ -189,7 +195,7 @@ function buildState() {
     phases: [...phases.values()].sort((a, b) => a.phase.localeCompare(b.phase)),
     contexts,
     reqs, annotations,
-    issuesOpen,
+    issuesOpen, issues,
   };
 }
 
