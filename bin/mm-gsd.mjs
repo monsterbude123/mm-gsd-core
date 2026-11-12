@@ -106,6 +106,8 @@ ${C.b}mm-gsd${C.x} — 极简 GSD 核心安装器
       --dir <path>            更新指定目录(跳过宿主卡)
       --home <dir>            覆盖家目录(测试用)
   ${C.b}web${C.x}              过程看板:起本地服务(localhost)实时渲染各 phase/REQ/批注(只读+批注)
+      --port <n>             端口(默认 4620)
+  ${C.b}--version${C.x}           打印版本号
   ${C.b}--help${C.x}
 
 ${C.d}装完就能用:在项目里让 agent 调用 mm-gsd-discuss / plan / exec / verify / loop。${C.x}
@@ -352,6 +354,10 @@ if (cmd === "report") {
   process.exit(r.status ?? 1);
 }
 if (cmd === "--help" || cmd === "-h" || cmd === "help") { usage(); process.exit(0); }
+if (cmd === "--version" || cmd === "-v" || cmd === "version") {
+  log(`mm-gsd ${JSON.parse(readFileSync(join(PKG_ROOT, "package.json"), "utf8")).version}`);
+  process.exit(0);
+}
 bad(`未知命令 ${cmd}`);
 usage();
 process.exit(1);
