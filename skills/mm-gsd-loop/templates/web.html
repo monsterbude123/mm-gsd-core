@@ -1,121 +1,379 @@
 <!doctype html>
-<!-- mm-gsd 过程看板 —— 固定布局,数据来自 /api/state(实时读 .planning);对 .planning 只读,
-     唯一写通道是批注 POST /api/annotations。人类面为主(REQ-13):流程与上层规划,代码细节按钮展开。 -->
+<!-- mm-gsd 过程看板 —— 固定四区布局(状态条/REQ 溯源链/phase 卡网格/批注区),数据来自 /api/state;
+     对 .planning 只读,唯一写通道是批注 POST /api/annotations。
+     设计:暗色运维风(暗/亮双主题 prefers-color-scheme + 手动切换),系统字栈(零外部请求,R-06),
+     模块化字号 12/14/16/18/24,8px 间距节奏,内联 SVG 图标(不用 emoji),reduced-motion 降级。 -->
 <html lang="zh">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>mm-gsd 过程看板</title>
 <style>
-  :root { --line: #d0d4dc; --mut: #6b7280; --red: #c2372f; --grn: #1a7f37; --amb: #9a6700; }
-  body { font: 14px/1.55 system-ui, "Segoe UI", sans-serif; margin: 0; background: #f6f7f9; color: #1f2328; }
-  header { background: #1f2328; color: #fff; padding: 10px 20px; display: flex; gap: 16px; align-items: baseline; }
-  header b { font-size: 15px; } header .mut { color: #9ea7b3; }
-  main { max-width: 1100px; margin: 0 auto; padding: 16px; }
-  h2 { font-size: 15px; margin: 22px 0 8px; border-bottom: 1px solid var(--line); padding-bottom: 4px; }
-  .card { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 10px 14px; margin: 8px 0; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
-  .st { font-size: 12px; color: var(--mut); }
-  .pill { display: inline-block; border-radius: 10px; padding: 0 8px; font-size: 12px; margin-left: 6px; }
-  .pill.ship { background: #dafbe1; color: var(--grn); } .pill.warn { background: #fff8c5; color: var(--amb); }
-  .pill.rep { background: #ffebe9; color: var(--red); }
-  table { width: 100%; border-collapse: collapse; background: #fff; }
-  td, th { border: 1px solid var(--line); padding: 5px 8px; text-align: left; font-size: 13px; }
-  .miss { color: var(--red); font-weight: 600; }
-  .base { color: var(--mut); font-size: 12px; }
-  button { border: 1px solid var(--line); background: #fff; border-radius: 5px; padding: 2px 10px; cursor: pointer; font-size: 12px; }
-  button:hover { background: #eef1f4; }
-  details { margin: 6px 0; } summary { cursor: pointer; }
-  textarea { width: 100%; min-height: 56px; font: inherit; box-sizing: border-box; }
-  select, input { padding: 3px 6px; font: inherit; }
-  .ann { border-left: 3px solid var(--line); margin: 6px 0; padding: 4px 10px; background: #fff; }
-  .ann.open { border-left-color: var(--amb); } .ann.digested { border-left-color: var(--grn); opacity: .75; }
-  .mutd { color: var(--mut); font-size: 12px; }
+  :root {
+    --bg: #0f172a; --card: #111827; --muted: #1e293b; --border: #334155;
+    --fg: #f8fafc; --fg-mut: #cbd5e1; --fg-dim: #94a3b8;
+    --grn: #16a34a; --grn-bg: #14532d; --red: #f87171; --red-bg: #450a0a;
+    --amb: #fbbf24; --amb-bg: #451a03; --ink: #93c5fd; --ink-bg: #172554;
+    --ring: #16a34a; --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+    --shadow: 0 1px 3px rgb(0 0 0 / .4);
+  }
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f1f5f9; --card: #ffffff; --muted: #e2e8f0; --border: #cbd5e1;
+      --fg: #0f172a; --fg-mut: #334155; --fg-dim: #64748b;
+      --grn: #15803d; --grn-bg: #dcfce7; --red: #b91c1c; --red-bg: #fee2e2;
+      --amb: #a16207; --amb-bg: #fef3c7; --ink: #1d4ed8; --ink-bg: #dbeafe;
+      --shadow: 0 1px 3px rgb(15 23 42 / .1);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #f1f5f9; --card: #ffffff; --muted: #e2e8f0; --border: #cbd5e1;
+    --fg: #0f172a; --fg-mut: #334155; --fg-dim: #64748b;
+    --grn: #15803d; --grn-bg: #dcfce7; --red: #b91c1c; --red-bg: #fee2e2;
+    --amb: #a16207; --amb-bg: #fef3c7; --ink: #1d4ed8; --ink-bg: #dbeafe;
+    --shadow: 0 1px 3px rgb(15 23 42 / .1);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.55 system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; }
+  button, select, input, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :is(button, select, input, textarea, summary, a):focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+  @media (prefers-reduced-motion: no-preference) {
+    .card, .kpi { transition: border-color .15s ease, transform .15s ease; }
+    .pill, .dot { transition: background-color .15s ease; }
+  }
+
+  /* ── 状态条(粘性头部)── */
+  header { position: sticky; top: 0; z-index: 10; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+    padding: 10px 20px; background: color-mix(in srgb, var(--card) 92%, transparent); backdrop-filter: blur(6px);
+    border-bottom: 1px solid var(--border); box-shadow: var(--shadow); }
+  header h1 { font-size: 16px; margin: 0; letter-spacing: .3px; }
+  header .spacer { flex: 1; }
+  .chip { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--border); border-radius: 999px;
+    padding: 2px 10px; font-size: 12px; background: var(--muted); white-space: nowrap; }
+  .chip b { font-weight: 600; }
+  .icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--card); color: var(--fg-mut); }
+  .icon-btn:hover { border-color: var(--fg-dim); color: var(--fg); }
+  .icon-btn[aria-pressed="true"] { color: var(--grn); border-color: var(--grn); }
+  #live { font-family: var(--mono); font-size: 12px; color: var(--fg-dim); }
+  #live .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--grn); margin-right: 5px; vertical-align: 1px; }
+  #live.stale .dot { background: var(--amb); }
+
+  main { max-width: 1180px; margin: 0 auto; padding: 16px 20px 48px; }
+  h2 { font-size: 16px; margin: 26px 0 10px; display: flex; align-items: baseline; gap: 8px; }
+  h2 small { font-size: 12px; font-weight: 400; color: var(--fg-dim); }
+
+  /* ── KPI 概览条 ── */
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+  .kpi { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px;
+    text-align: left; display: block; width: 100%; }
+  .kpi:hover { border-color: var(--fg-dim); }
+  .kpi .n, .kpi .t, .kpi .bar { display: block; }
+  .kpi .n { font-family: var(--mono); font-size: 24px; font-weight: 600; line-height: 1.2; }
+  .kpi .n small { font-size: 13px; color: var(--fg-dim); font-weight: 400; }
+  .kpi .t { font-size: 12px; color: var(--fg-mut); }
+  .kpi.warn .n { color: var(--amb); }
+  .kpi.bad .n { color: var(--red); }
+  .kpi .bar { height: 4px; border-radius: 2px; background: var(--muted); margin-top: 6px; overflow: hidden; }
+  .kpi .bar i { display: block; height: 100%; background: var(--grn); }
+
+  /* ── REQ 溯源链 ── */
+  .tools { display: flex; gap: 8px; margin-bottom: 8px; }
+  .tools input { flex: 1; max-width: 320px; background: var(--card); border: 1px solid var(--border);
+    border-radius: 8px; padding: 5px 10px; }
+  table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; overflow: hidden; }
+  th, td { text-align: left; padding: 7px 12px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: top; }
+  th { background: var(--muted); font-size: 12px; color: var(--fg-mut); font-weight: 600; }
+  tr:last-child td { border-bottom: 0; }
+  tbody tr:hover { background: color-mix(in srgb, var(--muted) 55%, transparent); }
+  tr.miss { background: color-mix(in srgb, var(--red-bg) 45%, transparent); }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; vertical-align: 0; }
+  .dot.ok { background: var(--grn); } .dot.miss { background: var(--red); } .dot.base { background: var(--fg-dim); }
+  .tk { font-family: var(--mono); font-size: 12px; background: var(--muted); border-radius: 5px; padding: 1px 6px; margin-right: 4px; }
+  .reqtext { color: var(--fg-mut); }
+
+  /* ── phase 卡网格 ── */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 10px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .card.done { border-color: color-mix(in srgb, var(--grn) 55%, var(--border)); }
+  .ph { display: flex; align-items: center; gap: 8px; }
+  .ph b { font-family: var(--mono); font-size: 15px; }
+  .ph .title { color: var(--fg-mut); font-size: 13px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pill { display: inline-block; border-radius: 999px; padding: 1px 9px; font-size: 12px; font-weight: 500; }
+  .pill.ship { background: var(--grn-bg); color: var(--grn); }
+  .pill.warn { background: var(--amb-bg); color: var(--amb); }
+  .pill.rep  { background: var(--red-bg); color: var(--red); }
+  .pill.info { background: var(--ink-bg); color: var(--ink); }
+  /* 生命周期五步(工件在场呈现,推导判定仍归 checker) */
+  .steps { display: flex; align-items: center; gap: 4px; margin: 10px 0 8px; }
+  .step { display: flex; flex-direction: column; align-items: center; gap: 3px; flex: 1; }
+  .step i { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--fg-dim); }
+  .step.on i { background: var(--grn); border-color: var(--grn); }
+  .step.warn i { background: var(--amb); border-color: var(--amb); }
+  .step span { font-size: 11px; color: var(--fg-dim); }
+  .step.on span, .step.warn span { color: var(--fg-mut); }
+  .steps .ln { flex: 1; height: 1px; background: var(--border); margin-bottom: 14px; }
+  .meta { font-size: 12px; color: var(--fg-dim); display: flex; flex-wrap: wrap; gap: 4px 10px; }
+  details { margin-top: 8px; }
+  summary { cursor: pointer; font-size: 12px; color: var(--fg-mut); }
+  summary:hover { color: var(--fg); }
+  .ctx { white-space: pre-wrap; font-size: 12px; color: var(--fg-mut); background: var(--muted);
+    border-radius: 8px; padding: 8px 10px; margin: 6px 0; max-height: 220px; overflow: auto; }
+  .cardfoot { display: flex; justify-content: flex-end; margin-top: 6px; }
+  .ghost { border: 1px solid var(--border); background: transparent; border-radius: 7px; padding: 2px 10px; font-size: 12px; color: var(--fg-mut); }
+  .ghost:hover { color: var(--fg); border-color: var(--fg-dim); }
+
+  /* ── 批注区 ── */
+  .annbox { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .annform { display: grid; gap: 8px; }
+  .annform .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .annform select { background: var(--muted); border: 1px solid var(--border); border-radius: 8px; padding: 5px 8px; }
+  .annform textarea { width: 100%; min-height: 60px; resize: vertical; background: var(--muted);
+    border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; }
+  .annform .go { display: flex; align-items: center; gap: 10px; }
+  .primary { background: var(--grn); color: #fff; border: 0; border-radius: 8px; padding: 5px 16px; font-weight: 500; }
+  .primary:hover { filter: brightness(1.1); }
+  .annform .msg { font-size: 12px; color: var(--fg-dim); min-height: 1em; }
+  .annform .msg.err { color: var(--red); }
+  .annlist { margin-top: 12px; display: grid; gap: 6px; }
+  .ann { display: flex; gap: 10px; align-items: flex-start; background: var(--muted); border-left: 3px solid var(--border);
+    border-radius: 8px; padding: 7px 10px; }
+  .ann.open { border-left-color: var(--amb); }
+  .ann.digested { border-left-color: var(--grn); opacity: .72; }
+  .ann .who { font-size: 12px; white-space: nowrap; }
+  .ann .txt { flex: 1; font-size: 13px; }
+  .ann .when { font-family: var(--mono); font-size: 11px; color: var(--fg-dim); white-space: nowrap; }
+  .empty { color: var(--fg-dim); font-size: 13px; padding: 10px 4px; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 </style>
 </head>
 <body>
-<header><b>mm-gsd 过程看板</b><span id="declared" class="mut"></span><span id="gen" class="mut"></span></header>
+<header>
+  <h1>mm-gsd 过程看板</h1>
+  <span class="chip">声明 <b id="declared">—</b></span>
+  <span class="chip">活跃 phase <b id="phase">—</b></span>
+  <span class="chip">工件 <b id="arts">—</b></span>
+  <span class="spacer"></span>
+  <span id="live" aria-live="polite"><span class="dot" aria-hidden="true"></span><span id="liveText">连接中…</span></span>
+  <button id="pauseBtn" class="icon-btn" aria-pressed="false" title="暂停/恢复自动刷新(15s)" aria-label="暂停或恢复自动刷新">
+    <svg id="icoPause" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M5 3v10M11 3v10"/></svg>
+    <svg id="icoPlay" width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" style="display:none"><path d="M4 3l9 5-9 5z"/></svg>
+  </button>
+  <button id="themeBtn" class="icon-btn" title="切换暗/亮主题" aria-label="切换暗亮主题">
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M8 2v2M8 12v2M2 8h2M12 8h2M4 4l1.4 1.4M10.6 10.6L12 12M12 4l-1.4 1.4M5.4 10.6L4 12"/><circle cx="8" cy="8" r="2.4"/></svg>
+  </button>
+</header>
 <main>
-  <h2>需求(REQ 溯源链:原话 → 认领票)</h2>
-  <table id="reqs"><tr><th>REQ</th><th>原话一句话</th><th>认领票</th></tr></table>
+  <section class="kpis" aria-label="概览">
+    <button class="kpi" id="kReq" type="button"><span class="n" id="nReq">—</span><span class="t">REQ 已认领 / 总数</span><span class="bar"><i id="barReq" style="width:0%"></i></span></button>
+    <button class="kpi" id="kPh" type="button"><span class="n" id="nPh">—</span><span class="t">phase 已交付 / 总数</span><span class="bar"><i id="barPh" style="width:0%"></i></span></button>
+    <button class="kpi" id="kAnn" type="button"><span class="n" id="nAnn">—</span><span class="t">open 批注待消化</span></button>
+    <button class="kpi" id="kIss" type="button"><span class="n" id="nIss">—</span><span class="t">open 本地账问题</span></button>
+    <button class="kpi" id="kRep" type="button"><span class="n" id="nRep">—</span><span class="t">点修票挂起(R 票)</span></button>
+  </section>
 
-  <h2>Phases</h2>
+  <h2 id="hReq">REQ 溯源链 <small>原话一句话 → 认领票;红点 = 无人认领(需求遗漏)</small></h2>
+  <div class="tools"><input id="q" type="search" placeholder="过滤 REQ / 原话 / 票号…" aria-label="过滤需求清单"></div>
+  <table id="reqs">
+    <thead><tr><th scope="col">REQ</th><th scope="col">原话一句话</th><th scope="col">认领票</th><th scope="col"><span class="sr">操作</span></th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <h2 id="hPh">Phases <small>五步 = 工件在场(讨论/计划/执行/验收/交付);判定以检查器为准</small></h2>
   <div id="phases" class="grid"></div>
 
-  <h2>批注(用户审核 → agent 消化)</h2>
-  <div class="card">
-    <div style="display:flex;gap:8px;align-items:flex-start;">
-      <select id="a-target"><option value="">目标…</option></select>
-      <select id="a-type"><option>备注</option><option>需求遗漏</option><option>方向不对</option><option>验收不过</option></select>
-    </div>
-    <textarea id="a-text" placeholder="批注内容…(验收不过 → 触发点修分流)"></textarea>
-    <div style="margin-top:6px;"><button id="a-post">提交批注</button> <span id="a-msg" class="mutd"></span></div>
+  <h2 id="hAnn">批注 <small>用户审核 → agent 消化;验收不过会触发点修分流</small></h2>
+  <div class="annbox">
+    <form class="annform" id="annForm">
+      <div class="row">
+        <select id="a-target" aria-label="批注目标"><option value="">目标…</option></select>
+        <select id="a-type" aria-label="批注类型">
+          <option>备注</option><option>需求遗漏</option><option>方向不对</option><option>验收不过</option>
+        </select>
+      </div>
+      <textarea id="a-text" placeholder="批注内容…(验收不过 → 触发点修分流)" aria-label="批注内容"></textarea>
+      <div class="go">
+        <button type="submit" class="primary">提交批注</button>
+        <span id="a-msg" class="msg" role="status"></span>
+      </div>
+    </form>
+    <div class="annlist" id="anns"></div>
   </div>
-  <div id="anns"></div>
 </main>
 <script>
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const $ = (id) => document.getElementById(id);
+const MONO_ID = (s) => '<span class="tk">' + esc(s) + "</span>";
+
+/* 主题:跟随系统 + 手动切换(localStorage 记忆) */
+(() => {
+  const root = document.documentElement;
+  const saved = localStorage.getItem("mmgsd-theme");
+  if (saved) root.dataset.theme = saved;
+  $("themeBtn").onclick = () => {
+    const cur = getComputedStyle(root).getPropertyValue("--bg").trim();
+    const sysLight = matchMedia("(prefers-color-scheme: light)").matches;
+    const nowLight = root.dataset.theme === "light" || (!root.dataset.theme && sysLight);
+    const next = nowLight ? "dark" : "light";
+    root.dataset.theme = next;
+    localStorage.setItem("mmgsd-theme", next);
+  };
+})();
+
 async function post(target, type, text) {
   const r = await fetch("/api/annotations", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ target, type, text }) });
   return r.json();
 }
+const fmtTime = (iso) => { const d = new Date(iso); return isNaN(d) ? esc(iso) : d.toLocaleTimeString("zh-CN", { hour12: false }); };
+
+/* 生命周期五步:呈现工件在场(不判对错,推导归 checker) */
+function stepsHtml(p) {
+  const plan = p.plans.length > 0, sum = p.plans.some((x) => x.summary), chk = p.plans.some((x) => x.check),
+    ver = Boolean(p.verification), ship = Boolean(p.ship);
+  const steps = [["讨论", true, ""], ["计划", plan, ""], ["执行", sum, !sum && plan ? "warn" : ""], ["验收", ver, ""], ["交付", ship, ""]];
+  const html = [];
+  steps.forEach(([name, on, cls], i) => {
+    if (i) html.push('<span class="ln" aria-hidden="true"></span>');
+    html.push('<span class="step ' + (on ? "on " : "") + cls + '"><i aria-hidden="true"></i><span>' + name + "</span></span>");
+  });
+  return '<div class="steps" role="img" aria-label="生命周期:讨论' + (steps[0][1] ? "已落盘" : "未落盘") + "、计划" + (plan ? "已落盘" : "未落盘") + "、执行" + (sum ? "有 SUMMARY" : "未收口") + "、验收" + (ver ? "已落盘" : "未落盘") + "、交付" + (ship ? "已落盘" : "未落盘") + '">' + html.join("") + "</div>";
+}
+
+let last = null;
 async function load() {
-  const st = await (await fetch("/api/state")).json();
-  document.getElementById("declared").textContent = "声明 " + (st.declared ?? "—") + " · phase " + (st.activePhase ?? "—");
-  document.getElementById("gen").textContent = "生成于 " + st.generated.slice(0, 19).replace("T", " ");
-  const tr = document.getElementById("reqs");
-  tr.innerHTML = '<tr><th>REQ</th><th>原话一句话</th><th>认领票</th></tr>';
+  let st;
+  try { st = await (await fetch("/api/state")).json(); }
+  catch { $("live").classList.add("stale"); $("liveText").textContent = "服务失联 · 上次 " + (last ? fmtTime(last.generated) : "—"); return; }
+  last = st;
+  $("live").classList.remove("stale");
+  $("liveText").textContent = "每 15s 刷新 · 更新于 " + fmtTime(st.generated);
+
+  /* ── 状态条 ── */
+  $("declared").textContent = st.declared ?? "—";
+  $("phase").textContent = st.activePhase ?? "—";
+  $("arts").textContent = st.state ? st.state.plans + " 票 / " + st.state.summaries + " 收口" : "—";
+
+  /* ── KPI ── */
+  const claimable = st.reqs.filter((r) => !r.baseline);
+  const claimed = claimable.filter((r) => r.claimed.length).length;
+  $("nReq").innerHTML = claimed + ' <small>/ ' + claimable.length + "</small>";
+  $("barReq").style.width = (claimable.length ? Math.round(100 * claimed / claimable.length) : 0) + "%";
+  $("kReq").className = "kpi" + (claimable.length && claimed < claimable.length ? " warn" : "");
+  const donePh = st.phases.filter((p) => p.done).length;
+  $("nPh").innerHTML = donePh + ' <small>/ ' + st.phases.length + "</small>";
+  $("barPh").style.width = (st.phases.length ? Math.round(100 * donePh / st.phases.length) : 0) + "%";
+  const openAnn = st.annotations.filter((a) => a.status === "open").length;
+  $("nAnn").textContent = openAnn;
+  $("kAnn").className = "kpi" + (openAnn ? " warn" : "");
+  $("nIss").textContent = st.issuesOpen;
+  $("kIss").className = "kpi" + (st.issuesOpen ? " bad" : "");
+  $("nRep").textContent = st.state ? st.state.repairsPending : 0;
+
+  /* ── REQ 溯源链 ── */
+  const q = ($("q").value || "").toLowerCase();
+  const tb = $("reqs").tBodies[0];
+  tb.innerHTML = "";
   for (const r of st.reqs) {
-    const row = tr.insertRow();
-    row.insertCell().textContent = r.id + (r.baseline ? " " : "");
-    if (r.baseline) row.cells[0].innerHTML += ' <span class="base">baseline</span>';
-    row.insertCell().textContent = r.text;
-    const c = row.insertCell();
-    if (r.claimed.length) c.textContent = r.claimed.join(", ");
-    else if (!r.baseline) { c.innerHTML = '<span class="miss">无人认领</span>'; row.style.background = "#fff5f5"; }
-    else c.innerHTML = '<span class="base">baseline 已交付</span>';
-    row.insertCell().innerHTML = '<button data-rq="' + r.id + '" data-t="REQ:' + r.id + '">批注</button>';
+    if (q && !((r.id + " " + r.text + " " + r.claimed.join(" ")).toLowerCase().includes(q))) continue;
+    const tr = tb.insertRow();
+    if (!r.baseline && !r.claimed.length) tr.className = "miss";
+    const mark = r.baseline ? '<span class="dot base" title="baseline 已交付"></span>'
+      : r.claimed.length ? '<span class="dot ok" title="已认领"></span>' : '<span class="dot miss" title="无人认领"></span>';
+    tr.insertCell().innerHTML = mark + "<b>" + esc(r.id) + "</b>" + (r.baseline ? ' <span class="pill info">baseline</span>' : "");
+    tr.insertCell().innerHTML = '<span class="reqtext">' + esc(r.text) + "</span>";
+    const show = r.claimed.slice(0, 6), rest = r.claimed.length - show.length;
+    tr.insertCell().innerHTML = r.claimed.length ? show.map(MONO_ID).join("") + (rest > 0 ? ' <span class="tk" title="' + esc(r.claimed.slice(6).join(", ")) + '">+' + rest + '</span>' : "")
+      : r.baseline ? '<span style="color:var(--fg-dim)">baseline 已交付</span>' : '<strong style="color:var(--red)">无人认领</strong>';
+    const c = tr.insertCell();
+    c.innerHTML = '<button type="button" class="ghost" data-t="' + esc("REQ:" + r.id) + '">批注</button>';
   }
-  const ph = document.getElementById("phases");
+  if (!tb.rows.length) tb.innerHTML = '<tr><td colspan="4" class="empty">没有匹配的 REQ。</td></tr>';
+
+  /* ── phase 卡网格 ── */
+  const ph = $("phases");
   ph.innerHTML = "";
   for (const p of st.phases) {
-    const plans = p.plans.map((x) => x.plan + (x.summary ? (x.summary.status === "complete" ? " ✓" : " ⚠") : "")).join("<br>");
-    const check = p.plans.map((x) => x.check ? x.check.file + ":" + x.check.status : "").filter(Boolean).join("<br>");
     const div = document.createElement("div");
-    div.className = "card";
-    const shipPill = p.ship ? '<span class="pill ' + (p.ship.status === "shipped" ? "ship" : "warn") + '">' + esc(p.ship.status) + "</span>" : "";
-    div.innerHTML = '<b>phase ' + esc(p.phase) + "</b>" + shipPill +
-      '<div class="st">' + esc(p.title || "") + "</div>" +
-      '<div class="st">PLAN: <br>' + plans + "</div>" +
-      (check ? '<div class="st">预审: ' + check + "</div>" : "") +
-      (p.verification ? '<div class="st">VERIFICATION: ' + esc(p.verification.status) + "</div>" : "") +
-      '<details><summary>用户原话 / CONTEXT</summary><div id="ctx-' + esc(p.phase) + '" class="st">加载中…</div>' +
-      '<button data-rq="" data-t="phase:' + esc(p.phase) + '">批注此 phase</button></details>';
+    div.className = "card phase-card" + (p.done ? " done" : "");
+    const ship = p.ship ? (p.ship.status === "shipped" ? '<span class="pill ship">shipped</span>'
+      : '<span class="pill warn">' + esc(p.ship.status) + "</span>") : "";
+    const openRep = p.plans.filter((x) => x.isRepair && !x.summary).length;
+    const rep = openRep ? '<span class="pill rep">R×' + openRep + " 修复中</span>" : "";
+    const tickets = p.plans.reduce((n, x) => n + x.tickets.length, 0);
+    const checks = p.plans.filter((x) => x.check).map((x) => x.plan + " " + esc(x.check.status)).join(" · ");
+    div.innerHTML =
+      '<div class="ph"><b>' + esc(p.phase) + '</b><span class="title">' + esc(p.title || "(未命名)") + "</span>" + ship + rep + "</div>" +
+      stepsHtml(p) +
+      '<div class="meta"><span>' + tickets + " 票</span>" +
+      (p.verification ? "<span>验收 " + esc(p.verification.status) + "</span>" : "") +
+      (checks ? "<span>预审 " + checks + "</span>" : "") + "</div>" +
+      '<details><summary>用户原话 / CONTEXT</summary><div class="ctx">' +
+      (st.contexts && st.contexts[p.phase] ? esc(String(st.contexts[p.phase]).slice(0, 2000)) : "(无 CONTEXT domain 原文)") + "</div></details>" +
+      '<div class="cardfoot"><button type="button" class="ghost" data-t="' + esc("phase:" + p.phase) + '">批注此 phase</button></div>';
     ph.appendChild(div);
   }
-  // 用户原话:懒加载 phase 详情时再取(此处一并内联,页面小,直接全量渲染)
-  for (const p of st.phases) {
-    const el = document.getElementById("ctx-" + p.phase);
-    if (el && st.contexts && st.contexts[p.phase]) el.innerHTML = "<pre style='white-space:pre-wrap'>" + esc(st.contexts[p.phase].slice(0, 2000)) + "</pre>";
-    else if (el) el.textContent = "(无 CONTEXT 或未在状态内)";
-  }
-  const sel = document.getElementById("a-target");
-  sel.innerHTML = '<option value="">目标…</option>' + st.reqs.map((r) => '<option value="REQ:' + r.id + '">REQ:' + r.id + "</option>").join("") +
-    st.phases.map((p) => '<option value="phase:' + p.phase + '">phase:' + p.phase + "</option>").join("");
-  const an = document.getElementById("anns");
-  an.innerHTML = st.annotations.length ? "" : '<div class="mutd">还没有批注。</div>';
+  if (!st.phases.length) ph.innerHTML = '<div class="card empty">还没有 phase 工件。</div>';
+
+  /* ── 批注目标下拉 + 列表 ── */
+  const sel = $("a-target");
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">目标…</option>' +
+    st.reqs.map((r) => '<option value="REQ:' + esc(r.id) + '">REQ:' + esc(r.id) + "</option>").join("") +
+    st.phases.map((p) => '<option value="phase:' + esc(p.phase) + '">phase:' + esc(p.phase) + "</option>").join("");
+  sel.value = prev;
+  const an = $("anns");
+  an.innerHTML = st.annotations.length ? "" : '<div class="empty">还没有批注 —— 在上面提交一条,或在 agent 会话里说「有新批注」触发消化。</div>';
   for (const a of st.annotations.slice().reverse()) {
     const div = document.createElement("div");
-    div.className = "ann " + a.status;
-    div.innerHTML = '<b>' + esc(a.type) + '</b> → ' + esc(a.target) + ' <span class="mutd">' + esc(a.ts.slice(0, 19).replace("T", " ")) + " · " + a.status + '</span><div>' + esc(a.text) + "</div>";
+    div.className = "ann " + (a.status === "open" ? "open" : "digested");
+    div.innerHTML = '<span class="who"><span class="pill ' + (a.status === "open" ? "warn" : "ship") + '">' + esc(a.type) + "</span><br>" +
+      '<span style="color:var(--fg-dim)">' + esc(a.target) + "</span></span>" +
+      '<span class="txt">' + esc(a.text) + "</span>" +
+      '<span class="when">' + fmtTime(a.ts) + (a.status === "open" ? " · 待消化" : " · 已消化") + "</span>";
     an.appendChild(div);
   }
-  document.getElementById("a-post").onclick = async () => {
-    const r = await post(document.getElementById("a-target").value, document.getElementById("a-type").value, document.getElementById("a-text").value);
-    document.getElementById("a-msg").textContent = r.ok ? "已落盘(id " + r.id + ")—— 在 agent 会话里说「有新批注」即可触发消化。" : "拒绝:" + (r.problems || []).join("; ");
-    if (r.ok) load();
-  };
-  window.__st = st;
 }
+
+/* 提交批注(有反馈:loading → 成功/失败文案) */
+$("annForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const msg = $("a-msg");
+  msg.className = "msg"; msg.textContent = "提交中…";
+  const r = await post($("a-target").value, $("a-type").value, $("a-text").value.trim());
+  if (r.ok) {
+    msg.textContent = "已落盘(" + r.id + ")—— 在 agent 会话里说「有新批注」即可触发消化。";
+    $("a-text").value = "";
+    load();
+  } else {
+    msg.className = "msg err";
+    msg.textContent = "拒绝:" + (r.problems || []).join("; ");
+  }
+});
+/* 事件委托:表格/卡片里的「批注」按钮 → 预填目标并聚焦 */
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-t]");
+  if (!b) return;
+  $("a-target").value = b.dataset.t;
+  $("a-text").focus();
+  $("hAnn").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+});
+/* KPI 点击 → 滚到对应区块 */
+for (const [id, target] of [["kReq", "hReq"], ["kPh", "hPh"], ["kAnn", "hAnn"], ["kRep", "hPh"]])
+  $(id).onclick = () => $(target).scrollIntoView({ block: "start" });
+$("q").addEventListener("input", () => last && load());
+
+/* 自动刷新 15s,可暂停;reduced-motion 不影响数据刷新,只影响滚动动画 */
+let paused = false;
+$("pauseBtn").onclick = () => {
+  paused = !paused;
+  $("pauseBtn").setAttribute("aria-pressed", String(paused));
+  $("icoPause").style.display = paused ? "none" : "";
+  $("icoPlay").style.display = paused ? "" : "none";
+  $("liveText").textContent = paused ? "自动刷新已暂停" : "每 15s 刷新 · 更新于 " + (last ? fmtTime(last.generated) : "—");
+};
+setInterval(() => { if (!paused && !document.hidden) load(); }, 15000);
 load();
 </script>
 </body>
