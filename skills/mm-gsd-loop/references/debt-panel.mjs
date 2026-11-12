@@ -318,8 +318,13 @@ function normalizeAnnotations(annotations) {
  *
  * 目录与文件内容由调用方传入(模块自己不碰文件系统)。
  *
+ * deferred 分类感知(23-CONTEXT D-03):kind ∈ {挂条件, 关闭} 的条目已有机器可读的处置理由
+ * (触发条件 / 关闭理由),移入 parked 折叠区**不计数**;kind ∈ {未分类, 可做, 候选} 是
+ * 没人回答过「什么时候做、谁做」的欠账,诚实计入。counts.deferred / counts.total 只算未清偿口径。
+ * parseDeferred 本身不改(解析全量,分类在这里切);parked 条目 condition/owner/source 原样。
+ *
  * @param {{planningDir?: Record<string,string>|Array<{path:string,text:string}>, annotations?: Array<object>|string}} input
- * @returns {{localIssues: object[], openAnnotations: object[], deferred: object[], counts: {openIssues:number, openAnnotations:number, deferred:number, total:number}}}
+ * @returns {{localIssues: object[], openAnnotations: object[], deferred: object[], parked: object[], counts: {openIssues:number, openAnnotations:number, deferred:number, parked:number, total:number}}}
  */
 export function buildDebt(input = {}) {
   const { planningDir = {}, annotations = [] } = input ?? {};
@@ -340,17 +345,20 @@ export function buildDebt(input = {}) {
   const localIssues = openIssues(ledgerText, originals);
   const openAnnotations = normalizeAnnotations(annotations).filter((a) => a && a.status === "open");
 
+  const PARKED_KINDS = new Set(["挂条件", "关闭"]);
   const deferred = [];
+  const parked = [];
   for (const f of files) {
     if (!DEBT_SOURCE_FILE.test(f.path)) continue;
-    deferred.push(...parseDeferred(f.text, f.path));
+    for (const d of parseDeferred(f.text, f.path)) (PARKED_KINDS.has(d.kind) ? parked : deferred).push(d);
   }
 
   const counts = {
     openIssues: localIssues.length,
     openAnnotations: openAnnotations.length,
     deferred: deferred.length,
+    parked: parked.length,
     total: localIssues.length + openAnnotations.length + deferred.length,
   };
-  return { localIssues, openAnnotations, deferred, counts };
+  return { localIssues, openAnnotations, deferred, parked, counts };
 }

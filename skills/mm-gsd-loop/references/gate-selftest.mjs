@@ -720,7 +720,7 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
     eqN(rF.code === 0 && rF.out.includes("强制升级"), true, "R 票 ≥3 → 强制升级黄提醒");
     rmSync(dF, { recursive: true, force: true });
   }
-  // ---- 债面板口径(phase 22 D-02/D-05):deferred 上屏 + 台账处置为准(纯函数断言,不写盘不起服务) ----
+  // ---- 债面板口径(phase 22 D-02/D-05 + 23 D-03 分类感知):parked/deferred 分列 + 台账处置为准(纯函数断言,不写盘不起服务) ----
   {
     const debtDir = {
       "issues/LEDGER.md": "| 件 | 处置 | 挂靠 | 说明 |\n|---|---|---|---|\n| I-001.md | closed | — | 已修 |\n",
@@ -729,12 +729,14 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
       "01-CONTEXT.md": "<deferred>\n\n| 项 | 分类 | 触发条件 / 关闭理由 | 归属 |\n|---|---|---|---|\n| 精确耗时 | 挂条件 | 宿主新增事件 | 每次 release 后查一次 |\n\n</deferred>\n",
     };
     const debt = buildDebt({ planningDir: debtDir, annotations: [] });
-    // ① deferred 条目带齐五要素上屏(项/分类/触发条件/归属/来源),归一成纯文本就答不出「何时做、谁做、为什么不做」
+    // ① 挂条件条目带齐五要素进 parked(项/分类/触发条件/归属/来源),且不进 deferred、不计数
+    //    (23 D-03:已有处置理由的不计数;归一成纯文本就答不出「何时做、谁做、为什么不做」)
     eqArr(
-      debt.deferred.map((d) => [d.text, d.kind, d.condition, d.owner, d.source]),
+      debt.parked.map((d) => [d.text, d.kind, d.condition, d.owner, d.source]),
       [["精确耗时", "挂条件", "宿主新增事件", "每次 release 后查一次", "01-CONTEXT.md"]],
-      "deferred 条目 → 看板债面板可见",
+      "挂条件条目 → 进 parked 不进 deferred",
     );
+    eqN(debt.deferred.some((d) => d.text === "精确耗时") || debt.counts.total !== debt.counts.openIssues + debt.counts.openAnnotations + debt.counts.deferred, false, "挂条件条目 → 进 parked 不进 deferred(deferred 侧为空且不进 total)");
     // ② 台账 closed 的不计入 open;台账没行才回退原件状态(原件 open 才算)
     eqArr(debt.localIssues.map((i) => i.id), ["I-002"], "台账 closed → 不计入 open");
   }

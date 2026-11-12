@@ -195,17 +195,18 @@ function main() {
     !openIssues(LEDGER, [{ id: "I-001", title: "x", status: "open" }]).some((x) => x.id === "I-001"),
   );
 
-  // 5. 表格条目的 kind/condition/owner 三列不被归一丢掉
-  const tableEntry = debt.deferred.find((d) => d.text === "PostToolUse 精确耗时");
-  eq("表格条目的 kind/condition/owner 三列不被归一丢掉", tableEntry && {
-    kind: tableEntry.kind,
-    condition: tableEntry.condition,
-    owner: tableEntry.owner,
-  }, {
-    kind: "挂条件",
-    condition: "宿主事件面新增 PostToolUse → 升级为精确值",
-    owner: "每次 release 后查一次",
-  });
+  // 5. 挂条件条目 → 进 parked 不进 deferred(D-03 分类感知:已有处置理由的不计数,三列原样保留)
+  const tableEntry = debt.parked.find((d) => d.text === "PostToolUse 精确耗时");
+  ok(
+    "挂条件条目 → 进 parked 不进 deferred",
+    !!tableEntry
+      && !debt.deferred.some((d) => d.text === "PostToolUse 精确耗时")
+      && debt.parked.some((d) => d.text === "多项目看板" && d.kind === "关闭")
+      && tableEntry.kind === "挂条件"
+      && tableEntry.condition === "宿主事件面新增 PostToolUse → 升级为精确值"
+      && tableEntry.owner === "每次 release 后查一次",
+    `parked=${JSON.stringify(debt.parked.map((d) => d.text))} deferred 撞=${debt.deferred.some((d) => d.text === "PostToolUse 精确耗时")}`,
+  );
 
   // 6. 表格头行与分隔行不算条目
   ok(
@@ -222,14 +223,17 @@ function main() {
     JSON.stringify(summaryTexts),
   );
 
-  // 8. 数量自洽
+  // 8. 数量自洽(counts 新形状:deferred 只算未清偿,parked 不计数)
   ok(
-    "数量自洽:localIssues.length===1 且 deferred.length===5 且 counts.openIssues===localIssues.length 且 counts.deferred===deferred.length",
+    "数量自洽:localIssues.length===1 且 deferred.length===3 且 parked.length===2 且 counts.openIssues===localIssues.length 且 counts.deferred===deferred.length 且 counts.parked===parked.length 且 counts.total===openIssues+openAnnotations+deferred",
     debt.localIssues.length === 1 &&
-      debt.deferred.length === 5 &&
+      debt.deferred.length === 3 &&
+      debt.parked.length === 2 &&
       debt.counts.openIssues === debt.localIssues.length &&
-      debt.counts.deferred === debt.deferred.length,
-    `localIssues=${debt.localIssues.length} deferred=${debt.deferred.length} counts=${JSON.stringify(debt.counts)}`,
+      debt.counts.deferred === debt.deferred.length &&
+      debt.counts.parked === debt.parked.length &&
+      debt.counts.total === debt.counts.openIssues + debt.counts.openAnnotations + debt.counts.deferred,
+    `localIssues=${debt.localIssues.length} deferred=${debt.deferred.length} parked=${debt.parked.length} counts=${JSON.stringify(debt.counts)}`,
   );
 
   // 9. 批注只数 open 的一条(digested 的不算欠账)

@@ -235,6 +235,10 @@ function buildState() {
         productSurfaceWarn.push(`${req} 已随 ${base} 声明 product_surface,但 req-ledger 无 delivered 行 —— SHIP 后落台账(D-01)`);
     }
   }
+  // reqs[] 并入台账处置状态(REQ-25/D-01,经 req-ledger 模块;reqLedgerRows 已在对账读端解析,
+  // 屏上渲染由 23-02 总览票接线)
+  for (const r of reqs) r.disposition = reqState(reqLedgerRows, r.id);
+
   // state 条(21-01 PLAN 契约):声明 / phase / 工件计数(含 R 票 pending 数)——
   // 只有计数,不含推导判定:推导单一来源是 checker(预审 F3)
   const allPlans = [...phases.values()].flatMap((p) => p.plans);

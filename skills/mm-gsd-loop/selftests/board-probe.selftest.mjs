@@ -99,6 +99,17 @@ function writeFixture(root) {
     ) + "\n",
   );
 
+  // PLAN 声明 product_surface(REQ-22)+ 同号 SHIP 已落盘:req-ledger 无 delivered 行
+  // → productSurfaceWarn 应非空(REQ-26 对账读端;台账文件整个缺省 = 全部缺行)
+  writeFileSync(
+    join(pl, "01-01-PLAN.md"),
+    ['---', 'phase: "01"', 'plan: "01"', "goal: 夹具计划", "rollback: 回退本票 commit", "product_surface: REQ-22", '---', "", "# 计划", ""].join("\n"),
+  );
+  writeFileSync(
+    join(pl, "01-01-SHIP.md"),
+    ['---', 'phase: "01"', "status: shipped", "delivered: 夹具交付(可核对位置)", "---", "", "# 交付", ""].join("\n"),
+  );
+
   writeFileSync(join(pl, "STATE.md"), ['---', 'status: active', 'active_phase: "22"', '---', "", "# 状态", ""].join("\n"));
 }
 
@@ -265,6 +276,26 @@ async function main() {
       "唯一写端点(语义抽取,不用源码文本计数):从服务源码里用容错正则抽出所有「方法为 POST 且绑定路径」的路由(允许空格/引号差异),断言抽出的路径集合恰好等于 {批注端点} 这一个;再运行时 POST 一个虚构路径 → 404/405(证明未知路径不是写入口 —— 注意它不构成第二证:它证明不了「不存在第二个写入口」,唯一性仍由源码抽取那一证承担),且整个探针不向批注端点发请求(避免写脏夹具、避免改动前面的计数断言)",
       JSON.stringify(routes) === JSON.stringify(["/api/annotations"]) && (fake.status === 404 || fake.status === 405),
       `抽出=${JSON.stringify(routes)} 虚构路径状态=${fake.status}`,
+    );
+
+    // ⑪ 挂条件/关闭 → parked 不计数且 counts 只算未清偿(23 D-03)
+    ok(
+      "挂条件/关闭 → parked 不计数且 counts 只算未清偿",
+      Array.isArray(st.debt.parked)
+        && st.debt.parked.length === 2
+        && st.debt.parked.every((d) => d.kind === "挂条件" || d.kind === "关闭")
+        && !st.debt.deferred.some((d) => d.kind === "挂条件" || d.kind === "关闭")
+        && st.debt.counts.parked === st.debt.parked.length
+        && st.debt.counts.deferred === st.debt.deferred.length
+        && st.debt.counts.total === st.debt.counts.openIssues + st.debt.counts.openAnnotations + st.debt.counts.deferred,
+      `parked=${JSON.stringify(st.debt.parked.map((d) => [d.text, d.kind]))} counts=${JSON.stringify(st.debt.counts)}`,
+    );
+
+    // ⑫ product_surface 声明缺台账 delivered 行 → /api/state 的 productSurfaceWarn 非空(REQ-26 对账读端)
+    ok(
+      "product_surface 声明缺台账 delivered 行 → /api/state 的 productSurfaceWarn 非空",
+      Array.isArray(st.productSurfaceWarn) && st.productSurfaceWarn.length > 0 && st.productSurfaceWarn.every((w) => w.includes("REQ-22")),
+      JSON.stringify(st.productSurfaceWarn),
     );
   } catch (e) {
     console.log(`✗ 探针异常:${e && e.stack ? e.stack : e}`);
