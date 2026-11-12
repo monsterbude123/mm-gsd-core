@@ -10,7 +10,9 @@ import { researchRequired, researchCompliant, checkResearchConsumed, checkResear
 import { checkBatchGraph, checkTicketBudget } from "./worktree-view.mjs";
 import { buildRouteBrief, pointerCard, listSkills } from "./agent-routing.mjs";
 import { extractTemplateBlock } from "./template-gates.mjs";
+import { buildDebt } from "./debt-panel.mjs";
 import { runToolStats } from "./telemetry-aggregate.mjs";
+import { aggregateByDay } from "./telemetry-view.mjs";
 import { mkdtempSync, writeFileSync, rmSync, utimesSync, mkdirSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -669,6 +671,59 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
     let rF = runCk(dF, ["--plan", ".planning/01-R1-PLAN.md", ".planning/01-R2-PLAN.md", ".planning/01-R3-PLAN.md"]);
     eqN(rF.code === 0 && rF.out.includes("强制升级"), true, "R 票 ≥3 → 强制升级黄提醒");
     rmSync(dF, { recursive: true, force: true });
+  }
+  // ---- 债面板口径(phase 22 D-02/D-05):deferred 上屏 + 台账处置为准(纯函数断言,不写盘不起服务) ----
+  {
+    const debtDir = {
+      "issues/LEDGER.md": "| 件 | 处置 | 挂靠 | 说明 |\n|---|---|---|---|\n| I-001.md | closed | — | 已修 |\n",
+      "issues/I-001.md": "# I-001 已修的件\n\n## 状态\n\nopen\n",
+      "issues/I-002.md": "# I-002 台账没登记的件\n\n## 状态\n\nopen\n",
+      "01-CONTEXT.md": "<deferred>\n\n| 项 | 分类 | 触发条件 / 关闭理由 | 归属 |\n|---|---|---|---|\n| 精确耗时 | 挂条件 | 宿主新增事件 | 每次 release 后查一次 |\n\n</deferred>\n",
+    };
+    const debt = buildDebt({ planningDir: debtDir, annotations: [] });
+    // ① deferred 条目带齐五要素上屏(项/分类/触发条件/归属/来源),归一成纯文本就答不出「何时做、谁做、为什么不做」
+    eqArr(
+      debt.deferred.map((d) => [d.text, d.kind, d.condition, d.owner, d.source]),
+      [["精确耗时", "挂条件", "宿主新增事件", "每次 release 后查一次", "01-CONTEXT.md"]],
+      "deferred 条目 → 看板债面板可见",
+    );
+    // ② 台账 closed 的不计入 open;台账没行才回退原件状态(原件 open 才算)
+    eqArr(debt.localIssues.map((i) => i.id), ["I-002"], "台账 closed → 不计入 open");
+  }
+  // ---- 工具遥测 → 看板迷你图可渲染(phase 22 D-03):按本地日切桶 + cwd 归一后等值比较(纯函数断言,不写盘不起服务) ----
+  {
+    // 两个时刻相隔 35 小时 —— 超过一个整日,任何时区下都落在两个不同的本地日。
+    // ts1 在 UTC+8 落在 11-11(UTC 是 11-10):按本地日切与按 UTC 日切结果不同,断言有判别力。
+    const telRoot = "/proj/demo";
+    const TS1 = "2026-11-10T23:30:00.000Z";
+    const TS2 = "2026-11-12T10:30:00.000Z";
+    // 期望的本地日由本用例自己按本地构造器算(不借用被测实现的切桶函数)
+    const localDay = (iso) => {
+      const d = new Date(iso);
+      return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    };
+    const tel = aggregateByDay([
+      { ts: TS1, cwd: "/proj/demo/", tool: "Bash" },   // 尾斜杠变体 → 计入
+      { ts: TS1, cwd: "/PROJ/DEMO", tool: "Read" },    // 大小写变体 → 计入
+      { ts: TS2, cwd: "/proj/demo", tool: "Write" },   // 正常写法 → 计入
+      { ts: TS2, cwd: "/proj/other", tool: "Edit" },   // 异 cwd → 不计入
+    ], telRoot);
+    // 桶键必须是补零的 YYYY-MM-DD(不补零时「2026-1-2」与「2026-01-02」是两个桶)
+    eqN(
+      JSON.stringify({
+        total: tel.total,
+        series: tel.series,
+        byTool: tel.byTool,
+        empty: tel.empty,
+      }),
+      JSON.stringify({
+        total: 3,
+        series: [{ date: localDay(TS1), count: 2 }, { date: localDay(TS2), count: 1 }],
+        byTool: { Bash: 1, Read: 1, Write: 1 },
+        empty: false,
+      }),
+      "工具遥测 → 看板迷你图可渲染",
+    );
   }
   console.log(st.bad ? `\n${st.bad} 项自测不过 —— 门禁本身是坏的,先修门禁` : "\n✓ 门禁自测全过");
   return st.bad;

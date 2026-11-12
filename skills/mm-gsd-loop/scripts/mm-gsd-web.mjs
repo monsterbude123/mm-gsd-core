@@ -6,11 +6,23 @@
 //
 // 自含解析逻辑,不 import checker —— checker 顶层有 MODE 分流与 process.exit 钩子,import 会拉入副作用;
 // 代价是解析逻辑与 checker 各一份(预审 F8 已知取舍),对账由 fixture 断言兜(REQ 认领两种口径同数)。
+//
+// 例外:债面板口径(本地账 open / 未消化批注 / deferred 条目)走 references/debt-panel.mjs ——
+// 那个模块是零 I/O 纯函数,顶层不执行任何东西,import 无副作用(22-CONTEXT D-02/D-05)。
+// 口径写两处必然漂:一处按台账、一处按原件状态,屏上会打出两个打架的「本地账 open」数字。
+//
+// 例外:工具遥测口径(按本地日切桶 + 按 cwd 归一比较)走 references/telemetry-view.mjs ——
+// 同样是零 I/O 纯函数;读文件在 buildState() 里做(每次请求现读现算,只读、不外发、不缓存)。
 
 import { createServer } from "node:http";
 import { readFileSync, existsSync, readdirSync, writeFileSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { homedir } from "node:os";
+import { join, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { buildDebt } from "../references/debt-panel.mjs";
+import { readRows } from "../references/telemetry-aggregate.mjs";
+import { aggregateByDay } from "../references/telemetry-view.mjs";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_PATH = join(SCRIPT_DIR, "..", "templates", "web.html");
@@ -20,6 +32,10 @@ const portArg = argv.includes("--port") ? Number(argv[argv.indexOf("--port") + 1
 const PORT = Number.isFinite(portArg) ? portArg : 4620;
 const ROOT = process.cwd();
 const P = (...s) => join(ROOT, ".planning", ...s);
+
+// 工具遥测日志(只读):默认 ~/.agents/mm-gsd-tools.jsonl,可用环境变量覆盖(自测注入用)。
+// 现读现算、不缓存、不外发 —— 看板不因遥测向任何外部发请求(守 R-06)。
+const TELEMETRY_PATH = process.env.GSD_TOOL_TELEMETRY_PATH || join(homedir(), ".agents", "mm-gsd-tools.jsonl");
 
 const TYPES = ["需求遗漏", "方向不对", "验收不过", "备注"];
 
@@ -72,6 +88,18 @@ function coversOf(txt) {
     }
   }
   return out;
+}
+
+// 工具遥测(22-CONTEXT D-03):只读本机日志,现读现算 —— 不缓存(日志会一直追加),
+// 不外发(看板不对任何外部发请求,守 R-06)。
+// 口径(按本地日切桶 + cwd 归一后等值比较)只在 references/telemetry-view.mjs 一处。
+function readTelemetry(root) {
+  try {
+    return aggregateByDay(readRows(TELEMETRY_PATH), root);
+  } catch {
+    // 遥测读不到不是看板的错 —— 屏上给空态文案,不报 500。
+    return { series: [], byTool: {}, total: 0, empty: true };
+  }
 }
 
 function buildState() {
@@ -164,19 +192,31 @@ function buildState() {
     if (m) contexts[phase] = m[1].trim().slice(0, 6000);
   }
 
-  // 本地账问题(issues/I-*.md):只有计数没有清单 = 用户看到一个数字没法动手 —— 一起给出
-  const issues = [];
-  const issDir = P("issues");
-  if (existsSync(issDir)) {
-    for (const f of readdirSync(issDir).filter((x) => /^I-.*\.md$/.test(x)).sort()) {
-      const txt = readFileSync(join(issDir, f), "utf8");
-      const status = (txt.match(/##\s*状态\s*\n+([^\n]+)/) || [])[1]?.trim() ?? "?";
-      const title = (txt.match(/^#\s+(.+)$/m) || [])[1]?.trim() ?? f;
-      const id = f.replace(/\.md$/, "");
-      issues.push({ id, title: title.replace(new RegExp(`^${id}\\s*`), ""), status, open: /^open$/i.test(status), file: f });
-    }
+  // 债面板三源(22-CONTEXT D-02/D-05):本地账 open 问题 + 未消化批注 + deferred 条目。
+  // 口径只在 references/debt-panel.mjs 一处 —— 这里只把文件文本喂进去,不另读原件状态:
+  // 台账处置列是唯一权威,原件「## 状态」只在台账无行时兜底(22-CONTEXT D-02)。
+  const planningDir = {};
+  for (const abs of allMd) {
+    const rel = relative(P("."), abs).split(/[\\/]/).join("/");
+    planningDir[rel] = readFileSync(abs, "utf8");
   }
-  const issuesOpen = issues.filter((i) => i.open).length;
+  const debt = buildDebt({ planningDir, annotations });
+
+  // 本地账问题清单:全量入列,每项的 open 走台账口径(与 debt.localIssues 同一判定)。
+  // KPI 与清单同源 —— 屏上不会出现两个口径不同的「本地账 open」数字(D-02)。
+  const issues = [];
+  for (const [rel, text] of Object.entries(planningDir)) {
+    if (!/(^|\/)I-[^/]+\.md$/i.test(rel)) continue;
+    const base = rel.split("/").pop();
+    const id = base.replace(/\.md$/i, "");
+    const status = (text.match(/##\s*状态\s*\n+([^\n]+)/) || [])[1]?.trim() ?? "?";
+    const title = (text.match(/^#\s+(.+)$/m) || [])[1]?.trim() ?? base;
+    issues.push({ id, title: title.replace(new RegExp(`^${id}\\s*`), ""), status, open: false, file: base });
+  }
+  issues.sort((a, b) => a.id.localeCompare(b.id));
+  const openIds = new Set(debt.localIssues.map((x) => x.id));
+  for (const i of issues) i.open = openIds.has(i.id.toUpperCase());
+  const issuesOpen = debt.localIssues.length;
 
   // state 条(21-01 PLAN 契约):声明 / phase / 工件计数(含 R 票 pending 数)——
   // 只有计数,不含推导判定:推导单一来源是 checker(预审 F3)
@@ -196,6 +236,8 @@ function buildState() {
     contexts,
     reqs, annotations,
     issuesOpen, issues,
+    debt,
+    telemetry: readTelemetry(ROOT),
   };
 }
 
@@ -262,5 +304,6 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(PORT, "127.0.0.1", () => {
-  console.log(`mm-gsd web → http://127.0.0.1:${PORT}  (cwd: ${ROOT};Ctrl+C 停止)`);
+  // 打印实际绑定端口(--port 0 = 让系统挑一个空闲端口,自测探针用得上)
+  console.log(`mm-gsd web → http://127.0.0.1:${server.address().port}  (cwd: ${ROOT};Ctrl+C 停止)`);
 });

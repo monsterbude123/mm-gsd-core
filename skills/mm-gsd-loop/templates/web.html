@@ -1,6 +1,6 @@
 <!doctype html>
-<!-- mm-gsd 过程看板 —— 固定四区布局(状态条/REQ 溯源链/phase 卡网格/批注区),数据来自 /api/state;
-     对 .planning 只读,唯一写通道是批注 POST /api/annotations。
+<!-- mm-gsd 过程看板 —— 区块随工件增长(状态条/KPI/欠账/REQ 溯源链/phase 卡网格/批注/本地账问题…),
+     数据来自 /api/state;对 .planning 只读,唯一写通道是批注 POST /api/annotations。
      设计:暗色运维风(暗/亮双主题 prefers-color-scheme + 手动切换),系统字栈(零外部请求,R-06),
      模块化字号 12/14/16/18/24,8px 间距节奏,内联 SVG 图标(不用 emoji),reduced-motion 降级。 -->
 <html lang="zh">
@@ -152,6 +152,42 @@
   .ann .when { font-family: var(--mono); font-size: 11px; color: var(--fg-dim); white-space: nowrap; }
   .empty { color: var(--fg-dim); font-size: 13px; padding: 10px 4px; }
   .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+  /* ── 欠账面板(本地账 open + 未消化批注 + 挂起项,一屏合并)── */
+  .debt { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; align-items: start; }
+  .debtsec { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .debtsec > h3 { margin: 0 0 8px; font-size: 13px; color: var(--fg-mut); font-weight: 600;
+    display: flex; align-items: baseline; gap: 8px; }
+  .debtsec > h3 .cnt { font-family: var(--mono); font-size: 12px; color: var(--fg-dim); font-weight: 400; }
+  .debtsec.wide { grid-column: 1 / -1; }
+  .debtsum { display: grid; gap: 6px; }
+  .drow { display: flex; gap: 10px; align-items: baseline; }
+  .drow .dtxt { flex: 1; min-width: 0; font-size: 13px; }
+  .drow .dmut { font-family: var(--mono); font-size: 11px; color: var(--fg-dim); text-align: right; }
+  #debt-deferred table { background: transparent; border: 0; }
+  /* 挂条件项可达上百条:限高滚动,别把「一屏面板」撑成一页 */
+  #debt-deferred .dscroll { max-height: 320px; overflow: auto; }
+  #debt-deferred .dscroll thead th { position: sticky; top: 0; z-index: 1; }
+  #debt-deferred th, #debt-deferred td { font-size: 12px; padding: 5px 10px; }
+  /* 固定列宽:auto 布局下「项」里的长段落会把其余列挤成一字宽 */
+  #debt-deferred table { table-layout: fixed; }
+  #debt-deferred th:nth-child(1), #debt-deferred td:nth-child(1) { width: 34%; }
+  #debt-deferred th:nth-child(2), #debt-deferred td:nth-child(2) { width: 8%; }
+  #debt-deferred th:nth-child(3), #debt-deferred td:nth-child(3) { width: 30%; }
+  #debt-deferred th:nth-child(4), #debt-deferred td:nth-child(4) { width: 14%; }
+  #debt-deferred th:nth-child(5), #debt-deferred td:nth-child(5) { width: 14%; }
+  #debt-deferred td:last-child { font-family: var(--mono); font-size: 11px; color: var(--fg-dim); }
+  /* 「项」常是整段话:夹成几行,全文挂 title 供悬停看 */
+  #debt-deferred .clip { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+
+  /* ── 工具遥测迷你图(内联 SVG,零第三方库;零命中给文案,不画空图)── */
+  .telsvg { display: block; width: 100%; height: auto; }
+  .telsvg .tbar { fill: var(--ink); }
+  .telsvg .tbar:hover { fill: var(--grn); }
+  .telsvg .taxis { stroke: var(--border); stroke-width: 1; }
+  .telsvg .tlbl { fill: var(--fg-dim); font-size: 10px; }
+  .tprog { flex: 1; height: 6px; border-radius: 3px; background: var(--muted); overflow: hidden; }
+  .tprog i { display: block; height: 100%; background: var(--ink); }
 </style>
 </head>
 <body>
@@ -177,7 +213,41 @@
     <button class="kpi" id="kAnn" type="button"><span class="n" id="nAnn">—</span><span class="t">open 批注待消化</span></button>
     <button class="kpi" id="kIss" type="button"><span class="n" id="nIss">—</span><span class="t">open 本地账问题</span></button>
     <button class="kpi" id="kRep" type="button"><span class="n" id="nRep">—</span><span class="t">点修票挂起(R 票)</span></button>
+    <button class="kpi" id="kDebt" type="button"><span class="n" id="nDebt">—</span><span class="t">欠账合计(问题/批注/挂条件)</span></button>
   </section>
+
+  <h2 id="hDebt">欠账 <small>未闭环本地账问题 + 待消化批注 + 挂条件项;口径以台账处置为准</small></h2>
+  <div id="debt" class="debt">
+    <section class="debtsec" id="debt-issues">
+      <h3>本地账未闭环 <span class="cnt" id="cntDebtIssues">—</span></h3>
+      <div class="debtsum" id="listDebtIssues"></div>
+    </section>
+    <section class="debtsec" id="debt-anns">
+      <h3>待消化批注 <span class="cnt" id="cntDebtAnns">—</span></h3>
+      <div class="debtsum" id="listDebtAnns"></div>
+    </section>
+    <section class="debtsec wide" id="debt-deferred">
+      <h3>挂条件 / 关闭项 <span class="cnt" id="cntDebtDeferred">—</span></h3>
+      <div class="dscroll">
+        <table>
+          <thead><tr><th scope="col">项</th><th scope="col">分类</th><th scope="col">触发条件或关闭理由</th><th scope="col">归属</th><th scope="col">来源文件</th></tr></thead>
+          <tbody id="tblDebtDeferred"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <h2 id="hTel">工具遥测 <small>本机工具调用按天计数(本地日);数据源 ~/.agents/mm-gsd-tools.jsonl,只读</small></h2>
+  <div id="telemetry" class="debt">
+    <section class="debtsec wide" id="tel-chart">
+      <h3>按天调用 <span class="cnt" id="cntTelDays">—</span></h3>
+      <div id="telChart"></div>
+    </section>
+    <section class="debtsec" id="tel-tools">
+      <h3>工具分布 <span class="cnt" id="cntTelTools">—</span></h3>
+      <div class="debtsum" id="telTools"></div>
+    </section>
+  </div>
 
   <h2 id="hReq">REQ 溯源链 <small>原话一句话 → 认领票;红点 = 无人认领(需求遗漏)</small></h2>
   <div class="tools"><input id="q" type="search" placeholder="过滤 REQ / 原话 / 票号…" aria-label="过滤需求清单"></div><span id="qCount" class="hint" role="status"></span>
@@ -242,6 +312,29 @@ const relTime = (iso) => { const d = new Date(iso); if (isNaN(d)) return esc(iso
   if (s < 86400) return Math.floor(s / 3600) + " 小时前"; if (s < 604800) return Math.floor(s / 86400) + " 天前";
   return d.toLocaleDateString("zh-CN"); };
 
+/* 工具遥测迷你图:按天柱状,纯内联 SVG(零第三方图表库,守 R-06 零外部请求)。
+   柱高按当日峰值归一;日期只标首末两端 —— 一天一根柱子,标不下每个标签。 */
+function telChartSvg(series) {
+  const W = 640, H = 120, padL = 4, padR = 4, padT = 8, padB = 18;
+  const max = Math.max(1, ...series.map((s) => s.count));
+  const gap = series.length > 1 ? 2 : 0;
+  const bw = Math.max(2, (W - padL - padR - gap * (series.length - 1)) / series.length);
+  const innerH = H - padT - padB;
+  const bars = series.map((s, i) => {
+    const h = Math.max(1, Math.round((s.count / max) * innerH));
+    const x = padL + i * (bw + gap);
+    const y = padT + innerH - h;
+    return '<rect class="tbar" x="' + x.toFixed(1) + '" y="' + y + '" width="' + bw.toFixed(1) + '" height="' + h + '"><title>' + esc(s.date + " · " + s.count + " 次") + "</title></rect>";
+  }).join("");
+  const axis = '<line class="taxis" x1="' + padL + '" y1="' + (padT + innerH) + '" x2="' + (W - padR) + '" y2="' + (padT + innerH) + '"/>';
+  const first = series[0], last = series[series.length - 1];
+  const labels =
+    '<text class="tlbl" x="' + padL + '" y="' + (H - 5) + '">' + esc(first.date) + "</text>" +
+    (last.date !== first.date ? '<text class="tlbl" x="' + (W - padR) + '" y="' + (H - 5) + '" text-anchor="end">' + esc(last.date) + "</text>" : "");
+  return '<svg class="telsvg" viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="工具调用按天计数迷你图,共 ' + series.length + ' 天">' +
+    axis + bars + labels + "</svg>";
+}
+
 /* 生命周期五步:呈现工件在场(不判对错,推导归 checker) */
 function stepsHtml(p) {
   const plan = p.plans.length > 0, sum = p.plans.some((x) => x.summary), chk = p.plans.some((x) => x.check),
@@ -272,6 +365,11 @@ async function load() {
   $("phase").title = noState ? "初始化并填好 Phases 清单后显示活跃 phase" : "";
   $("arts").textContent = st.state ? st.state.plans + " 票 / " + st.state.summaries + " 收口" : "—";
 
+  /* ── 欠账三源(本地账未闭环 + 待消化批注 + 挂条件项)──
+     口径只有一份:服务端 references/debt-panel.mjs(台账处置列为准,D-02)。屏上所有数字都取自这里,
+     不在前端另算一遍 —— 前端再算一遍就会出现两个打架的「open」数。 */
+  const debt = st.debt || { localIssues: [], openAnnotations: [], deferred: [], counts: {} };
+
   /* ── KPI ── */
   const claimable = st.reqs.filter((r) => !r.baseline);
   const claimed = claimable.filter((r) => r.claimed.length).length;
@@ -281,12 +379,96 @@ async function load() {
   const donePh = st.phases.filter((p) => p.ship?.status === "shipped" || p.done).length;
   $("nPh").innerHTML = donePh + ' <small>/ ' + st.phases.length + "</small>";
   $("barPh").style.width = (st.phases.length ? Math.round(100 * donePh / st.phases.length) : 0) + "%";
-  const openAnn = st.annotations.filter((a) => a.status === "open").length;
+  const openAnn = debt.counts.openAnnotations != null ? debt.counts.openAnnotations : st.annotations.filter((a) => a.status === "open").length;
   $("nAnn").textContent = openAnn;
   $("kAnn").className = "kpi" + (openAnn ? " warn" : "");
-  $("nIss").textContent = st.issuesOpen;
-  $("kIss").className = "kpi" + (st.issuesOpen ? " bad" : "");
+  $("nIss").textContent = debt.localIssues.length;
+  $("kIss").className = "kpi" + (debt.localIssues.length ? " bad" : "");
   $("nRep").textContent = st.state ? st.state.repairsPending : 0;
+
+  /* ── 欠账面板(本地账未闭环 + 待消化批注 + 挂条件项)── */
+  const stripId = (title, id) => String(title ?? "").replace(new RegExp("^" + String(id).replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*", "i"), "");
+  const dil = $("listDebtIssues");
+  dil.innerHTML = "";
+  for (const it of debt.localIssues) {
+    const row = document.createElement("div");
+    row.className = "drow";
+    row.innerHTML = '<span class="tk">' + esc(it.id) + "</span>" +
+      '<span class="dtxt">' + esc(stripId(it.title, it.id)) + "</span>" +
+      '<span class="dmut">' + esc(it.disposition || it.originalStatus || "") + "</span>";
+    dil.appendChild(row);
+  }
+  if (!debt.localIssues.length) dil.innerHTML = '<div class="empty">本地账没有未闭环的问题。</div>';
+  $("cntDebtIssues").textContent = debt.localIssues.length + " 项";
+
+  const dan = $("listDebtAnns");
+  dan.innerHTML = "";
+  for (const a of debt.openAnnotations) {
+    const row = document.createElement("div");
+    row.className = "drow";
+    row.innerHTML = '<span class="pill warn">' + esc(a.type || "备注") + "</span>" +
+      '<span class="dtxt">' + esc(a.text || "") + "</span>" +
+      '<span class="dmut">' + esc(a.target || "") + "</span>";
+    dan.appendChild(row);
+  }
+  if (!debt.openAnnotations.length) dan.innerHTML = '<div class="empty">没有待消化的批注。</div>';
+  $("cntDebtAnns").textContent = debt.openAnnotations.length + " 条";
+
+  const ddf = $("tblDebtDeferred");
+  ddf.innerHTML = "";
+  for (const d of debt.deferred) {
+    const tr = ddf.insertRow();
+    const c0 = tr.insertCell();
+    const box = document.createElement("div");
+    box.className = "clip";
+    box.textContent = d.text || "";
+    box.title = d.text || "";
+    c0.appendChild(box);
+    tr.insertCell().textContent = d.kind || "";
+    tr.insertCell().textContent = d.condition || "";
+    tr.insertCell().textContent = d.owner || "";
+    tr.insertCell().textContent = d.source || "";
+  }
+  if (!ddf.rows.length) {
+    const tr = ddf.insertRow();
+    const td = tr.insertCell();
+    td.colSpan = 5;
+    td.className = "empty";
+    td.textContent = "没有登记的挂条件 / 关闭项。";
+  }
+  $("cntDebtDeferred").textContent = debt.deferred.length + " 条";
+  const debtTotal = debt.counts && debt.counts.total != null
+    ? debt.counts.total
+    : debt.localIssues.length + debt.openAnnotations.length + debt.deferred.length;
+  $("nDebt").textContent = debtTotal;
+  $("kDebt").className = "kpi" + (debtTotal ? " warn" : "");
+
+  /* ── 工具遥测迷你图(22-CONTEXT D-03)──
+     数据源 ~/.agents/mm-gsd-tools.jsonl(只读),服务端现读现算。
+     口径(按本地日切桶 + 按 cwd 归一比较)只在服务端 references/telemetry-view.mjs 一处,
+     前端不再另算 —— 前端再算一遍就会出现两个打架的「今天」数。 */
+  const tel = st.telemetry || { series: [], byTool: {}, total: 0, empty: true };
+  const telDays = tel.series.length;
+  const telLast = telDays ? tel.series[telDays - 1].date : "—";
+  $("cntTelDays").textContent = telDays ? telDays + " 天 · 共 " + tel.total + " 次(截至 " + telLast + ")" : "—";
+  $("cntTelTools").textContent = Object.keys(tel.byTool).length + " 种";
+
+  // 零命中不画空图 —— 空图会被读成「图坏了」,给文案(22-CONTEXT D-03 空态口径)
+  $("telChart").innerHTML = tel.empty
+    ? '<div class="empty">本项目暂无工具遥测记录</div>'
+    : telChartSvg(tel.series);
+  const telBox = $("telTools");
+  telBox.innerHTML = "";
+  const telEntries = Object.entries(tel.byTool).sort((a, b) => (b[1] - a[1]) || a[0].localeCompare(b[0]));
+  for (const [tool, n] of telEntries) {
+    const row = document.createElement("div");
+    row.className = "drow";
+    row.innerHTML = '<span class="tk">' + esc(tool) + '</span>' +
+      '<span class="tprog"><i style="width:' + Math.round((100 * n) / (telEntries[0][1] || 1)) + '%"></i></span>' +
+      '<span class="dmut">' + n + " 次</span>";
+    telBox.appendChild(row);
+  }
+  if (!telEntries.length) telBox.innerHTML = '<div class="empty">没有工具分布数据。</div>';
 
   /* ── REQ 溯源链 ── */
   const q = ($("q").value || "").toLowerCase();
@@ -393,7 +575,7 @@ document.addEventListener("click", (e) => {
   $("hAnn").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
 });
 /* KPI 点击 → 滚到对应区块 */
-for (const [id, target] of [["kReq", "hReq"], ["kPh", "hPh"], ["kAnn", "hAnn"], ["kIss", "hIss"], ["kRep", "hPh"]])
+for (const [id, target] of [["kReq", "hReq"], ["kPh", "hPh"], ["kAnn", "hAnn"], ["kIss", "hIss"], ["kRep", "hPh"], ["kDebt", "hDebt"]])
   $(id).onclick = () => $(target).scrollIntoView({ block: "start" });
 $("q").addEventListener("input", () => last && load());
 
