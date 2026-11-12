@@ -230,6 +230,29 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
     eqN(checkReqCoverage({ root: d5, plansDir: join(d5, ".planning") }).length, 1, "未标 baseline 的 REQ 照判红(同一 REQ-1 无人认领 → 红)");
     rmSync(d5, { recursive: true, force: true });
   }
+  // ---- REQ 处置台账 × 覆盖门(23-CONTEXT D-01/D-02,phase 23):处置行跳过、继任者缺席判红、
+  //      obsolete 证据闸;台账口径经 references/req-ledger.mjs。上面的 d4/d5 夹具刻意不写 req-ledger.md
+  //      —— 它们就是「零台账不废门」的回归证据(闸四:文件不存在时判红集合与旧口径一致)。
+  {
+    const dRL = mkdtempSync(join(tmpdir(), "mm-gsd-reqled-"));
+    mkdirSync(join(dRL, ".planning"), { recursive: true });
+    writeFileSync(join(dRL, ".planning", "REQUIREMENTS.md"), "- REQ-1: 需求一\n- REQ-2: 需求二\n");
+    writeFileSync(join(dRL, ".planning", "23-01-PLAN.md"), "---\nphase: \"23\"\n---\n\n### T1 事\n- **covers**: REQ-2\n");
+    const ledger = (row) => writeFileSync(join(dRL, ".planning", "req-ledger.md"), "| REQ | 处置 | 指向 | 说明 |\n|---|---|---|---|\n" + row);
+    const cov = () => checkReqCoverage({ root: dRL, plansDir: join(dRL, ".planning") });
+    eqN(cov().length, 1, "台账文件不存在 → REQ-1 照判红(零台账不废门的基线,d4/d5 同款形状)");
+    ledger("| REQ-1 | superseded | → REQ-2 | 由 REQ-2 承接 |\n");
+    eqN(cov().length, 0, "superseded REQ → 覆盖门跳过");
+    ledger("| REQ-2 | delivered | v0.6.0 | 已交付 |\n");
+    eqN(cov().some((p) => p.startsWith("REQ-1")), true, "台账无行 REQ 照判红(零台账不废门)");
+    ledger("| REQ-1 | superseded | → REQ-9 | 由 REQ-9 承接 |\n");
+    eqN(cov().some((p) => p.includes("取代者不存在 —— 记账不算数(假销账)")), true, "superseded 继任者缺席 → 判红");
+    ledger("| REQ-1 | obsolete | — |  |\n");
+    eqN(cov().some((p) => p.includes("obsolete 无证据")), true, "obsolete 无证据 → 判红");
+    ledger("| REQ-1 | obsolete | — | 挂 D-01 |\n");
+    eqN(cov().length, 0, "obsolete 挂 D-01 → 跳过");
+    rmSync(dRL, { recursive: true, force: true });
+  }
   // ---- 本地账三选一门(phase 19 D-11,RC2 解药):诊断过的坑不许裸放 ----
   {
     const d6 = mkdtempSync(join(tmpdir(), "mm-gsd-iledger-"));

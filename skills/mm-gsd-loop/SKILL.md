@@ -68,7 +68,7 @@ node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --init "<一句话
 
 ## 五步成环(是环不是线)
 
-1. **discuss** → 调用 mm-gsd-discuss。**灵魂环节**:执行期的一切偏差,源头多半是讨论期没捕获的隐含期望;捕获标准是"下游不再需要追问用户"。纯基础设施、实现路径清晰、或决策已全在 CONTEXT → 可跳过,不硬凑问题。
+1. **discuss** → 调用 mm-gsd-discuss。**灵魂环节**:执行期的一切偏差,源头多半是讨论期没捕获的隐含期望;捕获标准是"下游不再需要追问用户"。纯基础设施、实现路径清晰、或决策已全在 CONTEXT → 可跳过,不硬凑问题。REQ 处置(superseded/obsolete)经用户确认后落 `.planning/req-ledger.md` 一行。
 2. **plan** → 调用 mm-gsd-plan。**PLAN 落盘后必须跑 `--plan` 转绿再进下一步**(见「门禁接线」)。
    **预审门**:PLAN 落盘后、执行前,**由你(编排层)调用 `mm-gsd-plan-check` 技能**(全新上下文)——
    它跑机器判据、按需派只读子代理独立复核,产出 `.planning/<NN-MM>-PLAN-CHECK.md`;`status` 不是 `passed` → **不许进执行**
@@ -78,11 +78,13 @@ node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --init "<一句话
    (= `mm-gsd check --plan-check <路径>`)。用户问「这份计划能开工吗」时调技能或跑命令,别凭印象回答。
    **收敛判据**:机器门禁绿 ∧ 一轮独立预审零 BLOCKER ⇒ 允许开工;WARNING 逐条归 Deferred 带进施工,
    不为它开新一轮改稿;轮次硬上限 2,第 3 轮仍 BLOCKER → 停下升级(细节见 mm-gsd-plan-check「收敛判据」节,issue #13)。
+   产品面变更(用户可见行为/文档)的 PLAN frontmatter 声明 `product_surface: REQ-N…`。
 3. **execute** → 调用 mm-gsd-exec。**施工方,不是设计师**:照 PLAN 那张票施工,只核对自己落的与图纸对不对得上;不重做调研、不重新理解项目、**不审批**(图纸对不对是 verify 的活)。
 4. **verify** → 调用 mm-gsd-verify。**验证不过 → 回 execute 修 → 重 verify;每条 REQ 拿到证据才准进 ship。修复预算 2 次,超了升级到人。**(执行侧「同一根因自动修 ≤2 次」与验证侧「重验 2 轮」是**两件事**:前者管一次施工里能自己修几回,后者管 gap 修完能重验几轮。)
 5. **ship** → 交付物**被消费**才算完成(PR 已开/已合并/已发布),用户可见变更同步文档,并落
    `.planning/<NN>-MM-SHIP.md`(模板见 templates/ship.md)。**验证通过不等于交付**:没有 SHIP 工件,状态机停在 `completed`,
    检查器会警告"停在验证没走到交付"。STATE 勾掉本 phase 的时点 = SHIP 落盘之后。
+   声明了 product_surface 的批次,SHIP 后在 req-ledger 落 delivered 行(vX.Y.Z)。
 
 **ship 步的硬要求**:写 `delivered` 之前先核对东西真的被消费了(PR 无阻断 / 已合并 / 已发布),证据写具体;受阻就写
 `status: held` 并说明阻碍(蒙混成 shipped 会让状态机把整个 phase 判成终态)。涉及删数据、force push、动生产、发布,属于拍板权第 2/3 类,**先问用户**。

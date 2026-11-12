@@ -123,6 +123,7 @@ export function validateVerification(text, status) {
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { splitCommands } from "./worktree-view.mjs";
+import { parseReqLedger, reqState, successorExists } from "./req-ledger.mjs";
 
 /**
  * 前提存在性:票里引用的路径,要么真实存在,要么是这张票自己要产出的。
@@ -205,10 +206,11 @@ export function checkReqClaims(tickets, root) {
 export function checkReqCoverage({ root, plansDir }) {
   const reqFile = join(root, ".planning", "REQUIREMENTS.md");
   if (!existsSync(reqFile)) return [];
+  const reqText = readFileSync(reqFile, "utf8");
   // baseline 跳过(phase 19 D-11):REQUIREMENTS.md 晚于部分能力诞生,标 `(baseline` 的行
   // (实测形状 `(baseline,0.4.x)`)由已发布版本兑现,不进覆盖集;未标 baseline 的 REQ 照判红。
   // 逐行判 —— 标记跟着 REQ 行走,不能全文一判(会把别的行的说明文字也卷进来)。
-  const known = readFileSync(reqFile, "utf8").split(/\r?\n/)
+  const known = reqText.split(/\r?\n/)
     .filter((line) => !/\(baseline/i.test(line))
     .flatMap((line) => [...line.matchAll(/REQ-\d+/gi)].map((m) => m[0].toUpperCase()));
   const claimed = new Set();
@@ -224,8 +226,31 @@ export function checkReqCoverage({ root, plansDir }) {
     }
   };
   scan(plansDir);
-  return known.filter((r) => !claimed.has(r))
+  // REQ 处置台账(23-CONTEXT D-01/D-02):有处置行的按处置跳过或判红。
+  // 闸四(零台账不废门):台账文件不存在或无行时,下面三个闸一个都不触发,
+  // 判红集合与旧口径完全一致(d4/d5 夹具走「文件不存在」分支,照红)。
+  const ledgerPath = join(root, ".planning", "req-ledger.md");
+  const rows = existsSync(ledgerPath) ? parseReqLedger(readFileSync(ledgerPath, "utf8")) : [];
+  // 闸一:delivered/superseded/obsolete 的 REQ 不再因无人认领判红(处置行即免,台账无行/active 照红)
+  const settled = new Set(rows.filter((r) => reqState(rows, r.req) !== "active").map((r) => r.req));
+  const problems = known.filter((r) => !claimed.has(r) && !settled.has(r))
     .map((r) => `${r} 无人认领 —— REQUIREMENTS.md 里有这条需求,但全部计划的 covers 都没认领它(需求遗漏,issue #21)`);
+  // 闸二:superseded 行继任 REQ-M 在 REQUIREMENTS.md 里不存在 → 判红(跳过但不查继任者存在性 = 销红逃生门)
+  for (const req of successorExists(rows, reqText)) {
+    const row = rows.find((x) => x.req === req);
+    const m = String(row?.successor ?? "").match(/REQ-[\w.-]+/i);
+    const target = (m ? m[0] : "").toUpperCase().replace(/[.-]+$/, "");
+    problems.push(target
+      ? `${target} 取代者不存在 —— 记账不算数(假销账)(${req} 声称由它承接)`
+      : `${req} superseded 未写取代者 —— 记账不算数(假销账)`);
+  }
+  // 闸三:obsolete 行证据列(说明)为空 → 判红(obsolete 必须挂 D-NN 或批注 id 作证据,D-01)
+  for (const row of rows) {
+    if (reqState(rows, row.req) !== "obsolete") continue;
+    if (!String(row.evidence ?? "").trim())
+      problems.push(`${row.req} obsolete 无证据 —— 必须挂 D-NN 或批注 id(D-01)`);
+  }
+  return problems;
 }
 
 /**

@@ -9,6 +9,7 @@
 phase: "02"
 status: shipped
 delivered: <PR 链接 / 合并 commit / 发布单号 —— 写能被第三人核对的具体位置,不写"已合并">
+product_surface: <本批 PLAN 声明的产品面 REQ-N…;SHIP 后在 .planning/req-ledger.md 落 delivered 行,没有产品面变更就删掉这行>
 docs_synced: yes
 date: <ISO 日期>
 ---

@@ -21,6 +21,7 @@ import { join, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { buildDebt } from "../references/debt-panel.mjs";
+import { parseReqLedger, reqState } from "../references/req-ledger.mjs";
 import { readRows } from "../references/telemetry-aggregate.mjs";
 import { aggregateByDay } from "../references/telemetry-view.mjs";
 
@@ -218,6 +219,22 @@ function buildState() {
   for (const i of issues) i.open = openIds.has(i.id.toUpperCase());
   const issuesOpen = debt.localIssues.length;
 
+  // REQ 台账对账读端(REQ-26,23-CONTEXT D-01 写端的读端):扫全部 *-SHIP.md 与对应 PLAN 的
+  // product_surface: 声明,SHIP 后 req-ledger 缺该批 REQ 的 delivered 行 → 逐条黄警告
+  // (渲染由 23-02 总览票接线)。台账解析口径只在 references/req-ledger.mjs 一处。
+  const reqLedgerRows = existsSync(P("req-ledger.md")) ? parseReqLedger(readFileSync(P("req-ledger.md"), "utf8")) : [];
+  const productSurfaceWarn = [];
+  for (const sp of shipPaths) {
+    const base = sp.split(/[\\/]/).pop().replace(/-SHIP\.md$/, "");
+    const pp = planPaths.find((x) => x.split(/[\\/]/).pop().replace(/-PLAN\.md$/, "") === base);
+    if (!pp) continue;
+    const declared = String(fm(readFileSync(pp, "utf8")).product_surface ?? "").match(/REQ-[\w.-]+/gi) ?? [];
+    for (const raw of declared) {
+      const req = raw.toUpperCase();
+      if (reqState(reqLedgerRows, req) !== "delivered")
+        productSurfaceWarn.push(`${req} 已随 ${base} 声明 product_surface,但 req-ledger 无 delivered 行 —— SHIP 后落台账(D-01)`);
+    }
+  }
   // state 条(21-01 PLAN 契约):声明 / phase / 工件计数(含 R 票 pending 数)——
   // 只有计数,不含推导判定:推导单一来源是 checker(预审 F3)
   const allPlans = [...phases.values()].flatMap((p) => p.plans);
@@ -237,6 +254,7 @@ function buildState() {
     reqs, annotations,
     issuesOpen, issues,
     debt,
+    productSurfaceWarn,
     telemetry: readTelemetry(ROOT),
   };
 }
