@@ -101,6 +101,30 @@ try {
   add("main-未推送", "error", String(e).slice(0, 80));
 }
 
+// 漂移 vs 基线:TODO/FIXME 计数(基线文件 tools/patrol-baseline.json,故意更新基线 = keep 提交的一部分)
+try {
+  const base = JSON.parse(readFileSync(join(ROOT, "tools", "patrol-baseline.json"), "utf8"));
+  const tracked = run("git", ["ls-files"]).split("\n").filter(f => /\.(mjs|md)$/.test(f.trim()) && f.trim());
+  let todo = 0;
+  for (const f of tracked) todo += (readFileSync(join(ROOT, f.trim()), "utf8").match(/TODO|FIXME/g) || []).length;
+  const drift = todo - base.todoCount;
+  add("todo-漂移", drift <= 0 ? "ok" : "alert", "TODO/FIXME " + todo + "(基线 " + base.todoCount + ",漂移 +" + drift + ")");
+} catch (e) {
+  add("todo-漂移", "error", String(e).slice(0, 80));
+}
+
+// 漂移 vs 基线:最大单文件体积(预算代理)
+try {
+  const base = JSON.parse(readFileSync(join(ROOT, "tools", "patrol-baseline.json"), "utf8"));
+  const tracked = run("git", ["ls-files"]).split("\n").filter(f => /\.(mjs|md)$/.test(f.trim()) && f.trim());
+  let maxB = 0, maxF = "";
+  for (const f of tracked) { const b = Buffer.byteLength(readFileSync(join(ROOT, f.trim()), "utf8")); if (b > maxB) { maxB = b; maxF = f.trim(); } }
+  const over = maxB - base.maxFileBytes;
+  add("file-预算", over <= base.sizeSlack ? "ok" : "alert", "最大单文件 " + maxF + " " + maxB + "B(基线 " + base.maxFileBytes + "B,超 " + over + "B;容忍 " + base.sizeSlack + "B)");
+} catch (e) {
+  add("file-预算", "error", String(e).slice(0, 80));
+}
+
 // ---- 输出 ----
 // 确定性契约:--benchmark 输出只含 checks(双跑逐字节一致);时间戳只进人读路径。
 if (process.argv.includes("--benchmark")) console.log(JSON.stringify({ checks }, null, 2));
