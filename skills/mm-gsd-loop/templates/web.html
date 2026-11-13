@@ -803,8 +803,11 @@ async function load() {
   /* ── 总览上屏(D-05):对账黄条 + phase 总览表(卡片的用户原话/CONTEXT 折叠、R 票修复中 pill、
      预审/验收 meta 三处能力随迁进详情面板 renderDetail,不许丢)── */
   const psw = st.productSurfaceWarn || [];
-  $("pswBar").hidden = !psw.length;
-  $("pswBar").innerHTML = psw.length ? "<div><b>product_surface 对账:</b>以下 REQ 已随 SHIP 声明产品面,但 req-ledger 还没有 delivered 行</div>" + psw.map((w) => "<div>" + esc(w) + "</div>").join("") : "";
+  /* 防再积黄条(25-CONTEXT D-03):debtWarn 复用同一黄条通道,总览顶部随对账黄条一起上屏 */
+  const dw = st.debtWarn || [];
+  $("pswBar").hidden = !(psw.length || dw.length);
+  $("pswBar").innerHTML = (psw.length ? "<div><b>product_surface 对账:</b>以下 REQ 已随 SHIP 声明产品面,但 req-ledger 还没有 delivered 行</div>" + psw.map((w) => "<div>" + esc(w) + "</div>").join("") : "")
+    + (dw.length ? "<div><b>欠账防再积:</b></div>" + dw.map((w) => "<div>" + esc(w) + "</div>").join("") : "");
   renderOverview();
   topoRender();
 

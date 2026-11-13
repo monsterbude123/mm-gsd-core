@@ -87,6 +87,14 @@ function writeFixture(root) {
     ["# 01-01 摘要", "", "## Deferred Issues", "", "- 票级归属细化", "- 沙箱机制研究", "- 历史票隔离口径", "",].join("\n"),
   );
 
+  // 防再积黄条夹具(25-CONTEXT D-03):循环生成 31 条未分类(不逐条手写),连同上面 3 条
+  // 共 34 条未分类 > 阈值 30 → /api/state 的 debtWarn 非空
+  writeFileSync(
+    join(pl, "02-01-SUMMARY.md"),
+    ["# 02-01 摘要", "", "## Deferred Issues", "",
+      ...Array.from({ length: 31 }, (_, i) => `- 夹具未分类欠账 ${i + 1}`), ""].join("\n"),
+  );
+
   // 批注:一条 open、一条 digested —— 只数 open
   writeFileSync(
     join(pl, "annotations.json"),
@@ -458,6 +466,17 @@ async function main() {
           && !!ph21 && ph21.level === 0 && Array.isArray(ph21.depends_on) && ph21.depends_on.length === 0
           && !!ph22 && ph22.level === 1 && Array.isArray(ph22.depends_on) && JSON.stringify(ph22.depends_on) === JSON.stringify(["21"]),
         `topo=${JSON.stringify(st.topo)} ph21=${JSON.stringify(ph21 && { level: ph21.level, depends_on: ph21.depends_on })} ph22=${JSON.stringify(ph22 && { level: ph22.level, depends_on: ph22.depends_on })}`,
+      );
+    }
+
+    // ㉔ 防再积黄条(25-CONTEXT D-03):夹具循环生成 31 条未分类 → /api/state 的 debtWarn 非空且带计数与阈值
+    {
+      const dw = st.debtWarn;
+      // 当前未分类计数 = 循环生成的 31 条 + 01-01-SUMMARY 既有 3 条 = 34,阈值 30
+      ok(
+        "夹具循环生成 31 条未分类 → /api/state 的 debtWarn 非空且带计数(34 = 31 循环生成 + 3 既有)与阈值(30),措辞含「未分类」",
+        Array.isArray(dw) && dw.length === 1 && dw[0].includes("未分类") && dw[0].includes("34") && dw[0].includes("30"),
+        JSON.stringify(dw),
       );
     }
   } catch (e) {

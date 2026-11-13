@@ -279,6 +279,15 @@ function buildState(root) {
   // 屏上渲染由 23-02 总览票接线)
   for (const r of reqs) r.disposition = reqState(reqLedgerRows, r.id);
 
+  // 防再积黄条(25-CONTEXT D-03,REQ-31):未清偿 deferred 中 kind=未分类 超阈 → 一条黄警告。
+  // 口径 = 25-01 台账 overlay 之后的 debt.deferred(dismissed 已移出、升级/可做已覆写 kind),
+  // 阈值 30 是探索起点(战役后常态应为 0 附近);否则空数组。
+  const DEBT_WARN_THRESHOLD = 30;
+  const unclassifiedCount = debt.deferred.filter((d) => d.kind === "未分类").length;
+  const debtWarn = unclassifiedCount > DEBT_WARN_THRESHOLD
+    ? [`deferred 未分类 ${unclassifiedCount} 条,超过阈值 ${DEBT_WARN_THRESHOLD} —— 新欠账当天可见:先登记分类,或落处置台账 .planning/deferred-LEDGER.md`]
+    : [];
+
   // state 条(21-01 PLAN 契约):声明 / phase / 工件计数(含 R 票 pending 数)——
   // 只有计数,不含推导判定:推导单一来源是 checker(预审 F3)
   // phase 挂账数(D-05,REQ-28 总览列唯一口径):该 phase 工件里的未清偿 deferred 条数,
@@ -321,6 +330,7 @@ function buildState(root) {
     issuesOpen, issues,
     debt,
     productSurfaceWarn,
+    debtWarn,
     telemetry: readTelemetry(root),
   };
 }
