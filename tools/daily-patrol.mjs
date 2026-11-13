@@ -5,6 +5,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import { buildDebt } from "../skills/mm-gsd-loop/references/debt-panel.mjs";
+import { checkReqCoverage } from "../skills/mm-gsd-loop/references/verification-gates.mjs";
 
 const ROOT = process.cwd();
 const checks = [];
@@ -56,6 +57,30 @@ try {
   add("state-machine-一致", "ok", "STATE 声明与工件推导一致");
 } catch (e) {
   add("state-machine-一致", "alert", "状态机声明与推导不符(checker 非 0,跑 gsd-state-check 看详情)");
+}
+
+// 需求全认领:REQUIREMENTS 每条 REQ 有票认领(覆盖门正方向)
+try {
+  const problems = checkReqCoverage({ root: ROOT, plansDir: join(ROOT, ".planning") });
+  add("reqs-全认领", problems.length === 0 ? "ok" : "alert", problems.length ? problems[0] + (problems.length > 1 ? ` 等 ${problems.length} 条` : "") : "REQUIREMENTS 每条 REQ 都有票认领");
+} catch (e) {
+  add("reqs-全认领", "error", String(e).slice(0, 80));
+}
+
+// 产品文档禁词零命中(窄口径,23-03 同款)
+try {
+  const docsDir = join(ROOT, "docs", "product");
+  const banned = /(REQ-\d|\b\d{2}-\d{2}\b|skills[\\/]mm-gsd|\.planning[\\/])/;
+  const hits = [];
+  let names = [];
+  try { names = readdirSync(docsDir); } catch {}
+  for (const n of names.filter(x => x.endsWith(".md"))) {
+    const m = readFileSync(join(docsDir, n), "utf8").match(new RegExp(banned.source, "g"));
+    if (m) hits.push(n + ": " + [...new Set(m)].slice(0, 3).join(", "));
+  }
+  add("docs-禁词", hits.length === 0 ? "ok" : "alert", hits.length ? hits.join(" | ") : "docs/product 禁词零命中");
+} catch (e) {
+  add("docs-禁词", "error", String(e).slice(0, 80));
 }
 
 // ---- 输出 ----
