@@ -12,7 +12,7 @@ const SELF = "tools/daily-patrol.mjs"; // 巡检器不数自己:自身文案里�
 const checks = [];
 const add = (id, status, detail) => checks.push({ id, status, detail });
 
-const run = (cmd, args) => execFileSync(cmd, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+const run = (cmd, args) => execFileSync(cmd, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 120000 });
 const read = p => { try { return readFileSync(join(ROOT, p), "utf8"); } catch { return null; } };
 const P = (...s) => join(ROOT, ".planning", ...s);
 
