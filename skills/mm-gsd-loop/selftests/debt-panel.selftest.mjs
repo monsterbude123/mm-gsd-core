@@ -391,6 +391,17 @@ function main() {
     `dismissed=${JSON.stringify(debt.dismissed)} counts=${JSON.stringify(debt.counts)}`,
   );
 
+  // 17. 截断落在空格上的键 → 写读双侧同形(25-03 战役实测:keyFor 40 字截断可产生尾空格键,
+  //     台账解析侧 splitRow 对单元格 trim,不对称则该键永远无法命中 —— 截断后 trim 与解析侧同规则)
+  const wsEntry = { text: "x".repeat(39) + " tail-content", source: "01-02-SUMMARY.md" };
+  const wsKey = keyFor(wsEntry);
+  const wsRow = parseDeferredLedger(`| ${wsKey} | dismissed | phase 25 实测 | 截断尾空格同形 |`)[0];
+  ok(
+    "截断落空格的键 → keyFor 截断后 trim 与台账解析侧同形,台账行可命中",
+    !/\s$/.test(wsKey) && !!wsRow && wsRow.key === wsKey && matchRow(wsEntry, [wsRow])?.disposition === "dismissed",
+    `key=${JSON.stringify(wsKey)} row=${JSON.stringify(wsRow)}`,
+  );
+
   rmSync(dir2, { recursive: true, force: true });
   rmSync(dir, { recursive: true, force: true });
 

@@ -37,7 +37,9 @@ function normalizeKeyText(text) {
  */
 export function keyFor(entry) {
   const base = String(entry?.source ?? "").split("/").pop();
-  return `${base}#${normalizeKeyText(entry?.text).slice(0, 40)}`;
+  // 截断后再 trim:截断可能恰好落在空格上,而台账解析侧 splitRow 对单元格 trim,
+  // 不对称则该键永远无法命中(25-03 战役实测 5 条此形状)。写读双侧同规则,同 I-7 管道归一。
+  return `${base}#${normalizeKeyText(entry?.text).slice(0, 40).trim()}`;
 }
 
 /**
