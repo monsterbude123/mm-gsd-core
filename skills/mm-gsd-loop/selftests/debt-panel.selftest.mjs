@@ -17,6 +17,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 
 import { parseDeferred, readLedger, issueState, openIssues, buildDebt } from "../references/debt-panel.mjs";
+import { keyFor, parseDeferredLedger, matchRow, dispositionOf } from "../references/deferred-ledger.mjs";
 
 const MODULE_PATH = fileURLToPath(new URL("../references/debt-panel.mjs", import.meta.url));
 
@@ -112,6 +113,18 @@ const SUMMARY_01_01 = `# 01-01 SUMMARY
 ## Self-Check: PASSED
 
 - 关键文件在盘。
+`;
+
+/** 真实 25-02 台账写行形状的夹具:SUMMARY 的 Deferred Issues 段(含一条带半角管道符的条目文本)。 */
+const SUMMARY_01_02 = `# 01-02 SUMMARY
+
+## Deferred Issues
+
+- 台账销账|管道条目
+- 台账挂起条目
+- 台账可做条目
+- 台账升级条目
+- 台账无行条目
 `;
 
 /** 批注真实形状:.planning/annotations.json 的一行。 */
@@ -272,6 +285,113 @@ function main() {
   );
   eq("CONTEXT 的 <deferred> 无序列表条目进 deferred 列表", ctxList.map((e) => e.kind), ["未分类", "未分类"]);
 
+  // ── 25-01 T1:deferred 处置台账 overlay + 占位噪声修复(六条具名用例)──────────────
+  // 夹具照 25-02 写行形状:台账行用 keyFor 生成键(条目列已管道归一),同键两行验末行胜出;
+  // 条目原文含半角管道符「台账销账|管道条目」——keyFor 双侧同规则归一,I7 的自测覆盖(不单列用例)。
+
+  // 11. 占位行(无。)不计数(解析噪声修复:09-02-SUMMARY 的真实形状)
+  const noise = parseDeferred(
+    "# 09-02 SUMMARY\n\n## Deferred Issues\n\n- 无。\n- none\n- -\n- 真欠账条目\n\n## Self-Check: PASSED\n\n- 不是欠账。\n",
+    "09-02-SUMMARY.md",
+  );
+  eq("占位行(无。)不计数", noise.map((e) => e.text), ["真欠账条目"]);
+
+  // 台账夹具:第二个临时目录落盘再读回(与上面的主夹具隔离 —— 主夹具必须保持零台账,供 16 用)
+  const dir2 = mkdtempSync(join(tmpdir(), "debt-panel-ledger-"));
+  const ledEntry = (text) => ({ text, source: "01-02-SUMMARY.md" });
+  const ledKey = (text) => keyFor(ledEntry(text));
+  const ledRow = (k, disp, ref, note) => `| ${k} | ${disp} | ${ref} | ${note} |`;
+  const LEDGER_25 = [
+    "# deferred 处置台账 —— 原件零改动,处置记在这里(25-CONTEXT D-01)",
+    "",
+    "| 条目 | 处置 | 指向 | 说明 |",
+    "|---|---|---|---|",
+    ledRow(ledKey("台账销账|管道条目"), "dismissed", "phase 20 已实现", "证据:20-01-SUMMARY"),
+    ledRow(ledKey("台账挂起条目"), "dismissed", "误判行", "先判 dismissed"),
+    ledRow(ledKey("台账挂起条目"), "挂条件", "宿主补 session 标识后复查", "追加修正:末行胜出"),
+    ledRow(ledKey("台账可做条目"), "可做", "REQ-31", "升级候选"),
+    ledRow(ledKey("台账升级条目"), "升级REQ-31", "REQ-31", "带修饰写法按前缀归类"),
+    "",
+  ].join("\n");
+  const files2 = { "01-02-SUMMARY.md": SUMMARY_01_02, "deferred-LEDGER.md": LEDGER_25 };
+  const planningDir2 = {};
+  for (const [rel, text] of Object.entries(files2)) {
+    const abs = join(dir2, ...rel.split("/"));
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(abs, text, "utf8");
+    planningDir2[rel] = readFileSync(abs, "utf8");
+  }
+  const debt2 = buildDebt({ planningDir: planningDir2, annotations: [] });
+
+  // 12. 台账 dismissed → 移出计数且 counts.dismissed 进账(管道条目同时证明双侧键归一一致)
+  ok(
+    "台账 dismissed → 移出计数且 counts.dismissed 进账(条目原文含半角管道符,keyFor 写行/读键双侧同规则归一后命中)",
+    !debt2.deferred.some((d) => d.text === "台账销账|管道条目")
+      && !debt2.parked.some((d) => d.text === "台账销账|管道条目")
+      && debt2.dismissed.length === 1
+      && debt2.dismissed[0].text === "台账销账|管道条目"
+      && debt2.counts.dismissed === 1
+      && debt2.counts.total === debt2.counts.openIssues + debt2.counts.openAnnotations + debt2.counts.deferred,
+    `dismissed=${JSON.stringify(debt2.dismissed.map((d) => d.text))} counts=${JSON.stringify(debt2.counts)}`,
+  );
+
+  // 13. 台账挂条件 → 进 parked(行 ref/note 附条目)
+  const parkedLedger = debt2.parked.find((d) => d.text === "台账挂起条目");
+  ok(
+    "台账挂条件 → 进 parked(行 ref/note 附条目,不进 deferred/dismissed)",
+    !!parkedLedger
+      && !debt2.deferred.some((d) => d.text === "台账挂起条目")
+      && !debt2.dismissed.some((d) => d.text === "台账挂起条目")
+      && parkedLedger.ledgerRef === "宿主补 session 标识后复查"
+      && parkedLedger.ledgerNote === "追加修正:末行胜出",
+    `parked=${JSON.stringify(debt2.parked.map((d) => [d.text, d.ledgerRef, d.ledgerNote]))}`,
+  );
+
+  // 14. 台账可做 → 留 deferred 且 kind=可做(kind 契约自证,25-01 预审 B2:升级/可做都覆写,
+  //     「升级REQ-31」带修饰写法按前缀归类;无行条目保持未分类)
+  const kdDo = debt2.deferred.find((d) => d.text === "台账可做条目");
+  const kdUp = debt2.deferred.find((d) => d.text === "台账升级条目");
+  ok(
+    "台账可做 → 留 deferred 且 kind=可做(kind 契约:升级/可做覆写,升级REQ-N 前缀匹配;无行条目照未分类)",
+    !!kdDo && !!kdUp && kdDo.kind === "可做" && kdUp.kind === "可做"
+      && debt2.deferred.some((d) => d.text === "台账无行条目" && d.kind === "未分类")
+      && debt2.counts.deferred === 3,
+    `deferred=${JSON.stringify(debt2.deferred.map((d) => [d.text, d.kind]))}`,
+  );
+
+  // 15. 同键追加修正 → 末行胜出(append-only 追加修正语义,25-01 预审 W4;顺带钉处置列前缀匹配 W6)
+  const ledRows = parseDeferredLedger(LEDGER_25);
+  const lastHit = matchRow(ledEntry("台账挂起条目"), ledRows);
+  ok(
+    "同键追加修正 → 末行胜出(同键两行 matchRow 取最后一行:首行 dismissed 被追加的挂条件行覆盖 → 进 parked 不进 dismissed)",
+    ledRows.filter((r) => r.key === ledKey("台账挂起条目")).length === 2
+      && !!lastHit && lastHit.disposition === "挂条件" && lastHit.note === "追加修正:末行胜出"
+      && !!parkedLedger && !debt2.dismissed.some((d) => d.text === "台账挂起条目")
+      && dispositionOf({ disposition: "升级REQ-31" }) === "升级"
+      && dispositionOf({ disposition: "dismissed +证据" }) === "dismissed"
+      && dispositionOf({ disposition: "乱写" }) === null
+      && dispositionOf({ disposition: "" }) === null,
+    `lastHit=${JSON.stringify(lastHit)}`,
+  );
+
+  // 16. 零台账 → dismissed 恒空且五计数三清单内容同现状(不变式断言,不要求 JSON 逐字节;主夹具无台账文件)
+  ok(
+    "零台账 → dismissed 恒空且五计数三清单内容同现状(不变式断言:dismissed 空数组、counts.dismissed=0、五计数自洽、三清单内容锚点同现状)",
+    Array.isArray(debt.dismissed) && debt.dismissed.length === 0 && debt.counts.dismissed === 0
+      && debt.counts.openIssues === debt.localIssues.length
+      && debt.counts.openAnnotations === debt.openAnnotations.length
+      && debt.counts.deferred === debt.deferred.length
+      && debt.counts.parked === debt.parked.length
+      && debt.counts.total === debt.counts.openIssues + debt.counts.openAnnotations + debt.counts.deferred
+      && debt.localIssues.map((x) => x.id).join(",") === "I-002"
+      && debt.openAnnotations.map((a) => a.id).join(",") === "a-1"
+      && debt.deferred.length === 3 && debt.deferred[1].text === "预算余 69 行(2931/3000)。"
+      && debt.deferred.every((d) => d.kind === "未分类")
+      && JSON.stringify(debt.parked.map((d) => d.text)) === JSON.stringify(["PostToolUse 精确耗时", "多项目看板"]),
+    `dismissed=${JSON.stringify(debt.dismissed)} counts=${JSON.stringify(debt.counts)}`,
+  );
+
+  rmSync(dir2, { recursive: true, force: true });
   rmSync(dir, { recursive: true, force: true });
 
   const bad = results.filter((r) => !r.pass);

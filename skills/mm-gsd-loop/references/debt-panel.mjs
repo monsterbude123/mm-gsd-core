@@ -15,9 +15,21 @@
 //
 // 导出名一律不以 check/validate 开头:以 check 开头会被 R-16 要求登记进 tools/gate-cases.json 的
 // _modules(本轮不新增 mmc 门禁,登记了也只是空壳)。
+//
+// deferred 处置台账(25-CONTEXT D-01)的键生成/解析/判读口径只在 references/deferred-ledger.mjs 一处
+// (公开导出,清零战役写台账用同一份);这里只 import 公开件,私有解析件仍各模块自含不互拉。
+
+import { parseDeferredLedger, matchRow, dispositionOf } from "./deferred-ledger.mjs";
 
 /** 无三列信息时的分类占位:面板上要能看出「这条没登记分类」,不能显示成空格子。 */
 const UNCLASSIFIED = "未分类";
+
+/** 占位行(25-CONTEXT 解析噪声修复):规范化后为「无」「无。」「none」「-」或空 —— 不是欠账,不计数。 */
+const PLACEHOLDER_TEXT = /^(?:无。?|none|-)$/i;
+
+function isPlaceholder(text) {
+  return PLACEHOLDER_TEXT.test(String(text ?? "").trim());
+}
 
 /** 只有这四类工件段落是 deferred 的来源(D-05)。PLAN/STATE 等文件里的散文提及不算。 */
 const DEBT_SOURCE_FILE = /(?:^|[-\/])(?:CONTEXT|SUMMARY|SHIP|VERIFICATION)\.md$/i;
@@ -91,14 +103,14 @@ function parseDeferredBlock(block, source) {
         if (k === headerAt) continue;
         if (isSeparatorRow(rows[k])) continue;
         const [text, kind, condition, owner] = [rows[k][0] ?? "", rows[k][1] ?? "", rows[k][2] ?? "", rows[k][3] ?? ""];
-        if (!text) continue;
+        if (!text || isPlaceholder(text)) continue;
         out.push({ text, kind: kind || UNCLASSIFIED, condition, owner, source });
       }
       continue;
     }
     const item = parseListItem(lines, i);
     if (item) {
-      out.push({ text: item.text, kind: UNCLASSIFIED, condition: "", owner: "", source });
+      if (!isPlaceholder(item.text)) out.push({ text: item.text, kind: UNCLASSIFIED, condition: "", owner: "", source });
       i = item.next;
       continue;
     }
@@ -171,7 +183,7 @@ export function parseDeferred(text, source = "") {
     while (k < body.length) {
       const item = parseListItem(body, k);
       if (item) {
-        out.push({ text: item.text, kind: UNCLASSIFIED, condition: "", owner: "", source });
+        if (!isPlaceholder(item.text)) out.push({ text: item.text, kind: UNCLASSIFIED, condition: "", owner: "", source });
         k = item.next;
         continue;
       }
@@ -188,7 +200,7 @@ export function parseDeferred(text, source = "") {
     // 只跳带列表符的:裸 `Deferred:` 行不是列表项,上面那段收不走它。
     if (hasSection && m[1]) continue;
     const t = m[2].trim();
-    if (!t) continue;
+    if (!t || isPlaceholder(t)) continue;
     out.push({ text: t, kind: UNCLASSIFIED, condition: "", owner: "", source });
   }
 
@@ -323,8 +335,14 @@ function normalizeAnnotations(annotations) {
  * 没人回答过「什么时候做、谁做」的欠账,诚实计入。counts.deferred / counts.total 只算未清偿口径。
  * parseDeferred 本身不改(解析全量,分类在这里切);parked 条目 condition/owner/source 原样。
  *
+ * deferred 处置台账 overlay(25-CONTEXT D-01):planningDir 下有 deferred-LEDGER.md 时,
+ * 有台账行的条目按处置列归类 —— dismissed → 移入 dismissed 数组(不进 deferred/parked/total);
+ * 挂条件/关闭 → 移入 parked(行 ref/note 附条目);升级/可做 → 留 deferred 且 kind 覆写为「可做」
+ * (kind 契约,25-01 预审 B2);无行/处置前缀不中 → 不动,照未分类。台账口径只在
+ * references/deferred-ledger.mjs 一处。
+ *
  * @param {{planningDir?: Record<string,string>|Array<{path:string,text:string}>, annotations?: Array<object>|string}} input
- * @returns {{localIssues: object[], openAnnotations: object[], deferred: object[], parked: object[], counts: {openIssues:number, openAnnotations:number, deferred:number, parked:number, total:number}}}
+ * @returns {{localIssues: object[], openAnnotations: object[], deferred: object[], parked: object[], dismissed: object[], counts: {openIssues:number, openAnnotations:number, deferred:number, parked:number, dismissed:number, total:number}}}
  */
 export function buildDebt(input = {}) {
   const { planningDir = {}, annotations = [] } = input ?? {};
@@ -348,9 +366,35 @@ export function buildDebt(input = {}) {
   const PARKED_KINDS = new Set(["挂条件", "关闭"]);
   const deferred = [];
   const parked = [];
+  const dismissed = [];
   for (const f of files) {
     if (!DEBT_SOURCE_FILE.test(f.path)) continue;
     for (const d of parseDeferred(f.text, f.path)) (PARKED_KINDS.has(d.kind) ? parked : deferred).push(d);
+  }
+
+  // deferred 处置台账 overlay(25-CONTEXT D-01):planningDir 下有 deferred-LEDGER.md 才读;
+  // 无台账 → 无键,行为同现状。counts.dismissed 键**无条件**存在(零台账恒 0)—— 形状稳定,
+  // 消费方不必双形状防御(25-01 预审 W5)。
+  const ledgerRows = (() => {
+    const f = files.find((x) => /(^|\/)deferred-LEDGER\.md$/i.test(x.path));
+    return f ? parseDeferredLedger(f.text) : [];
+  })();
+  // 只 overlay 未清偿 deferred(kind 挂条件/关闭的已在 parked,不重复判);同键多行末行胜出(matchRow)。
+  for (let i = deferred.length - 1; i >= 0; i -= 1) {
+    const row = matchRow(deferred[i], ledgerRows);
+    if (!row) continue;
+    const disp = dispositionOf(row);
+    if (disp === "dismissed") {
+      // 销账:移出 deferred/parked/total(焚毁的唯一合法形态 —— 原件一个字不动,25-CONTEXT domain)
+      dismissed.push(deferred.splice(i, 1)[0]);
+    } else if (disp === "挂条件" || disp === "关闭") {
+      parked.push({ ...deferred.splice(i, 1)[0], ledgerRef: row.ref, ledgerNote: row.note });
+    } else if (disp === "升级" || disp === "可做") {
+      // kind 契约(25-01 预审 B2):覆写为「可做」—— 战役「未分类 === 0」判据依赖它,
+      // 不改写则可做条目永远计入未分类,判据反向激励全销账
+      deferred[i].kind = "可做";
+    }
+    // disp 为 null(无行/前缀不中)→ 不动,照未分类
   }
 
   const counts = {
@@ -358,7 +402,8 @@ export function buildDebt(input = {}) {
     openAnnotations: openAnnotations.length,
     deferred: deferred.length,
     parked: parked.length,
+    dismissed: dismissed.length,
     total: localIssues.length + openAnnotations.length + deferred.length,
   };
-  return { localIssues, openAnnotations, deferred, parked, counts };
+  return { localIssues, openAnnotations, deferred, parked, dismissed, counts };
 }
