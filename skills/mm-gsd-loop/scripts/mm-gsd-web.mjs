@@ -26,6 +26,9 @@ import { buildDebt } from "../references/debt-panel.mjs";
 import { parseReqLedger, reqState } from "../references/req-ledger.mjs";
 import { readRows } from "../references/telemetry-aggregate.mjs";
 import { aggregateByDay } from "../references/telemetry-view.mjs";
+// 拓扑口径(24-01 T1a,D-01):depends_on 解析逐字照抄 checker 基线、分层/剪环/幽灵边防御都在
+// references/phase-topo.mjs 一处 —— 同一份 STATE 行,--phases 与看板必须同答案(预审 W1/W2)。
+import { topoLevels, parseDepends } from "../references/phase-topo.mjs";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_PATH = join(SCRIPT_DIR, "..", "templates", "web.html");
@@ -150,7 +153,7 @@ function buildState(root) {
     if (inPh && /^##[ \t]/.test(line)) inPh = false;
     if (inPh) {
       const m = line.match(/^-\s*\[( |x|X)\]\s*(\S+)\s*[—–-]?\s*(.*)$/);
-      if (m) phasesFromState.push({ id: m[2], title: m[3].trim(), done: m[1].toLowerCase() === "x" });
+      if (m) phasesFromState.push({ id: m[2], title: m[3].trim(), done: m[1].toLowerCase() === "x", depends_on: parseDepends(m[3]) });
     }
   }
 
@@ -287,7 +290,17 @@ function buildState(root) {
     if (m) debtByPhase[m[1]] = (debtByPhase[m[1]] ?? 0) + 1;
   }
   const phaseList = [...phases.values()].sort((a, b) => a.phase.localeCompare(b.phase));
-  for (const p of phaseList) p.debt = debtByPhase[p.phase] ?? 0;
+  // 依赖拓扑(D-01/24-01 T1a):分层与边由服务端纯函数算好,客户端只渲染不计算(T1b)。
+  // 只有 STATE 行尾 (depends_on: NN) 注记才有依赖;无注记 = 空数组。无 PLAN 的 phase 不进 phases Map
+  // (既有口径),拓扑只在有 PLAN 的 phase 上算。
+  const depByPhase = new Map(phasesFromState.map((s) => [s.id, s.depends_on]));
+  const topo = topoLevels(phaseList.map((p) => ({ id: p.phase, depends_on: depByPhase.get(p.phase) ?? [] })));
+  const levelByPhase = new Map(topo.levels.flatMap((group, li) => group.map((id) => [id, li])));
+  for (const p of phaseList) {
+    p.debt = debtByPhase[p.phase] ?? 0;
+    p.depends_on = depByPhase.get(p.phase) ?? [];
+    p.level = levelByPhase.get(p.phase) ?? 0;
+  }
   const allPlans = [...phases.values()].flatMap((p) => p.plans);
   return {
     generated: new Date().toISOString(),
@@ -302,6 +315,7 @@ function buildState(root) {
       repairsPending: allPlans.filter((x) => x.isRepair && !x.summary).length,
     },
     phases: phaseList,
+    topo: { edges: topo.edges },
     contexts,
     reqs, annotations,
     issuesOpen, issues,

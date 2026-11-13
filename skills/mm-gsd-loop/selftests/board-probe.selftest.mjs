@@ -10,7 +10,7 @@
 //
 // 退出码即判据:任一断言失败 → 1。
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
@@ -111,7 +111,15 @@ function writeFixture(root) {
     ['---', 'phase: "01"', "status: shipped", "delivered: 夹具交付(可核对位置)", "---", "", "# 交付", ""].join("\n"),
   );
 
-  writeFileSync(join(pl, "STATE.md"), ['---', 'status: active', 'active_phase: "22"', '---', "", "# 状态", ""].join("\n"));
+  // STATE 补 Phases 节(24-01 T1a 夹具,预审 W4):一行带 (depends_on: NN) 注记、一行无;
+  // 同号两个 PLAN 必须一起补 —— phases Map 只收有 PLAN 的 phase,只补 STATE 会让拓扑断言空转。
+  writeFileSync(
+    join(pl, "STATE.md"),
+    ['---', 'status: active', 'active_phase: "22"', '---', "", "# 状态", "", "## Phases", "", "- [x] 21 — 已交付阶段", "- [ ] 22 — 进行中阶段 (depends_on: 21)", ""].join("\n"),
+  );
+  const planFor = (ph) => ['---', `phase: "${ph}"`, 'plan: "01"', "goal: 夹具计划", "rollback: 回退本票 commit", '---', "", "# 计划", ""].join("\n");
+  writeFileSync(join(pl, "21-01-PLAN.md"), planFor("21"));
+  writeFileSync(join(pl, "22-01-PLAN.md"), planFor("22"));
 }
 
 /**
@@ -371,6 +379,87 @@ async function main() {
         && bAnns.length === 1 && bAnns[0].text === "落 B",
       `stB=${stB.status} stGhost=${stGhost.status} annB=${annB.status} annGhost=${annGhost.status} bAnns=${JSON.stringify(bAnns)}`,
     );
+
+    // ── 拓扑纯函数三例(24-01 T1a):spawn 子进程 import phase-topo.mjs 直测(req-ledger selftest 同款手法)──
+    // 裸临时 cwd 里跑,stdout 必须恰好是目标 JSON;spawnSync 带超时,模块死循环会被杀成非零退出 ——
+    // 「不挂死」本身就是判据的一部分。
+    const topoProbe = (code, timeoutMs = 10000) => {
+      const url = pathToFileURL(join(HERE, "..", "references", "phase-topo.mjs")).href;
+      const dir = mkdtempSync(join(tmpdir(), "mm-gsd-topo-"));
+      try {
+        return spawnSync(process.execPath, ["--input-type=module", "-e", `const m = await import(${JSON.stringify(url)});\n${code}`], { cwd: dir, encoding: "utf8", timeout: timeoutMs });
+      } finally { try { rmSync(dir, { recursive: true, force: true }); } catch { /* 残留忽略 */ } }
+    };
+    const probeDetail = (r) => `status=${r.status} stdout=${JSON.stringify(String(r.stdout || "").slice(0, 160))} stderr=${JSON.stringify(String(r.stderr || "").slice(0, 160))}`;
+
+    // ⑳ 注记解析,正负路径都钉(防零匹配空真):注记 → ['NN'],全角括号/冒号同答案,无注记/无/none → []
+    {
+      const r = topoProbe(`process.stdout.write(JSON.stringify([
+        m.parseDepends("22 — 进行中阶段 (depends_on: 21)"),
+        m.parseDepends("22 — 进行中阶段 （depends_on：21, 03）"),
+        m.parseDepends("21 — 已交付阶段"),
+        m.parseDepends("21 — 已交付阶段 (depends_on: 无)"),
+        m.parseDepends("21 — 已交付阶段 (depends_on: none)"),
+      ]));`);
+      let got = null;
+      try { got = JSON.parse(r.stdout); } catch { /* 非 JSON = 该用例红 */ }
+      ok(
+        "拓扑纯函数:depends_on 注记 → ['NN'],无注记 → [](正负路径都钉,防零匹配空真;全角括号/冒号与半角同答案 —— 解析逐字照抄 checker 基线)",
+        r.status === 0 && JSON.stringify(got) === JSON.stringify([["21"], ["21", "03"], [], [], []]),
+        probeDetail(r),
+      );
+    }
+
+    // ㉑ 幽灵引用边被丢弃(指向不存在的 phase 不悬空,分层照算)
+    {
+      const r = topoProbe(`process.stdout.write(JSON.stringify(m.topoLevels([
+        { id: "21", depends_on: [] },
+        { id: "22", depends_on: ["21", "99"] },
+        { id: "23", depends_on: ["22"] },
+      ])));`);
+      let got = null;
+      try { got = JSON.parse(r.stdout); } catch { /* 非 JSON = 该用例红 */ }
+      ok(
+        "拓扑纯函数:幽灵引用边被丢弃(22 → 99 不存在,边不入 edges;其余边与分层照算)",
+        r.status === 0
+          && JSON.stringify(got) === JSON.stringify({ levels: [["21"], ["22"], ["23"]], edges: [["21", "22"], ["22", "23"]] }),
+        probeDetail(r),
+      );
+    }
+
+    // ㉒ 环输入 → 确定性剪边后分层有穷且确定(不挂死):21↔22 成环,丢 from-id 最大那条;打乱输入顺序结果不变
+    {
+      const r = topoProbe(`
+        const cyc = [
+          { id: "24", depends_on: ["23"] },
+          { id: "23", depends_on: [] },
+          { id: "21", depends_on: ["22"] },
+          { id: "22", depends_on: ["21"] },
+        ];
+        process.stdout.write(JSON.stringify({ a: m.topoLevels(cyc), b: m.topoLevels([...cyc].reverse()) }));`);
+      let got = null;
+      try { got = JSON.parse(r.stdout); } catch { /* 非 JSON(含超时被杀)= 该用例红 */ }
+      ok(
+        "拓扑纯函数:环输入 → 剪边后分层有穷且确定(不挂死;21↔22 成环丢 from-id 最大那条,输入乱序结果逐字节相同)",
+        r.status === 0 && !!got && JSON.stringify(got.a) === JSON.stringify(got.b)
+          && JSON.stringify(got.a) === JSON.stringify({ levels: [["21", "23"], ["22", "24"]], edges: [["21", "22"], ["23", "24"]] }),
+        probeDetail(r),
+      );
+    }
+
+    // ㉓ /api/state 的 phases[].level 与 topo.edges 与夹具一致(服务端算好,客户端零计算 —— 24-01 T1b 的数据面)
+    {
+      const ph21 = st.phases.find((p) => p.phase === "21");
+      const ph22 = st.phases.find((p) => p.phase === "22");
+      ok(
+        "/api/state 的 phases[].level 与 topo.edges 与夹具一致(21 无注记 → level 0 空依赖;22 注记 → level 1 依赖 21;顶层 topo.edges 恰含 21→22)",
+        Array.isArray(st.topo?.edges)
+          && JSON.stringify(st.topo.edges) === JSON.stringify([["21", "22"]])
+          && !!ph21 && ph21.level === 0 && Array.isArray(ph21.depends_on) && ph21.depends_on.length === 0
+          && !!ph22 && ph22.level === 1 && Array.isArray(ph22.depends_on) && JSON.stringify(ph22.depends_on) === JSON.stringify(["21"]),
+        `topo=${JSON.stringify(st.topo)} ph21=${JSON.stringify(ph21 && { level: ph21.level, depends_on: ph21.depends_on })} ph22=${JSON.stringify(ph22 && { level: ph22.level, depends_on: ph22.depends_on })}`,
+      );
+    }
   } catch (e) {
     console.log(`✗ 探针异常:${e && e.stack ? e.stack : e}`);
     results.push({ name: "探针异常", pass: false });
