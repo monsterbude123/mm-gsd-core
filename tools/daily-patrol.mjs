@@ -83,6 +83,24 @@ try {
   add("docs-禁词", "error", String(e).slice(0, 80));
 }
 
+// 发布一致:package.json 版本 == 最新 git 标签
+try {
+  const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+  const tag = run("git", ["describe", "--tags", "--abbrev=0"]).trim();
+  const ok = tag === "v" + pkg.version;
+  add("release-版本标签一致", ok ? "ok" : "alert", "package.json " + pkg.version + " vs 最新标签 " + tag);
+} catch (e) {
+  add("release-版本标签一致", "error", String(e).slice(0, 80));
+}
+
+// 推送纪律:main 相对 origin/main 的未推送提交数
+try {
+  const n = run("git", ["rev-list", "--count", "origin/main..main"]).trim();
+  add("main-未推送", Number(n) === 0 ? "ok" : "alert", "main 领先 origin/main " + n + " 个提交(日常提交后记得 push)");
+} catch (e) {
+  add("main-未推送", "error", String(e).slice(0, 80));
+}
+
 // ---- 输出 ----
 // 确定性契约:--benchmark 输出只含 checks(双跑逐字节一致);时间戳只进人读路径。
 if (process.argv.includes("--benchmark")) console.log(JSON.stringify({ checks }, null, 2));
