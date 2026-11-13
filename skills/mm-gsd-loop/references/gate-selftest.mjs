@@ -775,6 +775,14 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
       "工具遥测 → 看板迷你图可渲染",
     );
   }
+  // ---- 生产端点名映射(24-01 T2,D-03/D-04):SHIP 的一句话结论占位 / STATE 的索引地图注记 ----
+  //      口径 = 只点名不新建:模板占位在场即完成;消费端门禁(读 summary 断言真实工件)不在本批范围(PLAN-CHECK 记录为接受残余)。
+  {
+    const shipTpl = readFileSync(fileURLToPath(new URL("../templates/ship.md", import.meta.url)), "utf8");
+    const stateTpl = readFileSync(fileURLToPath(new URL("../templates/state.md", import.meta.url)), "utf8");
+    eqN(/(^|\n)summary:/.test(shipTpl), true, "SHIP 模板含 summary 一句话结论占位");
+    eqN(stateTpl.includes("L0/L1/L2 索引地图"), true, "STATE 模板含 L0/L1/L2 索引地图注记");
+  }
   console.log(st.bad ? `\n${st.bad} 项自测不过 —— 门禁本身是坏的,先修门禁` : "\n✓ 门禁自测全过");
   return st.bad;
 }

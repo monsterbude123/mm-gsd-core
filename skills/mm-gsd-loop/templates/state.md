@@ -11,7 +11,8 @@ updated: 2026-10-19
      discussing / planning / executing / verifying / completed / shipped / reopened / paused
      reopened = 已交付 phase 开了点修 R 票(重验 passed 后改回 shipped)。
      写成 "discussing | planning | ..." 是错的 —— 那是选项说明,不是值,照抄即被判非法。
-     真实值由检查器从工件存在性推导,你写声明,它比对。 -->
+     真实值由检查器从工件存在性推导,你写声明,它比对。
+     本文件按 L0/L1/L2 索引地图维护:Project Reference=L0 一句话 / Phases=L1 目录 / Current Position 与 Quick Tasks=L2 明细 / Session Continuity=恢复指针。 -->
 
 
 ## Project Reference

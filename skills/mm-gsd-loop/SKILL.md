@@ -85,6 +85,7 @@ node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --init "<一句话
    `.planning/<NN>-MM-SHIP.md`(模板见 templates/ship.md)。**验证通过不等于交付**:没有 SHIP 工件,状态机停在 `completed`,
    检查器会警告"停在验证没走到交付"。STATE 勾掉本 phase 的时点 = SHIP 落盘之后。
    声明了 product_surface 的批次,SHIP 后在 req-ledger 落 delivered 行(vX.Y.Z)。
+   SHIP 的 summary = 一句话结论,先于一切 bullet(渐进披露第一层 —— 看板与人类读者第一眼读它)。
 
 **ship 步的硬要求**:写 `delivered` 之前先核对东西真的被消费了(PR 无阻断 / 已合并 / 已发布),证据写具体;受阻就写
 `status: held` 并说明阻碍(蒙混成 shipped 会让状态机把整个 phase 判成终态)。涉及删数据、force push、动生产、发布,属于拍板权第 2/3 类,**先问用户**。
@@ -162,6 +163,7 @@ mm-gsd 是从更大的项目蒸馏出来的。被丢掉的部分往往不是功�
 - 每步产出**落盘**(STATE/CONTEXT/PLAN/SUMMARY/VERIFICATION),不留在对话里;落盘位置按上方「工件归属边界」分流。
 - 主会话只做编排与验收(上下文占比 ≤15%),只传**路径**不传内容,结论摘要传回。用全新 agent 续做,不做进程内 resume。
 - 卡住或依赖缺失:记 blockers,跳过该任务继续无依赖任务,不空转重试。
+- **时效三层**(自包含定义,不假设装过任何外部标准):工件按时效分三层 —— append-only 审计工件(REQUIREMENTS / 双 LEDGER / artifact-ledger)是**冻结层,永不焚毁**;STATE 是**活跃层**,可整节改写;临时产物**从一开始就不落 .planning**(工程标准已禁项目根临时文件)。"焚毁"指清掉临时产物这回事,**只作用于临时层,不删任何审计工件** —— 与审计文化不冲突,别误读成"删历史"。
 - **正在工作的执行者不被催促**:等子代理/长任务时,进度看提交活动与文件变化——有近期活动就继续等;不注入"快点收尾/立即完成"类催促,那会把正确的运行截断(#4218 的教训)。
 
 ## 拍板权(谁能问用户)
@@ -181,6 +183,7 @@ mm-gsd 是从更大的项目蒸馏出来的。被丢掉的部分往往不是功�
 
 - 每个循环第一步**先读** `.planning/STATE.md`;执行后更新。
 - 全文 **<100 行**——它是 DIGEST 不是档案;`## Current Position` 整节覆写不追加;决策只留 3-5 条近期(全量在 CONTEXT/git);blockers 只留活跃的。
+- STATE 按索引地图分层维护(L0 一句话 = Project Reference / L1 阶段目录 = Phases / L2 当前明细 = Current Position 与 Quick Tasks,Session Continuity = 恢复指针),不堆散文。
 - phase 完成 = 勾掉当前项 + 推进位置 + STATUS 推进。测试不过不标完成。
 
 ## 暂停与恢复(HANDOFF)
