@@ -2,8 +2,9 @@
 // 日常巡检器(autoresearch/daily-patrol 探索产物):只读、零依赖、确定性输出。
 // 巡检是报告不是失败:alert 是状态,exit 0。--benchmark 供指标脚本消费(输出纯 JSON)。
 import { execFileSync } from "node:child_process";
-import { readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, existsSync, readdirSync } from "node:fs";
+import { join, relative } from "node:path";
+import { buildDebt } from "../skills/mm-gsd-loop/references/debt-panel.mjs";
 
 const ROOT = process.cwd();
 const checks = [];
@@ -11,8 +12,51 @@ const add = (id, status, detail) => checks.push({ id, status, detail });
 
 const run = (cmd, args) => execFileSync(cmd, args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 const read = p => { try { return readFileSync(join(ROOT, p), "utf8"); } catch { return null; } };
+const P = (...s) => join(ROOT, ".planning", ...s);
 
 // ---- 每轮在此追加检查 ----
+
+// planning 卫生:未分类 deferred 清零(25-CONTEXT D-02 战役终态,防再积)
+try {
+  function walk(dir, out = []) {
+    let names = [];
+    try { names = readdirSync(dir, { withFileTypes: true }); } catch { return out; }
+    for (const e of names) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) walk(p, out);
+      else if (e.isFile() && e.name.endsWith(".md")) out.push(p);
+    }
+    return out;
+  }
+  const planningDir = {};
+  for (const abs of walk(join(ROOT, ".planning"))) {
+    const rel = relative(P("."), abs) ? relative(join(ROOT, ".planning"), abs).split(/[\\/]/).join("/") : "";
+    planningDir[rel] = readFileSync(abs, "utf8");
+  }
+  const debt = buildDebt({ planningDir });
+  const uncls = debt.deferred.filter(x => x.kind === "未分类");
+  add("planning-deferred-未分类", uncls.length === 0 ? "ok" : "alert", `未分类 ${uncls.length} 条(战役终态 0;超 0 即新僵尸)`);
+} catch (e) {
+  add("planning-deferred-未分类", "error", String(e).slice(0, 80));
+}
+
+// planning 卫生:open 批注清零
+try {
+  const annPath = join(ROOT, ".planning", "annotations.json");
+  const ann = existsSync(annPath) ? JSON.parse(readFileSync(annPath, "utf8")) : [];
+  const open = ann.filter(x => x.status === "open");
+  add("planning-批注-open", open.length === 0 ? "ok" : "alert", `open 批注 ${open.length} 条(open 即用户在等 agent 消化)`);
+} catch (e) {
+  add("planning-批注-open", "error", String(e).slice(0, 80));
+}
+
+// 状态机一致性:声明 == 推导(checker 默认模式退出码)
+try {
+  run("node", ["skills/mm-gsd-loop/scripts/gsd-state-check.mjs"]);
+  add("state-machine-一致", "ok", "STATE 声明与工件推导一致");
+} catch (e) {
+  add("state-machine-一致", "alert", "状态机声明与推导不符(checker 非 0,跑 gsd-state-check 看详情)");
+}
 
 // ---- 输出 ----
 // 确定性契约:--benchmark 输出只含 checks(双跑逐字节一致);时间戳只进人读路径。
