@@ -8,6 +8,7 @@ import { buildDebt } from "../skills/mm-gsd-loop/references/debt-panel.mjs";
 import { checkReqCoverage } from "../skills/mm-gsd-loop/references/verification-gates.mjs";
 
 const ROOT = process.cwd();
+const SELF = "tools/daily-patrol.mjs"; // 巡检器不数自己:自身文案里的 TODO/FIXME 字样不计入漂移
 const checks = [];
 const add = (id, status, detail) => checks.push({ id, status, detail });
 
@@ -104,7 +105,7 @@ try {
 // 漂移 vs 基线:TODO/FIXME 计数(基线文件 tools/patrol-baseline.json,故意更新基线 = keep 提交的一部分)
 try {
   const base = JSON.parse(readFileSync(join(ROOT, "tools", "patrol-baseline.json"), "utf8"));
-  const tracked = run("git", ["ls-files"]).split("\n").filter(f => /\.(mjs|md)$/.test(f.trim()) && f.trim());
+  const tracked = run("git", ["ls-files"]).split("\n").filter(f => f.trim() !== SELF && /\.(mjs|md)$/.test(f.trim()) && f.trim());
   let todo = 0;
   for (const f of tracked) todo += (readFileSync(join(ROOT, f.trim()), "utf8").match(/TODO|FIXME/g) || []).length;
   const drift = todo - base.todoCount;
@@ -116,7 +117,7 @@ try {
 // 漂移 vs 基线:最大单文件体积(预算代理)
 try {
   const base = JSON.parse(readFileSync(join(ROOT, "tools", "patrol-baseline.json"), "utf8"));
-  const tracked = run("git", ["ls-files"]).split("\n").filter(f => /\.(mjs|md)$/.test(f.trim()) && f.trim());
+  const tracked = run("git", ["ls-files"]).split("\n").filter(f => f.trim() !== SELF && /\.(mjs|md)$/.test(f.trim()) && f.trim());
   let maxB = 0, maxF = "";
   for (const f of tracked) { const b = Buffer.byteLength(readFileSync(join(ROOT, f.trim()), "utf8")); if (b > maxB) { maxB = b; maxF = f.trim(); } }
   const over = maxB - base.maxFileBytes;
