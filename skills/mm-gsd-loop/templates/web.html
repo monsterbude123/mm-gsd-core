@@ -225,6 +225,17 @@
   .telsvg .tlbl { fill: var(--fg-dim); font-size: 10px; }
   .tprog { flex: 1; height: 6px; border-radius: 3px; background: var(--muted); overflow: hidden; }
   .tprog i { display: block; height: 100%; background: var(--ink); }
+
+  /* ── 依赖拓扑(24-01 T1b):零依赖内联 SVG;数据 = 服务端 phases[].level / topo.edges,客户端只渲染不计算 ── */
+  .topo { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; overflow: auto; }
+  .topo svg { display: block; margin: 0 auto; }
+  .topo .tnode { cursor: pointer; }
+  .topo .tnode circle { fill: var(--ink-bg); stroke: var(--ink); stroke-width: 1.6; }
+  .topo .tnode.done circle { fill: var(--grn-bg); stroke: var(--grn); }
+  .topo .tnode text { fill: var(--fg); font-family: var(--mono); font-size: 12px; text-anchor: middle; dominant-baseline: central; }
+  .topo .tnode:hover circle { stroke-width: 3; }
+  .topo .tedge { stroke: var(--fg-dim); stroke-width: 1.4; marker-end: url(#topoArrow); }
+  .topo .tarrow { fill: var(--fg-dim); }
 </style>
 </head>
 <body>
@@ -268,6 +279,9 @@
     <button class="kpi" id="kRep" type="button"><span class="n" id="nRep">—</span><span class="t">点修票挂起(R 票)</span></button>
     <button class="kpi" id="kDebt" type="button"><span class="n" id="nDebt">—</span><span class="t">欠账合计(问题/批注/未清偿挂账)</span></button>
   </section>
+
+  <h2 id="hTopo">依赖拓扑 <small id="topoSummary">—</small></h2>
+  <div id="phase-topo" class="topo" aria-label="phase 依赖拓扑图"></div>
 
   <h2 id="hPh">Phases 总览 <small>五步 = 工件在场(讨论/计划/执行/验收/交付);判定以检查器为准;点行看详情</small></h2>
   <div class="fbar">
@@ -442,6 +456,53 @@ function telChartSvg(series) {
     (last.date !== first.date ? '<text class="tlbl" x="' + (W - padR) + '" y="' + (H - 5) + '" text-anchor="end">' + esc(last.date) + "</text>" : "");
   return '<svg class="telsvg" viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="工具调用按天计数迷你图,共 ' + series.length + ' 天">' +
     axis + bars + labels + "</svg>";
+}
+
+/* 依赖拓扑(24-01 T1b,D-01):数据 = 服务端 phases[].level 与 topo.edges —— 分层/剪环/幽灵边防御全在
+   服务端 references/phase-topo.mjs 一处,客户端只渲染不计算(前端再算一遍就是第二个口径)。
+   边界:一句话能说清的不画图 —— 标题旁保留文字摘要;图不替代结论,点节点下钻详情面板。 */
+function topoRender() {
+  const box = $("phase-topo");
+  const phases = (last && last.phases) || [];
+  const edges = (last && last.topo && last.topo.edges) || [];
+  const N = phases.length;
+  const maxLv = N ? Math.max(...phases.map((p) => p.level || 0)) : 0;
+  $("topoSummary").textContent = N
+    ? N + " 个阶段 / " + edges.length + " 条依赖 / 当前最长链 " + (maxLv + 1) + " 层"
+    : "阶段清单还没建 —— STATE 的 Phases 落盘后显示";
+  if (!N) { box.innerHTML = '<div class="empty">没有阶段,画不出依赖拓扑。</div>'; return; }
+  const W = 720, R = 18, padX = 52, padY = 26, rowH = 66;
+  const byLv = new Map();
+  for (const p of phases) {
+    const l = p.level || 0;
+    if (!byLv.has(l)) byLv.set(l, []);
+    byLv.get(l).push(p);
+  }
+  const rows = [...byLv.keys()].sort((a, b) => a - b);
+  const pos = new Map();
+  const H = padY * 2 + rows.length * rowH;
+  rows.forEach((lv, r) => {
+    const group = byLv.get(lv).slice().sort((a, b) => a.phase.localeCompare(b.phase));
+    group.forEach((p, i) => {
+      const x = group.length === 1 ? W / 2 : padX + ((W - 2 * padX) * i) / (group.length - 1);
+      pos.set(p.phase, { x, y: padY + r * rowH + rowH / 2 });
+    });
+  });
+  const edgeOf = ([from, to]) => {
+    const a = pos.get(from), b = pos.get(to);
+    if (!a || !b) return ""; // 兜底:服务端已丢幽灵边,这里再挡一层,不画悬空线
+    return '<line class="tedge" x1="' + a.x + '" y1="' + (a.y + R + 5) + '" x2="' + b.x + '" y2="' + (b.y - R - 5) + '"/>';
+  };
+  const nodeOf = (p) => {
+    const shipped = p.ship?.status === "shipped" || p.done;
+    const tip = esc("phase:" + p.phase + (p.title ? " · " + p.title : ""));
+    return '<g class="tnode' + (shipped ? " done" : "") + '" data-phase="' + esc(p.phase) + '"><title>' + tip + "</title>" +
+      '<circle cx="' + pos.get(p.phase).x + '" cy="' + pos.get(p.phase).y + '" r="' + R + '"/>' +
+      '<text x="' + pos.get(p.phase).x + '" y="' + (pos.get(p.phase).y + 1) + '">' + esc(p.phase) + "</text></g>";
+  };
+  box.innerHTML = '<svg viewBox="0 0 ' + W + " " + H + '" width="' + W + '" height="' + H + '" role="img" aria-label="phase 依赖拓扑:共 ' + N + ' 个阶段、' + edges.length + ' 条依赖">' +
+    '<defs><marker id="topoArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="tarrow" d="M0 0L10 5L0 10z"/></marker></defs>' +
+    edges.map(edgeOf).join("") + phases.map(nodeOf).join("") + "</svg>";
 }
 
 /* 生命周期五步:呈现工件在场(不判对错,推导归 checker) */
@@ -745,6 +806,7 @@ async function load() {
   $("pswBar").hidden = !psw.length;
   $("pswBar").innerHTML = psw.length ? "<div><b>product_surface 对账:</b>以下 REQ 已随 SHIP 声明产品面,但 req-ledger 还没有 delivered 行</div>" + psw.map((w) => "<div>" + esc(w) + "</div>").join("") : "";
   renderOverview();
+  topoRender();
 
   /* ── 批注目标下拉 + 列表 ── */
   const sel = $("a-target");
@@ -819,6 +881,11 @@ for (const [id, v] of [["kReq", "reqs"], ["kPh", "overview"], ["kAnn", "annotati
 $("phOverview").addEventListener("click", (e) => {
   const tr = e.target.closest("tr[data-phase]");
   if (tr) phaseDetail(tr.dataset.phase);
+});
+/* 拓扑节点点击 → 既有详情面板下钻(与总览表行同一通道,24-01 T1b) */
+$("phase-topo").addEventListener("click", (e) => {
+  const g = e.target.closest("g.tnode[data-phase]");
+  if (g) phaseDetail(g.dataset.phase);
 });
 for (const id of ["fPhase", "fDebt", "fReq"]) $(id).addEventListener("change", () => renderOverview());
 $("q").addEventListener("input", () => last && load());
