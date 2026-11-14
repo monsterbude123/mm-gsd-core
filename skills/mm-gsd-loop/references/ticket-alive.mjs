@@ -162,7 +162,11 @@ export function readSummaries(base) {
  *   ① SUMMARY 有 `plan:` 字段 → **plan 字段说了算**(有 plan 却对不上,就是没覆盖);
  *   ② SUMMARY **没有** `plan:` 字段 → 才看文件名:`NN-MM-SUMMARY.md` 就是 `NN-MM` 这张票的总结。
  *      老版本 exec 没写 plan 字段,但 Task Commits 里写的就是 `fix(01-01)` —— 文件名是真实记录。
- * 两条规则都要 status 满足 opts.requireStatus 才生效。
+ * 两条规则的 status 门槛不同(phase 26 D-16 / REQ-43):
+ *   - plan 字段规则 → 按调用方传的 opts.requireStatus(旧口径,不改);
+ *   - 文件名规则 → **一律要求 status: complete**,且无条件生效(不依赖 opts)——
+ *     受阻的票(halved/halted)还活着,不许因为「文件名对得上」就当它已完成;
+ *     不传 opts 的 legacy 调用方(研究门/漂移门)也该看得见受阻的票。
  */
 export function ticketsCovered(summaries, ticket, opts = {}) {
   const cut = ticket.includes("-") ? ticket.indexOf("-") : ticket.length;
@@ -180,6 +184,10 @@ export function ticketsCovered(summaries, ticket, opts = {}) {
     // 没有 plan 字段:文件名即票号(`01-01-SUMMARY.md` 就是 `01-01` 这张票的总结)
     if (!s.file.endsWith(suffixTag)) continue;
     if (s.file.slice(0, s.file.length - suffixTag.length) !== ticket) continue;
+    // D-16:文件名规则必须带 status 门槛,且**无条件**生效(不依赖 opts)。
+    // 受阻的票还活着 —— 不能因为「文件名对得上」就当它已完成,
+    // 否则研究门/漂移门对 halted 的票失明(G-26-11)。
+    if (fm(s.text, "status") !== "complete") continue;
     const ph = fm(s.text, "phase");
     if (ph && ph !== phase) continue;  // phase 字段存在时必须等于票号的 phase 前缀
     return true;

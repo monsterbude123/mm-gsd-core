@@ -312,6 +312,17 @@ export function runPlanCheckE2ECases(st) {
     writeFileSync(join(dir, ".planning", "01-02-SUMMARY.md"), "---\nphase: \"01\"\nstatus: halted\n---\n");
     const p10 = run(["--plan", ".planning/01-01-PLAN.md", ".planning/01-02-PLAN.md"]);
     eqN(p10.code, 1, "已收口票:status=halted 的票还活着 → 退出码非 0(照判)");
+    // ---- phase 26 D-19/REQ-46:票面 verify 引用的自测用例名必须真实存在(G-26-10) ----
+    // 名字写错 → 这张票的 verify 永远 exit 1,而本仓没有机器门执行票面 verify → 永远没人知道。
+    // 这道门只对**已收口**的票判(施工中的票引用还没建的用例名是正常的,判它是假红)。
+    const planGate = (nm) => "---\nphase: \"01\"\nplan: \"01\"\ngoal: 夹具计划:verify 引用的用例名必须真实存在\nrollback: 删掉夹具即可\nfiles_modified:\n  - a.mjs\n---\n\n# 01-01 PLAN\n\n### T1 改一个常量\n\n- **files**: a.mjs\n- **read_first**: a.mjs\n- **action**: 改点东西。\n- **verify**: node --selfcheck && node -e 'const need = [\"" + nm + "\"]; console.log(need)'\n- **fails_when**: --selfcheck 退出码非 0\n- **done**: --selfcheck 输出里有该用例名\n";
+    writeFileSync(join(dir, ".planning", "01-01-PLAN.md"), planGate("no-such-selftest-case-" + "zzz"));
+    const p11 = run(["--plan", ".planning/01-01-PLAN.md"]);
+    eqN(p11.code, 1, "d19gate-1 已收口票的 verify 引用了不存在的用例名 → --plan 退出码非 0");
+    eqN(p11.out.includes("verify 引用的自测用例名不存在"), true, "d19gate-1 输出要说清是哪个用例名不存在");
+    writeFileSync(join(dir, ".planning", "01-01-PLAN.md"), planGate("triplane-1"));
+    const p12 = run(["--plan", ".planning/01-01-PLAN.md"]);
+    eqN(p12.code, 0, "d19gate-2 名字真实存在 → 不判红(守「不是见 need 就判红」)");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 

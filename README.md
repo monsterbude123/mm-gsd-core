@@ -656,9 +656,18 @@ I-900: 复发 1 次 —— 但它没有 github: 行,拉不回远端,本地标记
 9. **收口判定只读平铺的 `.planning/`**：`.planning/phases/<NN>/` 布局下的 SUMMARY 读不到 →
    那张票永远算活票 → 门禁对它照判（是严，不是错）。
 10. **wrapper 载荷只认这些形态**：`bash`/`sh`/`zsh`/`dash`/`ksh`（可带路径）+ `-c`/`-lc`，
-    前面可带 `env`/`sudo`/`nohup`/`command`/`time` 与 `NAME=VALUE` 赋值。
+    前面可带 `env`/`sudo`/`nohup`/`command`/`time`/`nice`/`setsid`/`xargs`（按 basename 认）
+    与 `NAME=VALUE` 赋值，载荷最多展开 3 层。
     `eval "<命令>"`、反引号、`npm run bash -c "..."`、`sudo -u <user> bash -c "..."` 不在覆盖范围 ——
     里面的触发命令门禁看不见（宁可漏，不可猜）。
+    选项**带值**时（`nice -n 10 bash -c`、`xargs -0 -I {} bash -c`）值 token 会中断命令词扫描 → 载荷不展开；
+    `cargo test -- --nocapture 2>&1`（`--` 后两个 token）会被判成收窄 → 零匹配门仍给「补判别性断言」建议。
+    **按 D-18① 明写的产品取舍**：跨包收窄的 go 测试（`go test ./... -run X`）不再被票预算门提示
+    「搬到 batch_verify」—— 判据是「先看有没有按用例名收窄，再看成本」，而它要编译整个 module 的成本信号
+    因此消失（是取舍，不是漏判）。
+11. **票面 verify 引用的用例名只校「存在」，门禁不替你跑**：门禁会查 verify 里 `need = [...]` 的名字
+    在 mm-gsd 自测源码里找不找得到（找不到就判红），但**不执行票面 verify** —— verify 是任意命令，
+    门禁不该替用户执行。verify 里的命令本身跑不跑得通，仍要执行端自己跑。
 
 前三条是我知道该做还没做的，其余几条需要更多真实数据才能判断是否值得做。
 

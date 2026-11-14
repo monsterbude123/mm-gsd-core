@@ -259,28 +259,11 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
       for (const p of rr.problems) reviewErrs.push({ message: p.msg, fix: p.fix });
     }
 
-    // 已收口票:退出该票的全部门禁(票级门 / 决策契约 / 研究门 / 前提与载量 / 需求反核销),
-    // 也不进批图(它的 files 不再参与并行冲突判定)。
-    // 位置在 --plan-check 之后 —— 「这张计划能不能开工」照样查预审工件,收口不豁免它。
-    const ticketId = name.match(/^(\d+-\d+)/)?.[1];
-    if (ticketId && ticketsCovered(summaries, ticketId, { requireStatus: "complete" })) {
-      skippedDone++;
-      continue;
-    }
-
-    // ---- frontmatter 契约 ----
-    if (!fm.goal) e(`${name}: 缺 goal`, "写成结果形一句话(做完之后用户能做到什么),不是任务形");
-    if (!fm.rollback) w(`${name}: 缺 rollback`, "补一句这个 phase 怎么回退");
-    if (!parsed.files.length) e(`${name}: 缺 files_modified`, "列出精确路径(新增/修改/删除全清单);它是并行的安全契约,也是拆票预算的依据");
-    for (const f of parsed.files) {
-      if (VAGUE_FILE.test(f)) e(`${name}: files_modified 模糊项 "${f}"`, "改成精确路径 —— 机器无法据此判断并行冲突");
-    }
-    const dep = unquote(String(fm.depends_on ?? "").replace(/[[\]"']/g, ""));
-    if (dep && fm.plan && dep.split(/[,\s]+/).includes(unquote(fm.plan))) {
-      e(`${name}: depends_on 依赖了自己`, "删掉自引用");
-    }
-
-    // ---- 任务票 ----
+    // ---- 任务票解析(上提到豁免点之前,phase 26 T3 ①)----
+    // 为什么上提:「票面 verify 引用的用例名还在不在」这道门只对**已收口**的票判,
+    // 而收口豁免的 skip 点在后面 —— 门落在 skip 下游就是死代码(预审 B1)。
+    // 上提的只有这段**解析**(零 e()/w() 调用,纯计算);
+    // 「没有 T1/T2 任务节」那行判红**留在 skip 点之后** —— 若被一起上提,收口票会新增一条红。
     const tasks = [];
     let cur = null;
     for (const line of txt.split(/\r?\n/)) {
@@ -330,6 +313,39 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
       }
       return parts.join("\n").trim();
     };
+
+
+    // ---- 已收口票:先算 covered,再跑「完成后腐坏探测器」,最后才豁免(phase 26 T3 ①)----
+    // 执行顺序写死:解析 → covered → 新门 → skip。
+    const ticketId = name.match(/^(\d+-\d+)/)?.[1];
+    const covered = ticketId ? ticketsCovered(summaries, ticketId, { requireStatus: "complete" }) : false;
+    if (covered) {
+      // 票面 verify 引用的自测用例名还在不在(phase 26 D-19 / REQ-46,G-26-10):
+      // 名字写错 → 这张票的 verify 永远 exit 1,而本仓没有机器门执行票面 verify → 永远没人知道。
+      // 只校验名字在源码里找得到,不执行 verify(执行任意命令不是门禁该干的事)。
+      const { checkSelftestCaseNames, readSelftestSources } = await import("../references/verification-gates.mjs");
+      const probe = tasks.map((t) => ({ id: `${name} ${t.id}`, verify: fieldBlock(t, "verify") ?? "" }));
+      for (const p of checkSelftestCaseNames(probe, readSelftestSources())) e(p);
+    }
+    // 收口票退出该票的全部门禁(票级门 / 决策契约 / 研究门 / 前提与载量 / 需求反核销),
+    // 也不进批图(它的 files 不再参与并行冲突判定)。
+    // 位置在 --plan-check 之后 —— 「这张计划能不能开工」照样查预审工件,收口不豁免它。
+    if (covered) {
+      skippedDone++;
+      continue;
+    }
+
+    // ---- frontmatter 契约 ----
+    if (!fm.goal) e(`${name}: 缺 goal`, "写成结果形一句话(做完之后用户能做到什么),不是任务形");
+    if (!fm.rollback) w(`${name}: 缺 rollback`, "补一句这个 phase 怎么回退");
+    if (!parsed.files.length) e(`${name}: 缺 files_modified`, "列出精确路径(新增/修改/删除全清单);它是并行的安全契约,也是拆票预算的依据");
+    for (const f of parsed.files) {
+      if (VAGUE_FILE.test(f)) e(`${name}: files_modified 模糊项 "${f}"`, "改成精确路径 —— 机器无法据此判断并行冲突");
+    }
+    const dep = unquote(String(fm.depends_on ?? "").replace(/[[\]"']/g, ""));
+    if (dep && fm.plan && dep.split(/[,\s]+/).includes(unquote(fm.plan))) {
+      e(`${name}: depends_on 依赖了自己`, "删掉自引用");
+    }
 
     if (!tasks.length) { e(`${name}: 没有 T1/T2 任务节 —— 计划无票可执行`, "至少写一个 '### T1 <任务名>'(票号可带字母后缀,如 T3b)"); continue; }
     if (tasks.length > 3) e(`${name}: ${tasks.length} 个任务(>3) —— 超出单执行上下文预算`, "拆成多张票(每张 ≤3 任务);超预算的正解是拆票,不是缩内容");
@@ -462,7 +478,7 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
   for (const x of warns) console.log(`  ! ${x.message}${x.fix ? `\n      → ${x.fix}` : ""}`);
   // 收口票免判的交代行(phase 26 D-14):用 console.log 而不是 w() ——
   // 有 warns 时 w() 通道会让「✓ 四件套完整…」那行不打印,收口不是警告。
-  console.log(`  · skipped-done: ${skippedDone} 份已收口的计划(SUMMARY status=complete)不参与门禁`);
+  console.log(`  · skipped-done: ${skippedDone} 份已收口的计划(SUMMARY status=complete)免判票级门与批图门,只跑完成后腐坏探测器`);
   if (!errs.length && !warns.length) console.log("  ✓ 四件套完整、失败方向明确、文件清单可解析、预算未超");
   // ---- 本 phase 的过程健康三数(D-04):票数 / 受阻票数 / 缺口数 ----
   // 量来自工件历史,不是遥测(遥测不记 phase 维度,那是用户的口径);

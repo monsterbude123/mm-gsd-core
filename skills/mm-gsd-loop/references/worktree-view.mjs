@@ -192,7 +192,8 @@ export function splitCommands(cmd) {
 /** 这条命令是不是「跑全套」?有收窄参数(具名测试/单文件/单包)就不算。 */
 export function isFullSuite(cmd) {
   const c = String(cmd ?? "").replace(/[`'"]/g, "");
-  if (/\bgo\s+test\b/.test(c)) return /\.\.\./.test(c) || !/\s\.\//.test(c);
+  // 带 -run 的按用例名收窄(哪怕跨所有包)→ 不算全量(D-18④:先看有没有按用例名收窄,再看成本)
+  if (/\bgo\s+test\b/.test(c)) return !/\s-run\b/.test(c) && (/\.\.\./.test(c) || !/\s\.\//.test(c));
   if (/\bnode\s+--test\b/.test(c)) return !/\s\S+\.(?:mjs|cjs|js|ts|mts|cts|jsx|tsx)\b/.test(c);
   if (/\bpytest\b/.test(c)) return !/\s\S+\.py\b|\s-t\s|\s-k\s/.test(c);
   if (/\bnpm\s+(?:run\s+)?test\b/.test(c)) return !/\s--\s|\s\S+\.(?:mjs|cjs|js|ts|tsx|mts|py|cts)\b|\s-t\s/.test(c);
@@ -200,7 +201,7 @@ export function isFullSuite(cmd) {
   if (/\bjest\b|\bvitest\b/.test(c)) return !/\s\S+\.(?:mjs|cjs|js|ts|tsx)\b|\s-t\s/.test(c);
   // cargo 的独立 `--` 后面跟位置参数(`cargo test -- my_case`)是收窄过滤器,不算全量;
   // 跟 flag(`cargo test -- --nocapture`)仍算全量(phase 26 D-06⑤)
-  if (/\bcargo\s+test\b/.test(c)) return !/\s--\s*\S+\s+\S/.test(c) && !/\s--\s+[^-]\S/.test(c);
+  if (/\bcargo\s+(?:\+\S+\s+)?test\b/.test(c)) return !/\s--\s*\S+\s+\S/.test(c) && !/\s--\s+[^-]\S/.test(c);
   if (/\bmvn\s+test\b|\bgradle\s+test\b|\bmake\s+test\b/.test(c)) return true;
   return false;
 }

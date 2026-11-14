@@ -121,8 +121,9 @@ export function validateVerification(text, status) {
  */
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
-import { splitCommands } from "./worktree-view.mjs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { splitCommands, isFullSuite } from "./worktree-view.mjs";
 import { parseReqLedger, reqState, successorExists } from "./req-ledger.mjs";
 
 /**
@@ -407,9 +408,10 @@ function quotedSegments(text) {
 }
 
 const SHELL_NAMES = new Set(["bash", "sh", "zsh", "dash", "ksh"]);
-const WRAPPER_WORDS = new Set(["env", "sudo", "nohup", "command", "time"]);
-/** wrapper 载荷最多展开几层(嵌套 bash -c "bash -c ..." 两层够用,再深不追) */
-const MAX_WRAPPER_DEPTH = 2;
+// wrapper 前缀词按 **basename** 认(与 shell 名判定同口径):/usr/bin/env 也是 env(D-17②)。
+const WRAPPER_WORDS = new Set(["env", "sudo", "nohup", "command", "time", "nice", "setsid", "xargs"]);
+/** wrapper 载荷最多展开几层(嵌套 bash -c "bash -c ..." 三层够用,再深不追;D-17③) */
+const MAX_WRAPPER_DEPTH = 3;
 
 /**
  * wrapper 识别 + 载荷提取 —— **一次判定**(26-07 D-15③)。
@@ -419,7 +421,7 @@ const MAX_WRAPPER_DEPTH = 2;
  * 现在只有一条路:找到命令词并取到载荷才算 wrapper,取不到就不是。
  *
  * 命令词位置的算法(写死,不许自创):跳过前导的 `NAME=VALUE` 赋值 token、
- * 包装词 token(env/sudo/nohup/command/time)、`-` 开头的选项 token 之后的**第一个** token,
+ * 包装词 token(env/sudo/nohup/command/time/nice/setsid/xargs,按 basename 认)、`-` 开头的选项 token 之后的**第一个** token,
  * 且它的 basename 必须是 shell —— 不是 shell 就返回 null(不是 wrapper)。
  * 这样 `echo bash -c "..."`、`npm run bash -c "..."`、`grep -c "..."` 都不会被误当成 wrapper。
  */
@@ -433,7 +435,7 @@ function wrapperPayload(text) {
   while (i < toks.length) {
     const t = toks[i].t;
     if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(t)) { i++; continue; }
-    if (WRAPPER_WORDS.has(t)) { i++; continue; }
+    if (WRAPPER_WORDS.has(t.split("/").pop())) { i++; continue; }
     if (t.startsWith("-")) { i++; continue; }
     break;
   }
@@ -532,12 +534,65 @@ export function checkZeroMatchErrors(tickets) {
     for (const s of stages) {
       const c = s.text;
       if (!isPositiveStage(c)) continue;
+      // D-18②:一条命令只给一条整改建议 —— isFullSuite 判为全量的命令由**票预算门**
+      // 单独判红(唯一建议 = 搬到 batch_verify),零匹配门对它闭嘴。
+      // 判定单位是 stage(与触发扫描同一单位),不是整段。
+      if (isFullSuite(c)) continue;
       // 触发面读骨架:引号里的字面量(`grep -q "cargo test -- x" notes.md`)不是命令
       const sk = stripQuoted(c);
       if (/go\s+test\b.*-run\b/i.test(sk) && !goAsserted)
         problems.push(`${t.id}: verify 第 ${s.seg + 1} 条命令:go test -run <pattern> 的断言不判别 —— 零匹配时 go 打印 "no tests to run" 且 exit 0;须断言 "--- PASS"/"--- FAIL"(需 -v)或 ! grep "no tests to run"(issue #22)`);
-      if (/cargo\s+test\b/i.test(sk) && /\s--\s/.test(sk) && !cargoAsserted)
+      if (/cargo\s+(?:\+\S+\s+)?test\b/i.test(sk) && /\s--\s/.test(sk) && !cargoAsserted)
         problems.push(`${t.id}: verify 第 ${s.seg + 1} 条命令:cargo test 带过滤器的断言不判别 —— 零匹配时 cargo 打印 "test result: ok. 0 passed" 且 exit 0;须断言实际计数("3 passed"/"test result: ok. 3 passed"/"running 1 test",N>=1 写实际数字)或 "test result: FAILED"(issue #10)`);
+    }
+  }
+  return problems;
+}
+
+/**
+ * 自测源码清单:verify 引用的用例名必须在这些文件里找得到(phase 26 D-19 / REQ-46)。
+ *
+ * 按**模块自身位置**定位(references/ 与 ../scripts/ 两个目录),装到 ~/.agents/skills/ 后同样准。
+ */
+export function readSelftestSources() {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const dirs = [here, join(here, "..", "scripts")];
+  const out = [];
+  for (const d of dirs) {
+    let files = [];
+    try { files = readdirSync(d); } catch { continue; }
+    for (const f of files) {
+      if (!f.endsWith(".mjs")) continue;
+      try { out.push({ file: f, text: readFileSync(join(d, f), "utf8") }); } catch { /* 读不到就当没有 */ }
+    }
+  }
+  return out;
+}
+
+/**
+ * 票面 verify 引用的自测用例名必须真实存在(phase 26 D-19 / REQ-46,G-26-10)。
+ *
+ * 背景:票面 verify 常写成「跑 --selfcheck 并检查用例名 X 出现在 ✓ 行上」。
+ * 用例名写错 → 这张票的 verify 永远 exit 1 —— 而本仓**没有任何机器门执行票面 verify**
+ * (G-26-10),于是这张票永远判红也永远没人知道。
+ * 这道门只校验**名字在源码里找得到**,不执行 verify(执行任意命令不是门禁该干的事)。
+ *
+ * 只对**已收口**的票判(调用方负责筛):施工中的票引用还没建的用例名是正常的,判它是假红。
+ */
+export function checkSelftestCaseNames(tickets, sources) {
+  const problems = [];
+  const src = sources.map((s) => s.text).join("\n");
+  for (const t of tickets) {
+    const verify = String(t.verify ?? "");
+    if (!/--selfcheck\b/.test(verify)) continue;
+    const names = [];
+    // 多个 need 数组都要抽(matchAll):只取第一个 = 静默漏判
+    for (const m of verify.matchAll(/need\s*=\s*\[([^\]]*)\]/g)) {
+      for (const q of m[1].matchAll(/["']([^"']+)["']/g)) names.push(q[1]);
+    }
+    for (const n of names) {
+      if (!src.includes(n))
+        problems.push(`${t.id}: verify 引用的自测用例名不存在 —— 改名后这张票的 verify 会永远红(issue #22): "${n}"`);
     }
   }
   return problems;

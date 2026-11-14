@@ -115,6 +115,11 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(tck('---\nphase: "01"\nstatus: complete\n---\n', "01-01"), false, "文件名对不上的 SUMMARY 不作数(fail-closed)");
   eqN(tck('---\nphase: "01"\nstatus: complete\n---\n', "01-01", "01-01-SUMMARY.md", { requireStatus: "complete" }), true, "文件名就是该票 + status=complete → 该票已收口(D-14 文件名规则)");
   eqN(tck('---\nphase: "01"\nstatus: halted\n---\n', "01-01", "01-01-SUMMARY.md", { requireStatus: "complete" }), false, "文件名就是该票但 status=halted(受阻)→ 票还活着,不算收口");
+  // D-16(phase 26 D-16 / REQ-43):「文件名即票号」这条规则必须带 status 门槛 —— 受阻的票不许失明。
+  // 门槛**无条件**生效(不依赖 opts):不传 opts 的 legacy 调用方(研究门/漂移门)也该看得见受阻的票。
+  eqN(tck('---\nphase: "01"\nstatus: complete\n---\n', "01-01", "01-01-SUMMARY.md"), true, "donegate-1 文件名就是该票 + status=complete → 算收口(不传 opts,模拟 legacy 调用方)");
+  eqN(tck('---\nphase: "01"\nstatus: halted\n---\n', "01-01", "01-01-SUMMARY.md"), false, "donegate-2 文件名就是该票但 status=halted(受阻)→ 不算收口(票还活着)");
+  eqN(tck('---\nphase: "01"\n---\n', "01-01", "01-01-SUMMARY.md"), false, "donegate-3 文件名就是该票但没有 status → 不算收口(fail-closed)");
   // 漂移门本体:PLAN 早于 CONTEXT 判红,不早于不判红
   const dDir = mkdtempSync(join(tmpdir(), "mm-gsd-drift-"));
   const planF = join(dDir, "p.md"), ctxF = join(dDir, "c.md");
@@ -375,7 +380,9 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   // ---- 假绿通道收紧(phase 26 D-06 + D-08,REQ-35):过滤器形态 / 标记来源 / 否定签名 / ≥1 计数形态 ----
   eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- --exact my_case" }]).length, 1, "cargo 过滤器识别:独立 -- 后的 --exact 是过滤器形态");
   eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- --skip x" }]).length, 1, "cargo 过滤器识别:独立 -- 后的 --skip 是过滤器形态");
-  eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- --test-threads=1" }]).length, 1, "cargo 过滤器识别:独立 -- 后的 --test-threads 是过滤器形态");
+  // ⑤′(phase 26 D-18②):这条命令**不是**收窄 —— 独立 `--` 后只跟一个行为 flag,不收窄用例选择 = 全量套件。
+  // 零匹配门对全量命令闭嘴(唯一建议来自票预算门:搬到 batch_verify)→ 期望值由 1 改成 0。
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- --test-threads=1" }]).length, 0, "cargo test -- 跟单个行为 flag 是全量套件(零匹配门闭嘴,归票预算门一条建议)");
   eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- my_case 2>&1 | tee o.txt\ngrep -v \"0 passed\" o.txt" }]).length, 1, "否定式只认:grep -v 不提供正面标记");
   eqN(checkZeroMatchErrors([{ id: "T1", verify: "go test ./pkg -run TestFoo -v 2>&1 | tee o.txt\ngrep -v \"no tests to run\" o.txt" }]).length, 1, "否定式只认:grep -v 不是 go 的否定式签名");
   eqN(checkZeroMatchErrors([{ id: "T1", verify: "go test ./pkg -run TestFoo -v 2>&1 | tee o.txt\n! grep -q \"no test files\" o.txt" }]).length, 1, "否定式只认:go -run 形态不认 no test files 签名");
@@ -420,6 +427,15 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(checkZeroMatchErrors([{ id: "T1", verify: "sh -c \"go test ./pkg -run TestFoo\" 2>&1 | tee o.txt\ngrep -q -- \"--- PASS\" o.txt" }]).length, 0, "triplane-18 sh wrapper 载荷里有判别性断言就不误报");
   eqN(checkZeroMatchErrors([{ id: "T1", verify: "sudo bash -c \"cargo test -- my_case\"" }]).length, 1, "triplane-19 sudo 前缀不影响 wrapper 识别");
   eqN(checkZeroMatchErrors([{ id: "T1", verify: "nohup bash -c \"cargo test -- my_case\"" }]).length, 1, "triplane-20 nohup 前缀不影响 wrapper 识别");
+  // ---- 触发面三处放宽 + 一条命令只给一条整改建议(phase 26 D-17 / D-18,REQ-44 / REQ-45) ----
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo +nightly test -- my_case" }]).length, 1, "toolchain-1 cargo 工具链选择器(+nightly)是测试命令");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo +stable test -- my_case" }]).length, 1, "toolchain-2 cargo 工具链选择器(+stable)是测试命令");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "/usr/bin/env bash -c \"cargo test -- my_case\"" }]).length, 1, "toolchain-3 wrapper 词按 basename 认(env 带路径也认)");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "nice bash -c \"cargo test -- my_case\"" }]).length, 1, "toolchain-4 nice 前缀不影响 wrapper 识别");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "setsid bash -c \"cargo test -- my_case\"" }]).length, 1, "toolchain-5 setsid 前缀不影响 wrapper 识别");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "xargs -0 bash -c \"cargo test -- my_case\"" }]).length, 1, "toolchain-6 xargs 前缀不影响 wrapper 识别");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "bash -c \"bash -c 'bash -c \\\"cargo test -- my_case\\\"'\"" }]).length, 1, "toolchain-7 三层 wrapper 载荷里的命令看得见(深度上限 3)");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- --nocapture" }]).length, 0, "toolchain-8 全量套件命令零匹配门闭嘴(唯一建议归票预算门)");
   // 接线自测:函数算对了但接线空,门禁照样看不见那条命令 → 必须真的从检查器里看见判红。
   {
     const d = mkdtempSync(join(tmpdir(), "mm-gsd-triplane-"));
