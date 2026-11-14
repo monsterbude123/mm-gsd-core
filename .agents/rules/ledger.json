@@ -220,6 +220,13 @@
       "status": "candidate",
       "why-not-active": "要机器化得先有「外部系统读回接口」的抽象。本仓库只有 npm 一处真实消费(发布),为单一实现提前抽接口会先胖起来。等第二个消费点出现再提为 R。",
       "evidence": "docs/lessons/2026-10-19-release-false-green.md"
+    },
+    {
+      "id": "C-05",
+      "claim": "门禁报错时附带的「怎么改」必须与门禁自己的判据同源:判据与解法分叉,等于给使用者发一份错的说明书 —— 照着改还是红,更糟的是照着改会把别的形态改坏。",
+      "status": "candidate",
+      "why-not-active": "要机器化得先有「判据的唯一机器可读出处」:现在判据是散文 + 多个正则(verification-gates.mjs / worktree-view.mjs / gsd-state-check.mjs 各管一半),教法是另一份散文,两边没法自动对账。phase 26 靠七轮独立验收(逐字读源码 + 实跑形态)抓到两处分叉,门禁自己抓不到。",
+      "evidence": "docs/lessons/2026-11-15-assertion-gates.md"
     }
   ]
 }
