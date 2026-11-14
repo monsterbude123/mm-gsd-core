@@ -126,6 +126,57 @@ try {
   add("file-预算", "error", String(e).slice(0, 80));
 }
 
+// R-02 机械化:active 规则都挂了 check 字段(无 check = candidate 冒充 active)
+try {
+  const j = JSON.parse(readFileSync(join(ROOT, ".agents/rules/ledger.json"), "utf8"));
+  const active = j.rules.filter(r => r.status === "active");
+  const missing = active.filter(r => !r.check);
+  add("ledger-active-有检查器", missing.length === 0 ? "ok" : "alert",
+    missing.length ? "无 check 字段: " + missing.map(r => r.id).join(", ") : `${active.length} 条 active 规则全有 check`);
+} catch (e) {
+  add("ledger-active-有检查器", "error", String(e).slice(0, 80));
+}
+
+// 已装版本漂移:~/.agents/skills/.mm-gsd-install.json 版本 == package.json(发了但没装回)
+try {
+  const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+  const home = process.env.HOME || process.env.USERPROFILE || "";
+  const installPath = join(home, ".agents", "skills", ".mm-gsd-install.json");
+  if (!existsSync(installPath)) {
+    add("installed-version-drift", "alert", "~/.agents/skills/.mm-gsd-install.json 不存在(从未 sync/release 装回)");
+  } else {
+    const inst = JSON.parse(readFileSync(installPath, "utf8"));
+    const ok = inst.version === pkg.version;
+    add("installed-version-drift", ok ? "ok" : "alert",
+      `已装 ${inst.version} vs 包 ${pkg.version}${ok ? "" : " — 发了新版但未装回(跑 mmc release 或 mmc sync)"}`);
+  }
+} catch (e) {
+  add("installed-version-drift", "error", String(e).slice(0, 80));
+}
+
+// R-04 轻量版:skills/ 下所有 .mjs 文件语法正确(node --check,不运行只解析)
+try {
+  const mjsFiles = [];
+  function walkMjs(dir) {
+    let names = [];
+    try { names = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of names) {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) walkMjs(p);
+      else if (e.name.endsWith(".mjs")) mjsFiles.push(p);
+    }
+  }
+  walkMjs(join(ROOT, "skills"));
+  const badSyntax = [];
+  for (const f of mjsFiles) {
+    try { run("node", ["--check", f]); } catch { badSyntax.push(relative(ROOT, f).replace(/\\/g, "/")); }
+  }
+  add("skills-mjs-syntax", badSyntax.length === 0 ? "ok" : "alert",
+    badSyntax.length ? `${badSyntax.length} 个语法错误: ` + badSyntax.slice(0, 3).join(", ") : `${mjsFiles.length} 个 skills/ .mjs 语法全通过`);
+} catch (e) {
+  add("skills-mjs-syntax", "error", String(e).slice(0, 80));
+}
+
 // ---- 输出 ----
 // 确定性契约:--benchmark 输出只含 checks(双跑逐字节一致);时间戳只进人读路径。
 if (process.argv.includes("--benchmark")) console.log(JSON.stringify({ checks }, null, 2));
