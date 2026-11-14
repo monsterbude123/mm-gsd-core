@@ -2,7 +2,7 @@
 // 为什么必须有:GitHub #6/#7/#8 三条都是"门禁看起来在跑、实际判错"(VAGUE_FILE 的 N\/A 无左右断言 /
 // depends_on 只认半角括号 / derived 只判 SHIP 文件存在不读 status)—— 不是崩溃,是安静地给错答案。
 
-import { validateVerification, checkTicketPremises, checkTicketLoad, checkReqClaims, checkReqCoverage, checkIssueLedger, checkDiscriminatingLints, checkBatchVerifyLints } from "./verification-gates.mjs";
+import { validateVerification, checkTicketPremises, checkTicketLoad, checkReqClaims, checkReqCoverage, checkIssueLedger, checkDiscriminatingLints, checkZeroMatchErrors, checkBatchVerifyLints } from "./verification-gates.mjs";
 import { checkDecisions, locateContexts, checkDrift, checkConclusionDrift } from "./decision-gates.mjs";
 import { ticketsCovered } from "./ticket-alive.mjs";
 import { mkAssert, runArtifactCases, runCoverageCases, runLedgerGateCases, runPhaseHealthCases, runRouteCases, runPlanReadyCases, runPlanCheckE2ECases, runBoundaryCases, runPremiseLocateCases } from "./selftest-suite.mjs";
@@ -344,6 +344,11 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(checkDiscriminatingLints([{ id: "T1", verify: "grep -c foo t.md || true" }]).length, 1, "lint 命中吞退出码(报 WARNING)");
   eqN(checkDiscriminatingLints([{ id: "T1", verify: "grep -c foo t.md" }]).length, 0, "裸 grep -c 不误报(零匹配即红)");
   eqN(checkDiscriminatingLints([{ id: "T1", verify: "cargo test --test skills_bundle" }]).length, 0, "具名 cargo test 不误报");
+  // ---- 零匹配假绿阻断(phase 26 D-01,issue #22):go test -run / cargo test -- 过滤器零匹配 exit 0,判绿是假的 ----
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "go test ./... -run TestFoo" }]).length, 1, "命中 go test -run 零断言假绿");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "go test ./... -run TestFoo\n# --- PASS: TestFoo" }]).length, 0, "go test -run 带 --- PASS 断言不误报");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- my_case" }]).length, 1, "命中 cargo test 过滤器零断言假绿");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test --test skills_bundle" }]).length, 0, "cargo test --test 集成测试不误报");
   // ---- cwd 契约(phase 14 D-01,#16):命令量错树判红;缺字段提示;一致/子目录/$VAR 不误伤 ----
   {
     const d = mkdtempSync(join(tmpdir(), "mm-gsd-cwd-"));

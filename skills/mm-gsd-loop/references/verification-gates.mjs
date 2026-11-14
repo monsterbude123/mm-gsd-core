@@ -305,9 +305,33 @@ export function checkDiscriminatingLints(tickets) {
       problems.push(`${t.id}: verify:grep -c 被捕获进 $() 且无数值防护 —— 零匹配被吞成 0,判据对空输入是绿的(issue #10 证据 3)`);
     if (!guarded && /grep\s+-c[^|;&]*(?:\|\|\s*true|2>\/dev\/null|\|\|\s*echo)/i.test(raw))
       problems.push(`${t.id}: verify:grep -c 的退出码被 || true/2>/dev/null 吞掉 —— 零匹配与命中不可分,判据对空输入是绿的(issue #10 证据 3)`);
+  }
+  return problems;
+}
+
+/**
+ * 零匹配假绿阻断(phase 26 D-01,issue #22):`go test -run <pattern>` 与 `cargo test -- <name>`
+ * 在零匹配时都 exit 0 —— 过滤器指名的用例不存在 = 一个测试都没跑,门禁却判绿。
+ *
+ * 与 checkDiscriminatingLints 分家:那边是 WARNING(w 通道,warn 先行,不拦人),
+ * 这里是 ERROR(e 通道,阻断执行)—— 假绿不是「提示不够」,是「验证根本没发生」。
+ * 归到 error 通道才兑现 issue #22 的诉求(阻断,不是提醒)。
+ *
+ * 断言查的是整条 verify(raw),不是单条命令:常见的写法是
+ * `cargo test -- my_case | tee o.txt` 之后另起一条 `grep -q "test result: ok" o.txt`,
+ * 断言在第二条命令里 —— 只看单条命令会误判(把有断言的票报成没断言)。
+ */
+export function checkZeroMatchErrors(tickets) {
+  const problems = [];
+  for (const t of tickets) {
+    const raw = String(t.verify ?? "");
+    const goAsserted = /--- PASS|--- FAIL|no test files|no tests to run/i.test(raw);
+    const cargoAsserted = /test\s+result|running\s+\d/i.test(raw);
     splitCommands(raw).forEach((c, ci) => {
-      if (/cargo\s+test\b/i.test(c) && /\s--\s(?!-)/.test(c) && !/(test\s+result|running\s+\d)/i.test(c))
-        problems.push(`${t.id}: verify 第 ${ci + 1} 条命令:cargo test 带过滤器却不断言 test result/running —— 零匹配过滤器打印 running 0 tests 并 exit 0,具名用例不存在时判据照样绿(issue #10 证据 3)`);
+      if (/go\s+test\b.*-run\b/i.test(c) && !goAsserted)
+        problems.push(`${t.id}: verify 第 ${ci + 1} 条命令:go test -run <pattern> 须在 verify 断言 "--- PASS" 或 "--- FAIL";零匹配时 exit 0 假绿(issue #22)`);
+      if (/cargo\s+test\b/i.test(c) && /\s--\s(?!-)/.test(c) && !cargoAsserted)
+        problems.push(`${t.id}: verify 第 ${ci + 1} 条命令:cargo test 带过滤器却不断言 test result/running;零匹配打印 running 0 tests 并 exit 0 假绿(issue #10)`);
     });
   }
   return problems;
