@@ -115,8 +115,20 @@ goal(结果形,不是任务形)→ 可观察 truths(3-7 条,用户视角:"密码
 - **判据在零数据输入下会绿** —— 写完每条 verify,回答:空台账/零匹配过滤器/空输入下,这条命令退出几、输出什么?
   grep -c 的退出码被吞(`$()` 捕获或 `|| true`)时必须有数值比较防护;裸 `grep -c`(零匹配即 exit 1)不算错;
   `go test -run <过滤器>` 与 `cargo test -- <过滤器>`:过滤器要指名到具体用例,断言也要指名到
-  **跑过的痕迹** —— go 断言 `--- PASS`/`--- FAIL`(需 `-v`)或 `! grep "no tests to run"`;
-  cargo 断言 `N passed`(N>=1)/`running N tests`(N>=1)/`test result: FAILED`。
+  **跑过的痕迹** —— 下面这些形态可以直接抄:
+  - go 正面:`grep -q -- "--- PASS" o.txt`(go 要 `-v` 才打印 `--- PASS`)
+  - cargo 正面:`grep -qE "test result: ok\. [1-9][0-9]* passed" o.txt` 或 `grep -q "running 1 test" o.txt`
+    (`running 1 test` 是**单数**形态 —— cargo 只有一个用例时真的这么打印)
+  - `N` 是**占位符**,不是字面量:要写实际数字(`3 passed`)或 `[1-9][0-9]*` 字符类形态,
+    照抄 `N passed` 必红。`[1-9]` 后面不许跟量词(`?`/`*`/`+`)——
+    `[1-9]?[0-9]* passed` 与 `[1-9]+ passed` 能匹配 0,门禁不认。
+  - go 否定式:`! grep -q "no tests to run" o.txt`
+  - cargo 否定式:`! grep -q "running 0 tests" o.txt` 或 `! grep -qE "test result: ok\. 0 passed" o.txt`
+    (必须**全匹配**:裸 `0 passed` 是 "10 passed" 的子串会假红;`test result: ok` 真跑过时也打印,不认)
+  - 过滤器形态三个真实例子:`cargo test -- --exact my_case` / `cargo test -- --skip x` / `cargo test -- --test-threads=1`
+    (`--` 后接任何 token 都是过滤器参数;这三种零匹配时 cargo 打印 `running 0 tests` + `test result: ok. 0 passed` 且 exit 0)
+  - `grep -v` 与 `echo`/`printf` **不提供断言标记** —— `grep -v` 的退出码在零匹配输出与真跑过输出上都是 0,
+    没有判别力;注释里或自己 echo 出来的字面量不是命令的输出
   零匹配时 go 打印 `no tests to run`、cargo 打印 `test result: ok. 0 passed`,两者都 exit 0 ——
   零匹配的输出签名本身**不算断言**,只断言「跑过了」等于没断言(issue #10 证据 1-4、issue #22)
 - **断言必须落在真命令上** —— 写在 `#` 注释里的标记不算断言(那是人写的期望,不是命令的输出);

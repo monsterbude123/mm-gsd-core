@@ -235,7 +235,10 @@ export function runPlanCheckE2ECases(st) {
   const checker = fileURLToPath(new URL("../scripts/gsd-state-check.mjs", import.meta.url));
   const plan = "---\nphase: \"01\"\nplan: \"01\"\ngoal: 夹具计划:跑通 --plan-check 的机器判据\nrollback: 删掉夹具即可\nfiles_modified:\n  - a.mjs\n---\n\n# 01-01 PLAN\n\n### T1 改一个常量\n\n- **files**: a.mjs\n- **read_first**: a.mjs\n- **action**: 把常量改成 2,然后跑测试。\n- **verify**: node test.js\n- **fails_when**: 测试退出码非 0(输出里没有 ok)\n- **done**: 测试输出 ok\n";
   const run = (args) => {
-    try { return { code: 0, out: execFileSync(process.execPath, [checker, ...args], { cwd: dir, encoding: "utf8", stdio: "pipe" }) }; }
+    // 夹具必须显式传 env:GSD_PROJECT_DIR 会让检查器改用别的 root(读不到自己的 .planning),
+    // 遥测开关只认环境变量 —— 不写死就会把自测夹具写进跨项目遥测(phase 26 D-07)
+    const env = { ...process.env, GSD_TELEMETRY: "0", GSD_SANDBOX: "1", GSD_PROJECT_DIR: "" };
+    try { return { code: 0, out: execFileSync(process.execPath, [checker, ...args], { cwd: dir, encoding: "utf8", stdio: "pipe", env }) }; }
     catch (e) { return { code: e.status ?? 1, out: String(e.stdout || "") + String(e.stderr || "") }; }
   };
   try {
@@ -266,6 +269,13 @@ export function runPlanCheckE2ECases(st) {
     catch (e) { p4 = { code: e.status ?? 1, out: String(e.stdout || "") + String(e.stderr || "") }; }
     eqN(p4.code, 0, "用户侧命令 mm-gsd check --plan-check 退出码 0(D-06)");
     eqN(p4.out.includes("可以开工"), true, "用户侧命令 mm-gsd check --plan-check 输出「可以开工」");
+    // ---- phase 26 D-07 / REQ-36:verify 字段的缩进续行也要进零匹配门的视野 ----
+    // 续行里藏一条 cargo test -- 过滤器:首行看着正常,门禁看不见 → 零匹配假绿(issue #22)。
+    const planCont = "---\nphase: \"01\"\nplan: \"01\"\ngoal: 夹具计划:续行里的 cargo 命令也要被门禁看见\nrollback: 删掉夹具即可\nfiles_modified:\n  - a.mjs\n---\n\n# 01-01 PLAN\n\n### T1 改一个常量\n\n- **files**: a.mjs\n- **read_first**: a.mjs\n- **action**: 把常量改成 2,然后跑测试。\n- **verify**: npm run build\n  - cargo test -- my_case\n- **fails_when**: cargo 命令退出码非 0(输出里没有 passed 计数)\n- **done**: cargo 输出里出现实际计数\n";
+    writeFileSync(join(dir, ".planning", "01-01-PLAN.md"), planCont);
+    const p5 = run(["--plan", ".planning/01-01-PLAN.md"]);
+    eqN(p5.code, 1, "verify 字段续行:续行里的 cargo 过滤器零匹配 → --plan 退出码非 0");
+    eqN(p5.out.includes("票级 verify 存在假绿漏洞"), true, "verify 字段续行:续行里的 cargo 过滤器零匹配 → 输出零匹配报错");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 

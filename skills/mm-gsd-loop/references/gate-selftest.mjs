@@ -7,7 +7,7 @@ import { checkDecisions, locateContexts, checkDrift, checkConclusionDrift } from
 import { ticketsCovered } from "./ticket-alive.mjs";
 import { mkAssert, runArtifactCases, runCoverageCases, runLedgerGateCases, runPhaseHealthCases, runRouteCases, runPlanReadyCases, runPlanCheckE2ECases, runBoundaryCases, runPremiseLocateCases } from "./selftest-suite.mjs";
 import { researchRequired, researchCompliant, checkResearchConsumed, checkResearchSummary } from "./research-gates.mjs";
-import { checkBatchGraph, checkTicketBudget } from "./worktree-view.mjs";
+import { checkBatchGraph, checkTicketBudget, isFullSuite } from "./worktree-view.mjs";
 import { buildRouteBrief, pointerCard, listSkills } from "./agent-routing.mjs";
 import { extractTemplateBlock } from "./template-gates.mjs";
 import { buildDebt } from "./debt-panel.mjs";
@@ -359,6 +359,25 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- my_case 2>&1 | tee o.txt\ngrep -q \"test result: FAILED\" o.txt" }]).length, 0, "判别性痕迹:cargo test result: FAILED 是判别性断言");
   eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- my_case  # 期望 3 passed" }]).length, 1, "行尾注释不算断言(cargo 行尾注释里的 3 passed)");
   eqN(checkZeroMatchErrors([{ id: "T1", verify: "go test ./... -run TestFoo # --- PASS" }]).length, 1, "行尾注释不算断言(go 行尾注释里的 --- PASS)");
+  // ---- 假绿通道收紧(phase 26 D-06 + D-08,REQ-35):过滤器形态 / 标记来源 / 否定签名 / ≥1 计数形态 ----
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- --exact my_case" }]).length, 1, "cargo 过滤器识别:独立 -- 后的 --exact 是过滤器形态");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- --skip x" }]).length, 1, "cargo 过滤器识别:独立 -- 后的 --skip 是过滤器形态");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- --test-threads=1" }]).length, 1, "cargo 过滤器识别:独立 -- 后的 --test-threads 是过滤器形态");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- my_case 2>&1 | tee o.txt\ngrep -v \"0 passed\" o.txt" }]).length, 1, "否定式只认:grep -v 不提供正面标记");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "go test ./pkg -run TestFoo -v 2>&1 | tee o.txt\ngrep -v \"no tests to run\" o.txt" }]).length, 1, "否定式只认:grep -v 不是 go 的否定式签名");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "go test ./pkg -run TestFoo -v 2>&1 | tee o.txt\n! grep -q \"no test files\" o.txt" }]).length, 1, "否定式只认:go -run 形态不认 no test files 签名");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- my_case 2>&1 | tee o.txt\necho \"3 passed\"" }]).length, 1, "echo 自造标记:cargo 侧 echo 造 3 passed");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "go test ./pkg -run TestFoo\necho \"--- PASS\"" }]).length, 1, "echo 自造标记:go 侧 echo 造 --- PASS");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- my_case 2>&1 | tee o.txt\ngrep -qE \"test result: ok\\. [1-9][0-9]* passed\" o.txt" }]).length, 0, "计数形态:cargo 字符类 [1-9][0-9]* passed 是判别性断言");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- my_case 2>&1 | tee o.txt\ngrep -qE \"test result: ok\\. [0-9]+ passed\" o.txt" }]).length, 1, "计数形态:cargo 字符类 [0-9]+ passed 含 0 不是判别性断言");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- my_case 2>&1 | tee o.txt\ngrep -q \"running 1 test\" o.txt" }]).length, 0, "计数形态:cargo running 1 test 单数是判别性断言");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- my_case 2>&1 | tee o.txt\ngrep -v \"3 passed\" o.txt" }]).length, 1, "否定式只认:grep -v \"3 passed\" 也不提供正面标记");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- my_case 2>&1 | tee o.txt\n! grep -qE \"test result: ok\\. 0 passed\" o.txt" }]).length, 0, "否定式只认:教法原文的 cargo 否定式是判别性断言");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- my_case 2>&1 | tee o.txt\ngrep -qE \"[1-9]?[0-9]* passed\" o.txt" }]).length, 1, "计数形态:字符类后面跟量词不算判别性断言");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- my_case 2>&1 | tee o.txt\ngrep -qE \"[1-9]+ passed\" o.txt" }]).length, 1, "计数形态:字符类后面跟 + 不算判别性断言");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "echo \"cargo test -- my_case\"" }]).length, 0, "echo 自造标记:echo 一条命令名不触发零匹配门");
+  eqN(isFullSuite("cargo test -- my_case"), false, "全量套件判定:cargo test -- 单个用例名不是全量套件");
+  eqN(isFullSuite("cargo test -- --nocapture"), true, "全量套件判定:cargo test -- 只有 flag 仍是全量套件");
   // ---- --phases 不可核验可见性(phase 26 D-02,REQ-33):模糊 files_modified 必须报警,且不能同时谎报「零重叠」 ----
   {
     const mkPhases = (d, files) => {

@@ -274,12 +274,36 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
       if (h) { cur = { id: "T" + h[1], title: h[2].trim(), lines: [] }; tasks.push(cur); continue; }
       if (cur) cur.lines.push(line);
     }
+    const FIELD_RE = /^\s*[-*]\s+\*{0,2}([A-Za-z_][\w]*)\*{0,2}\s*:\s*(.*)$/;
     const field = (t, key) => {
       for (const l of t.lines) {
-        const m = l.match(/^\s*[-*]\s+\*{0,2}([A-Za-z_][\w]*)\*{0,2}\s*:\s*(.*)$/);
+        const m = l.match(FIELD_RE);
         if (m && m[1].toLowerCase() === key) return m[2].trim();
       }
       return null;
+    };
+    /**
+     * 只服务 verify 的取值口:verify 的缩进续行也算 verify 的内容(phase 26 D-07 / REQ-36)。
+     * 为什么不动 field():它被 8 处消费,改成采集续行会让 26-02 的 action 续行里的
+     * ```javascript 围栏触发「action 里含代码块」判红 —— 共享取值口的语义一个字都不许动。
+     * 续行判定:不匹配字段行正则,且是缩进行或空行;遇到下一个字段行、或非缩进的非空行就停。
+     */
+    const fieldBlock = (t, key) => {
+      let idx = -1;
+      for (let i = 0; i < t.lines.length; i++) {
+        const m = t.lines[i].match(FIELD_RE);
+        if (m && m[1].toLowerCase() === key) { idx = i; break; }
+      }
+      if (idx < 0) return null;
+      const parts = [(t.lines[idx].match(FIELD_RE) || [])[2]?.trim() ?? ""];
+      for (let i = idx + 1; i < t.lines.length; i++) {
+        const l = t.lines[i];
+        if (FIELD_RE.test(l)) break;
+        if (!l.trim()) { parts.push(""); continue; }
+        if (!/^\s/.test(l)) break;
+        parts.push(l.trim());
+      }
+      return parts.join("\n").trim();
     };
 
     if (!tasks.length) { e(`${name}: 没有 T1/T2 任务节 —— 计划无票可执行`, "至少写一个 '### T1 <任务名>'(票号可带字母后缀,如 T3b)"); continue; }
@@ -292,7 +316,7 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
       }
       const act = field(t, "action") ?? "";
       if (/```/.test(act)) e(`${name} ${t.id}: action 里含代码块`, "action 写做什么与避免什么,代码留给执行者写 —— 照抄会掩盖真实工作量");
-      const v = field(t, "verify") ?? "";
+      const v = fieldBlock(t, "verify") ?? "";
       if (ALWAYS_TRUE.test(v)) e(`${name} ${t.id}: verify 含"永远为真"的写法`, "去掉 || true / 2>/dev/null || echo,让失败真的能失败");
       const fw = field(t, "fails_when");
       if (v && !fw) e(`${name} ${t.id}: verify 没有 fails_when 失败方向`, "写失败时看到什么(退出码/输出串/缺失行);没有失败方向的验证是假验证");

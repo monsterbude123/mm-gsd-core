@@ -216,6 +216,17 @@ node $CK --stats              # 诊断:读遥测,不用手工记
   `test result: ok. 0 passed`，两者都 exit 0，只断言「跑过了」等于没断言；
   go 断言 `--- PASS`/`--- FAIL`（需 `-v`）或 `! grep "no tests to run"`，
   cargo 断言 `N passed`(N≥1)/`running N tests`(N≥1)/`test result: FAILED`
+- **过滤器的三种真实零匹配形态也要判别**：`cargo test -- --exact my_case` /
+  `cargo test -- --skip x` / `cargo test -- --test-threads=1` —— `--` 后接任何 token
+  都是过滤器参数，零匹配时同样 exit 0；断言写成实际计数
+  （`grep -qE "test result: ok\. [1-9][0-9]* passed"`，或 cargo 单个用例时的单数形态
+  `grep -q "running 1 test"`）或否定式
+  （`! grep -q "running 0 tests"` / `! grep -qE "test result: ok\. 0 passed"`，全匹配）；
+  `N` 是占位符不是字面量，照抄 `N passed` 必红，`[1-9]` 后面不许跟量词
+- **`grep -v` 与 `echo`/`printf` 不算断言**：前者的退出码在零匹配输出与真跑过输出上
+  都是 0（没有判别力），后者是自己造的标记，不是命令的输出
+- **verify 字段的缩进续行也算 verify**：`- **verify**: npm run build` 下一行缩进的
+  `  - cargo test -- my_case` 里的命令照样进零匹配门的视野（只取首行 = 门禁看不见续行）
 - **批图**：同一 phase 内互不依赖（= 可并行）的两张票不许撞同一个文件；票间依赖不许成环
 - **前提存在性**：票里 `read_first` 与 `verify` 引用的路径必须真实存在（这张票自己产出的除外）
   —— 票站在假前提上，执行端只会照着编或反复找，这就是「任务有幻觉、agent 在空转」
@@ -630,6 +641,10 @@ I-900: 复发 1 次 —— 但它没有 github: 行,拉不回远端,本地标记
 3. **没有多源覆盖审计**。CONTEXT/REQ/GOAL 的四源对照只在 plan skill 里留了一条纪律，没有程序化检查。
 4. **`--stats` 的死锁检测目前是启发式的**（同项目失败 ≥3 次），没有区分"内容不合格"和"门禁要的东西做不到"。
 5. **ZCode workflow 未与检查器深度集成**，目前是独立的 7 阶段流水线，没有复用这里的门禁模式。
+6. **门禁只做文本匹配，跨命令的输出血缘堵不住**：`echo "3 passed"`、`printf`、
+   `x=$(echo ...)` 这类自己造出来的标记，机器层认不出它来自哪条命令的输出 —— 只能靠教法约束
+   （`echo`/`printf` 段已被排除出标记来源，但 `x=$(...)` 这类段首不是 echo 的形态仍会漏）。
+   门禁的价值在「挡住明显的假绿」，不是「证明断言真的来自测试输出」。
 
 前三条是我知道该做还没做的，后两条需要更多真实数据才能判断是否值得做。
 

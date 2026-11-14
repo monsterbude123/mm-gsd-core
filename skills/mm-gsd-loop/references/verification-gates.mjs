@@ -333,8 +333,23 @@ function stripTrailingComment(line) {
   return line;
 }
 
-/** 否定式断言:同一条命令里既有「不是」(`! grep` / `grep -v`),又有被否定的那个签名 */
-const isNegated = (s) => /!\s*grep\b/.test(s) || /grep\s+-v/.test(s);
+/**
+ * 段分类:哪一段能当断言来源,哪一段只提供否定签名。
+ *
+ * 为什么拆三类(phase 26 D-06② + D-08):
+ * - `grep -v "3 passed"` —— 退出码在「零匹配输出」与「真跑过输出」上都是 0,没有判别力。
+ *   它既不提供正面标记,也不提供否定签名。
+ * - `! grep -q "no tests to run"` —— 显式否定,是「断言零匹配没发生」的唯一合法写法,
+ *   只提供否定签名,自己不是正面标记。
+ * - `echo "3 passed"` —— 自己造的标记不是命令的输出(G-26-2),既不提供标记也不触发零匹配门。
+ * 剩下的段(含正向 grep / test / awk / diff / rg)才是正向段:断言标记与触发扫描都只看它们。
+ */
+const isNegGrepSeg = (s) => /\bgrep\b[^|]*\s-v(\s|$|[A-Za-z])/.test(s);
+const isNegationSig = (s) => /(^|[\s|])!\s*grep\b/.test(s);
+const isLiteralPrintSeg = (s) => /^\s*(echo|printf)\b/.test(s);
+const isPositiveSeg = (s) =>
+  !isNegGrepSeg(s) && !isNegationSig(s) && !isLiteralPrintSeg(s)
+  && /\b(grep|test|awk|diff|rg)\b/.test(s);
 
 /**
  * 零匹配假绿阻断(phase 26 D-01 + D-04,issue #22):`go test -run <pattern>` 与 `cargo test -- <name>`
@@ -344,15 +359,19 @@ const isNegated = (s) => /!\s*grep\b/.test(s) || /grep\s+-v/.test(s);
  * 这里是 ERROR(e 通道,阻断执行)—— 假绿不是「提示不够」,是「验证根本没发生」。
  * 归到 error 通道才兑现 issue #22 的诉求(阻断,不是提醒)。
  *
- * 断言必须是**判别性**的(phase 26 D-04):只认「证明真有用例跑过」的痕迹 ——
+ * 断言必须是**判别性**的(phase 26 D-04 + D-06):只认「证明真有用例跑过」的痕迹 ——
  * go: `--- PASS` / `--- FAIL`,或对零匹配签名的否定式(`! grep "no tests to run"`);
- * cargo: `N passed`(N>=1) / `running N tests`(N>=1) / `test result: FAILED`,或否定式。
+ * cargo: 实际计数(`3 passed` / `test result: ok. 3 passed` / `running 1 test`,N>=1)/`test result: FAILED`,
+ * 或否定式(`! grep "running 0 tests"` / `! grep -qE "test result: ok\. 0 passed"`)。
  * 零匹配的输出签名(`no tests to run` / `no test files` / `test result: ok` / `running 0 tests`)
  * **不算断言** —— 它们恰是零匹配时出现的东西,拿它们当通行证等于把假绿写成通行条件。
  *
- * 断言取自整条 verify 的**段列表**,段列表按「先按行剥注释、再按 shell 语义切命令」生成:
+ * 断言取自**正向段**的文本(正向段 = 非 `grep -v` / 非 `! grep` / 非 `echo`|`printf` 的段),
+ * 否定签名取自**显式否定段**(`! grep`),触发扫描与标记来源同口径 —— 注释里或自己 echo
+ * 出来的字面量不是命令的输出,不能既当通行证又当触发器(phase 26 D-06② + D-08)。
+ *
+ * 段列表按「先按行剥注释、再按 shell 语义切命令」生成:
  * 顺序反了会把注释里的 `;` `&&` 尾巴漏成独立命令(既误伤合法票,又留了假绿通道)。
- * 逐命令扫描只负责定位触发命令,不参与「是否已断言」的判定。
  */
 export function checkZeroMatchErrors(tickets) {
   const problems = [];
@@ -364,19 +383,23 @@ export function checkZeroMatchErrors(tickets) {
       if (!s) continue;
       for (const seg of splitCommands(s)) segs.push(seg);
     }
-    const assertText = segs.join("\n");
+    const posSegs = segs.filter(isPositiveSeg);
+    const assertText = posSegs.join("\n");
+    const negSegs = segs.filter(isNegationSig);
+    const hasGoRun = segs.some((c) => /go\s+test\b.*-run\b/i.test(c));
     const goAsserted = /---\s+(?:PASS|FAIL)/.test(assertText)
-      || segs.some((s) => isNegated(s) && /no tests to run|no test files/.test(s));
+      || (hasGoRun && negSegs.some((s) => /no tests to run/.test(s)));
     const cargoAsserted = /\b[1-9]\d*\s+passed\b/.test(assertText)
-      || /\brunning\s+[1-9]\d*\s+tests\b/.test(assertText)
+      || /\[1-9\](?![?*+])[^\s]{0,12}\s+passed\b/.test(assertText)
+      || /\brunning\s+[1-9]\d*\s+tests?\b/.test(assertText)
       || /\btest\s+result:\s*FAILED\b/.test(assertText)
-      || /\[[1-9][\d-]*\]\+?\s*passed/.test(assertText)
-      || segs.some((s) => isNegated(s) && /0 passed|running 0 tests|test result: ok/.test(s));
+      || negSegs.some((s) => /running\s+0\s+tests/.test(s) || /test result: ok\\?\. 0 passed/.test(s));
     segs.forEach((c, ci) => {
+      if (!isPositiveSeg(c)) return;
       if (/go\s+test\b.*-run\b/i.test(c) && !goAsserted)
         problems.push(`${t.id}: verify 第 ${ci + 1} 条命令:go test -run <pattern> 的断言不判别 —— 零匹配时 go 打印 "no tests to run" 且 exit 0;须断言 "--- PASS"/"--- FAIL"(需 -v)或 ! grep "no tests to run"(issue #22)`);
-      if (/cargo\s+test\b/i.test(c) && /\s--\s(?!-)/.test(c) && !cargoAsserted)
-        problems.push(`${t.id}: verify 第 ${ci + 1} 条命令:cargo test 带过滤器的断言不判别 —— 零匹配时 cargo 打印 "test result: ok. 0 passed" 且 exit 0;须断言 "N passed"(N>=1)/"running N tests"(N>=1)/"test result: FAILED"(issue #10)`);
+      if (/cargo\s+test\b/i.test(c) && /\s--\s/.test(c) && !cargoAsserted)
+        problems.push(`${t.id}: verify 第 ${ci + 1} 条命令:cargo test 带过滤器的断言不判别 —— 零匹配时 cargo 打印 "test result: ok. 0 passed" 且 exit 0;须断言实际计数("3 passed"/"test result: ok. 3 passed"/"running 1 test",N>=1 写实际数字)或 "test result: FAILED"(issue #10)`);
     });
   }
   return problems;

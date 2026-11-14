@@ -198,7 +198,9 @@ export function isFullSuite(cmd) {
   if (/\bnpm\s+(?:run\s+)?test\b/.test(c)) return !/\s--\s|\s\S+\.(?:mjs|cjs|js|ts|tsx|mts|py|cts)\b|\s-t\s/.test(c);
   if (/\b(?:yarn|pnpm)\s+test\b/.test(c)) return !/\s--\s|\s\S+\.(?:mjs|cjs|js|ts|tsx)\b/.test(c);
   if (/\bjest\b|\bvitest\b/.test(c)) return !/\s\S+\.(?:mjs|cjs|js|ts|tsx)\b|\s-t\s/.test(c);
-  if (/\bcargo\s+test\b/.test(c)) return !/\s--\s*\S+\s+\S/.test(c);
+  // cargo 的独立 `--` 后面跟位置参数(`cargo test -- my_case`)是收窄过滤器,不算全量;
+  // 跟 flag(`cargo test -- --nocapture`)仍算全量(phase 26 D-06⑤)
+  if (/\bcargo\s+test\b/.test(c)) return !/\s--\s*\S+\s+\S/.test(c) && !/\s--\s+[^-]\S/.test(c);
   if (/\bmvn\s+test\b|\bgradle\s+test\b|\bmake\s+test\b/.test(c)) return true;
   return false;
 }
