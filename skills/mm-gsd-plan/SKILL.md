@@ -125,8 +125,9 @@ goal(结果形,不是任务形)→ 可观察 truths(3-7 条,用户视角:"密码
   - go 否定式:`! grep -q "no tests to run" o.txt`
   - cargo 否定式:`! grep -q "running 0 tests" o.txt` 或 `! grep -qE "test result: ok\. 0 passed" o.txt`
     (必须**全匹配**:裸 `0 passed` 是 "10 passed" 的子串会假红;`test result: ok` 真跑过时也打印,不认)
-  - 过滤器形态三个真实例子:`cargo test -- --exact my_case` / `cargo test -- --skip x` / `cargo test -- --test-threads=1`
-    (`--` 后接任何 token 都是过滤器参数;这三种零匹配时 cargo 打印 `running 0 tests` + `test result: ok. 0 passed` 且 exit 0)
+  - 真过滤器形态三例:`cargo test -- --exact my_case` / `cargo test -- --skip x` / `cargo test -- my_case`
+    (按用例名收窄,零匹配时同样 exit 0,须写判别性断言)
+  - `--` 后没有 token、或只跟一个以 `-` 开头的 token 时，命令跑的是全量套件，门禁只给「搬到 batch_verify」一条建议，不要求判别性断言；`--` 后跟位置参数名或两个及以上 token 才是收窄的过滤器形态，须写判别性断言。
   - `grep -v` 与 `echo`/`printf` **不提供断言标记** —— `grep -v` 的退出码在零匹配输出与真跑过输出上都是 0,
     没有判别力;注释里或自己 echo 出来的字面量不是命令的输出
   零匹配时 go 打印 `no tests to run`、cargo 打印 `test result: ok. 0 passed`,两者都 exit 0 ——

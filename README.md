@@ -216,13 +216,18 @@ node $CK --stats              # 诊断:读遥测,不用手工记
   `test result: ok. 0 passed`，两者都 exit 0，只断言「跑过了」等于没断言；
   go 断言 `--- PASS`/`--- FAIL`（需 `-v`）或 `! grep "no tests to run"`，
   cargo 断言 `N passed`(N≥1)/`running N tests`(N≥1)/`test result: FAILED`
-- **过滤器的三种真实零匹配形态也要判别**：`cargo test -- --exact my_case` /
-  `cargo test -- --skip x` / `cargo test -- --test-threads=1` —— `--` 后接任何 token
-  都是过滤器参数，零匹配时同样 exit 0；断言写成实际计数
+- **真过滤器形态也要判别**：`cargo test -- --exact my_case` / `cargo test -- --skip x` /
+  `cargo test -- my_case` —— 它们按用例名收窄，零匹配时同样 exit 0；断言写成实际计数
   （`grep -qE "test result: ok\. [1-9][0-9]* passed"`，或 cargo 单个用例时的单数形态
   `grep -q "running 1 test"`）或否定式
   （`! grep -q "running 0 tests"` / `! grep -qE "test result: ok\. 0 passed"`，全匹配）；
   `N` 是占位符不是字面量，照抄 `N passed` 必红，`[1-9]` 后面不许跟量词
+- `--` 后没有 token、或只跟一个以 `-` 开头的 token 时，命令跑的是全量套件，门禁只给「搬到 batch_verify」一条建议，不要求判别性断言；`--` 后跟位置参数名或两个及以上 token 才是收窄的过滤器形态，须写判别性断言。
+- **升级到 0.7.1 的影响**：存量票里凡是把「`--` 后只跟一个以 `-` 开头的 token」
+  （如 `--test-threads=1`）当过滤器的，升级后**票预算门**会判它「是全量套件」
+  （唯一建议：搬到 `batch_verify`），而**零匹配门对这类全量命令闭嘴**；
+  票级 verify 只写判别性断言、没按用例名收窄的存量票，升级后会开始被零匹配门判红 ——
+  这是刻意的「宁可误报不可漏报」，照上面两段的形态改写即可
 - **`grep -v` 与 `echo`/`printf` 不算断言**：前者的退出码在零匹配输出与真跑过输出上
   都是 0（没有判别力），后者是自己造的标记，不是命令的输出
 - **verify 字段的续行也算 verify**：`- **verify**: npm run build` 后面缩进的
