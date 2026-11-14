@@ -24,6 +24,17 @@ const CHECKER = fileURLToPath(new URL("../scripts/gsd-state-check.mjs", import.m
 /** 跑一遍自测,返回失败条数 */
 export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   const { eq, eqN, eqArr, st } = mkAssert();
+  // 自测必须声明自己的沙箱身份(26-06 / D-11 / REQ-39):自测故意造的失败写进共享遥测文件,
+  // 会让 observe 的诊断排行被自己的噪声淹没 —— 实测 1488 条门禁失败里 1303 条(87.6%)来自这里。
+  // 声明式标记:由跑沙箱的一方声明,不猜路径(gsd-state-check.mjs:44-48 的既定语义)。
+  const SELFTEST_TMP = mkdtempSync(join(tmpdir(), "mm-gsd-selftest-"));
+  const SELFTEST_TELEMETRY = join(SELFTEST_TMP, "telemetry.jsonl");
+  const ENV_BACKUP = { GSD_SANDBOX: process.env.GSD_SANDBOX, GSD_TELEMETRY: process.env.GSD_TELEMETRY, GSD_TELEMETRY_PATH: process.env.GSD_TELEMETRY_PATH };
+  process.env.GSD_SANDBOX = "1";
+  process.env.GSD_TELEMETRY_PATH = SELFTEST_TELEMETRY;
+  // 第三个不可省:用户环境里若已 export GSD_TELEMETRY=0(本仓教用户这么设),
+  // 子进程的 TELEMETRY 会是 false → 压根不写文件 → 下面「临时文件非空」恒红。
+  process.env.GSD_TELEMETRY = "1";
   console.log("\n=== mm-gsd 门禁自测 ===");
   // N\/A 要左右断言:\b 挡不住 admin/auth —— n 是词字符、/ 不是,边界本就存在
   eq(VAGUE_FILE, "src/app/[locale]/admin/admin.css", false, "admin 路径不该被判模糊");
@@ -858,6 +869,22 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
     eqN(/(^|\n)summary:/.test(shipTpl), true, "SHIP 模板含 summary 一句话结论占位");
     eqN(stateTpl.includes("L0/L1/L2 索引地图"), true, "STATE 模板含 L0/L1/L2 索引地图注记");
   }
+  // ---- 自测遥测隔离(26-06 T1 / D-11 / REQ-39):自测产生的门禁失败必须带 sandbox 标记 ----
+  // 顺序写死:先跑完全部断言 → 再还原 env → 再删临时目录(断言要读这个文件,先删会 ENOENT 崩栈而不是判红)。
+  {
+    const rows = existsSync(SELFTEST_TELEMETRY)
+      ? readFileSync(SELFTEST_TELEMETRY, "utf8").split("\n").filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return {}; } })
+      : [];
+    eqN(rows.length > 0 && rows.every((r) => r.sandbox === true), true, "自测遥测:telemetry-sandbox 临时文件非空且每条记录都带 sandbox 标记");
+    eqN(rows.filter((r) => r.exit === 1 && r.sandbox !== true).length, 0, "自测遥测:telemetry-sandbox 没有未标 sandbox 的失败记录");
+  }
+  // 还原环境变量:原值不存在就用 delete —— 写 = undefined 会被 Node 变成字符串 "undefined"(truthy),
+  // 之后任何 spawn 检查器都会往一个叫 undefined 的文件写遥测。
+  for (const [k, v] of Object.entries(ENV_BACKUP)) {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
+  rmSync(SELFTEST_TMP, { recursive: true, force: true });
   console.log(st.bad ? `\n${st.bad} 项自测不过 —— 门禁本身是坏的,先修门禁` : "\n✓ 门禁自测全过");
   return st.bad;
 }
