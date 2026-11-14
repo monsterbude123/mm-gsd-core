@@ -345,10 +345,55 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(checkDiscriminatingLints([{ id: "T1", verify: "grep -c foo t.md" }]).length, 0, "裸 grep -c 不误报(零匹配即红)");
   eqN(checkDiscriminatingLints([{ id: "T1", verify: "cargo test --test skills_bundle" }]).length, 0, "具名 cargo test 不误报");
   // ---- 零匹配假绿阻断(phase 26 D-01,issue #22):go test -run / cargo test -- 过滤器零匹配 exit 0,判绿是假的 ----
-  eqN(checkZeroMatchErrors([{ id: "T1", verify: "go test ./... -run TestFoo" }]).length, 1, "命中 go test -run 零断言假绿");
-  eqN(checkZeroMatchErrors([{ id: "T1", verify: "go test ./... -run TestFoo\n# --- PASS: TestFoo" }]).length, 0, "go test -run 带 --- PASS 断言不误报");
-  eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- my_case" }]).length, 1, "命中 cargo test 过滤器零断言假绿");
-  eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test --test skills_bundle" }]).length, 0, "cargo test --test 集成测试不误报");
+  // phase 26 D-04:断言要**判别性**(证明真有用例跑过),且要落在**真命令**上(注释里的标记不算断言)。
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "go test ./... -run TestFoo" }]).length, 1, "判别性痕迹:命中 go test -run 零断言假绿");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "go test ./... -run TestFoo -v 2>&1 | tee o.txt\ngrep -q -- \"--- PASS\" o.txt" }]).length, 0, "判别性痕迹:go test -run 带 --- PASS 断言不误报");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- my_case" }]).length, 1, "判别性痕迹:命中 cargo test 过滤器零断言假绿");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test --test skills_bundle" }]).length, 0, "判别性痕迹:cargo test --test 集成测试不误报");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "go test ./... -run TestFoo  # 零匹配会打印 no tests to run" }]).length, 1, "零匹配签名不算断言(go no tests to run)");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- my_case  # 零匹配会打印 test result: ok" }]).length, 1, "零匹配签名不算断言(cargo 无计数 test result)");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "go test ./... -run TestFoo\n# --- PASS: TestFoo" }]).length, 1, "零匹配签名不算断言(整行注释里的 --- PASS)");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- my_case 2>&1 | tee o.txt\ngrep -q \"test result: ok. 3 passed\" o.txt" }]).length, 0, "判别性痕迹:cargo N passed 是判别性断言");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- my_case 2>&1 | tee o.txt\ngrep -q \"running 3 tests\" o.txt" }]).length, 0, "判别性痕迹:cargo running N tests 是判别性断言");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "go test ./... -run TestFoo 2>&1 | tee o.txt\n! grep -q \"no tests to run\" o.txt" }]).length, 0, "判别性痕迹:go 否定式断言是判别性断言");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- my_case 2>&1 | tee o.txt\ngrep -q \"test result: FAILED\" o.txt" }]).length, 0, "判别性痕迹:cargo test result: FAILED 是判别性断言");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- my_case  # 期望 3 passed" }]).length, 1, "行尾注释不算断言(cargo 行尾注释里的 3 passed)");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "go test ./... -run TestFoo # --- PASS" }]).length, 1, "行尾注释不算断言(go 行尾注释里的 --- PASS)");
+  // ---- --phases 不可核验可见性(phase 26 D-02,REQ-33):模糊 files_modified 必须报警,且不能同时谎报「零重叠」 ----
+  {
+    const mkPhases = (d, files) => {
+      mkdirSync(join(d, ".planning"), { recursive: true });
+      writeFileSync(join(d, ".planning", "STATE.md"), "---\nstatus: executing\nactive_phase: \"02\"\n---\n\n## Phases\n\n- [ ] 01 — 甲\n- [ ] 02 — 乙\n");
+      for (const [id, f] of files)
+        writeFileSync(join(d, ".planning", `${id}-01-PLAN.md`), `---\nphase: "${id}"\nplan: "01"\ngoal: g\nrollback: r\nfiles_modified:\n  - ${f}\ndepends_on: []\n---\n`);
+    };
+    const runPhases = (d) => {
+      let out = "", code = 0;
+      // GSD_PROJECT_DIR 置空:它会让检查器改用别的 root,夹具就读不到自己的 STATE.md
+      try { out = execFileSync(process.execPath, [CHECKER, "--phases"], { cwd: d, encoding: "utf8", stdio: "pipe", env: { ...process.env, GSD_TELEMETRY: "0", GSD_SANDBOX: "1", GSD_PROJECT_DIR: "" } }); }
+      catch (e) { code = e.status ?? 1; out = String(e.stdout || "") + String(e.stderr || ""); }
+      return { out, code };
+    };
+    // 夹具 A:两个 phase 的 files_modified 全是模糊语。模糊名必须**不同** ——
+    // 同名会算出交集非空 → 走「冲突」分支 → 波次结论行整块跳过 → 断言变成空转。
+    {
+      const d = mkdtempSync(join(tmpdir(), "mm-gsd-phases-"));
+      try {
+        mkPhases(d, [["01", "相关文件"], ["02", "全部文件"]]);
+        const r = runPhases(d);
+        eqN(r.out.includes("无法核验文件冲突") && !r.out.includes("零重叠"), true, "--phases 模糊语 files_modified 报警且不谎报零重叠");
+      } finally { rmSync(d, { recursive: true, force: true }); }
+    }
+    // 夹具 B:两个 phase 声明不同的精确文件 → 真核验通过,盖章「零重叠」
+    {
+      const d = mkdtempSync(join(tmpdir(), "mm-gsd-phases-"));
+      try {
+        mkPhases(d, [["01", "a.mjs"], ["02", "b.mjs"]]);
+        const r = runPhases(d);
+        eqN(r.out.includes("零重叠") && !r.out.includes("无法核验文件冲突"), true, "--phases 精确不重叠 files_modified 盖章零重叠");
+      } finally { rmSync(d, { recursive: true, force: true }); }
+    }
+  }
   // ---- cwd 契约(phase 14 D-01,#16):命令量错树判红;缺字段提示;一致/子目录/$VAR 不误伤 ----
   {
     const d = mkdtempSync(join(tmpdir(), "mm-gsd-cwd-"));

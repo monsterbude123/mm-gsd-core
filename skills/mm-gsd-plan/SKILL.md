@@ -114,7 +114,13 @@ goal(结果形,不是任务形)→ 可观察 truths(3-7 条,用户视角:"密码
 - `|| true` / `2>/dev/null || echo 0` 喂比较 = 假验证
 - **判据在零数据输入下会绿** —— 写完每条 verify,回答:空台账/零匹配过滤器/空输入下,这条命令退出几、输出什么?
   grep -c 的退出码被吞(`$()` 捕获或 `|| true`)时必须有数值比较防护;裸 `grep -c`(零匹配即 exit 1)不算错;
-  `cargo test -- <过滤器>` 必须具名到用例或断言 `test result`(issue #10 证据 1-4)
+  `go test -run <过滤器>` 与 `cargo test -- <过滤器>`:过滤器要指名到具体用例,断言也要指名到
+  **跑过的痕迹** —— go 断言 `--- PASS`/`--- FAIL`(需 `-v`)或 `! grep "no tests to run"`;
+  cargo 断言 `N passed`(N>=1)/`running N tests`(N>=1)/`test result: FAILED`。
+  零匹配时 go 打印 `no tests to run`、cargo 打印 `test result: ok. 0 passed`,两者都 exit 0 ——
+  零匹配的输出签名本身**不算断言**,只断言「跑过了」等于没断言(issue #10 证据 1-4、issue #22)
+- **断言必须落在真命令上** —— 写在 `#` 注释里的标记不算断言(那是人写的期望,不是命令的输出);
+  断言词必须来自本票测试命令的输出,别用 `echo` 自己造标记
 - **命令量错树**(多 worktree 项目):frontmatter 必须写 `cwd: <执行树根>`,票面命令里的 `cd <路径>` 不得指向别的树 ——
   主检出 ≠ 执行树,量错树的判据绿了也白绿(issue #16:36/36 票判据量错树);
   门禁对 cwd 不一致判红,缺 cwd 却有 cd 会提示补字段;`$VAR` 类 cd 判不了不猜

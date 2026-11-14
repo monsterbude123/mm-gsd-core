@@ -211,6 +211,11 @@ node $CK --stats              # 诊断:读遥测,不用手工记
 - **票级 verify 不许是全量套件**（`npm test` / 无参 `pytest` / `go test ./...` /
   `node --test` 不带文件 / `cargo test` …）—— 票级只跑本票的便宜检查，
   全量写进 PLAN 的 `batch_verify`，一批跑一次
+- **票级带过滤器的 verify 必须断言判别性痕迹**（`go test -run <pattern>` /
+  `cargo test -- <过滤器>`）—— 零匹配时 go 打印 `no tests to run`、cargo 打印
+  `test result: ok. 0 passed`，两者都 exit 0，只断言「跑过了」等于没断言；
+  go 断言 `--- PASS`/`--- FAIL`（需 `-v`）或 `! grep "no tests to run"`，
+  cargo 断言 `N passed`(N≥1)/`running N tests`(N≥1)/`test result: FAILED`
 - **批图**：同一 phase 内互不依赖（= 可并行）的两张票不许撞同一个文件；票间依赖不许成环
 - **前提存在性**：票里 `read_first` 与 `verify` 引用的路径必须真实存在（这张票自己产出的除外）
   —— 票站在假前提上，执行端只会照着编或反复找，这就是「任务有幻觉、agent 在空转」

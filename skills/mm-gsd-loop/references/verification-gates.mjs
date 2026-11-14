@@ -310,28 +310,73 @@ export function checkDiscriminatingLints(tickets) {
 }
 
 /**
- * 零匹配假绿阻断(phase 26 D-01,issue #22):`go test -run <pattern>` 与 `cargo test -- <name>`
+ * 剥掉行尾注释(POSIX 语义 + 引号感知)。
+ *
+ * 为什么必须剥:注释里的字面量不是断言来源。`cargo test -- my_case  # 期望 3 passed`
+ * 里那个「3 passed」是**人写的期望**,不是命令的输出 —— 拿它当断言依据,门禁就被人
+ * 的注释牵着走:写注释的人自己就绕过了门禁(phase 26 D-04,验收报告 G-26-1 的 FX-95/FX-97
+ * 就是这个形状)。
+ *
+ * 规则:
+ * - 引号内(`'` `"` `` ` ``)的 `#` 一律保留 —— `grep -q "#22"` 不是注释;
+ * - 引号外的 `#` 只有「在行首」或「前一个字符是空白」才是注释起点(POSIX:`foo#bar` 不是注释);
+ * - 引号状态按行重置(引号不跨行)。
+ */
+function stripTrailingComment(line) {
+  let quote = null;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (quote) { if (c === quote) quote = null; continue; }
+    if (c === "'" || c === '"' || c === "`") { quote = c; continue; }
+    if (c === "#" && (i === 0 || /\s/.test(line[i - 1]))) return line.slice(0, i);
+  }
+  return line;
+}
+
+/** 否定式断言:同一条命令里既有「不是」(`! grep` / `grep -v`),又有被否定的那个签名 */
+const isNegated = (s) => /!\s*grep\b/.test(s) || /grep\s+-v/.test(s);
+
+/**
+ * 零匹配假绿阻断(phase 26 D-01 + D-04,issue #22):`go test -run <pattern>` 与 `cargo test -- <name>`
  * 在零匹配时都 exit 0 —— 过滤器指名的用例不存在 = 一个测试都没跑,门禁却判绿。
  *
  * 与 checkDiscriminatingLints 分家:那边是 WARNING(w 通道,warn 先行,不拦人),
  * 这里是 ERROR(e 通道,阻断执行)—— 假绿不是「提示不够」,是「验证根本没发生」。
  * 归到 error 通道才兑现 issue #22 的诉求(阻断,不是提醒)。
  *
- * 断言查的是整条 verify(raw),不是单条命令:常见的写法是
- * `cargo test -- my_case | tee o.txt` 之后另起一条 `grep -q "test result: ok" o.txt`,
- * 断言在第二条命令里 —— 只看单条命令会误判(把有断言的票报成没断言)。
+ * 断言必须是**判别性**的(phase 26 D-04):只认「证明真有用例跑过」的痕迹 ——
+ * go: `--- PASS` / `--- FAIL`,或对零匹配签名的否定式(`! grep "no tests to run"`);
+ * cargo: `N passed`(N>=1) / `running N tests`(N>=1) / `test result: FAILED`,或否定式。
+ * 零匹配的输出签名(`no tests to run` / `no test files` / `test result: ok` / `running 0 tests`)
+ * **不算断言** —— 它们恰是零匹配时出现的东西,拿它们当通行证等于把假绿写成通行条件。
+ *
+ * 断言取自整条 verify 的**段列表**,段列表按「先按行剥注释、再按 shell 语义切命令」生成:
+ * 顺序反了会把注释里的 `;` `&&` 尾巴漏成独立命令(既误伤合法票,又留了假绿通道)。
+ * 逐命令扫描只负责定位触发命令,不参与「是否已断言」的判定。
  */
 export function checkZeroMatchErrors(tickets) {
   const problems = [];
   for (const t of tickets) {
     const raw = String(t.verify ?? "");
-    const goAsserted = /--- PASS|--- FAIL|no test files|no tests to run/i.test(raw);
-    const cargoAsserted = /test\s+result|running\s+\d/i.test(raw);
-    splitCommands(raw).forEach((c, ci) => {
+    const segs = [];
+    for (const line of raw.split(/\r?\n/)) {
+      const s = stripTrailingComment(line).trim();
+      if (!s) continue;
+      for (const seg of splitCommands(s)) segs.push(seg);
+    }
+    const assertText = segs.join("\n");
+    const goAsserted = /---\s+(?:PASS|FAIL)/.test(assertText)
+      || segs.some((s) => isNegated(s) && /no tests to run|no test files/.test(s));
+    const cargoAsserted = /\b[1-9]\d*\s+passed\b/.test(assertText)
+      || /\brunning\s+[1-9]\d*\s+tests\b/.test(assertText)
+      || /\btest\s+result:\s*FAILED\b/.test(assertText)
+      || /\[[1-9][\d-]*\]\+?\s*passed/.test(assertText)
+      || segs.some((s) => isNegated(s) && /0 passed|running 0 tests|test result: ok/.test(s));
+    segs.forEach((c, ci) => {
       if (/go\s+test\b.*-run\b/i.test(c) && !goAsserted)
-        problems.push(`${t.id}: verify 第 ${ci + 1} 条命令:go test -run <pattern> 须在 verify 断言 "--- PASS" 或 "--- FAIL";零匹配时 exit 0 假绿(issue #22)`);
+        problems.push(`${t.id}: verify 第 ${ci + 1} 条命令:go test -run <pattern> 的断言不判别 —— 零匹配时 go 打印 "no tests to run" 且 exit 0;须断言 "--- PASS"/"--- FAIL"(需 -v)或 ! grep "no tests to run"(issue #22)`);
       if (/cargo\s+test\b/i.test(c) && /\s--\s(?!-)/.test(c) && !cargoAsserted)
-        problems.push(`${t.id}: verify 第 ${ci + 1} 条命令:cargo test 带过滤器却不断言 test result/running;零匹配打印 running 0 tests 并 exit 0 假绿(issue #10)`);
+        problems.push(`${t.id}: verify 第 ${ci + 1} 条命令:cargo test 带过滤器的断言不判别 —— 零匹配时 cargo 打印 "test result: ok. 0 passed" 且 exit 0;须断言 "N passed"(N>=1)/"running N tests"(N>=1)/"test result: FAILED"(issue #10)`);
     });
   }
   return problems;
