@@ -232,7 +232,7 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
   const batchPlans = [], review = [], reviewErrs = [];
   const depList = (v) => String(v ?? "").replace(/[[\]"'\s]/g, "").split(/[,、]/).filter(Boolean);
   const { checkTicketBudget } = await import("../references/worktree-view.mjs");
-  const { checkDiscriminatingLints, checkBatchVerifyLints } = await import("../references/verification-gates.mjs");
+  const { checkDiscriminatingLints, checkZeroMatchErrors, checkBatchVerifyLints } = await import("../references/verification-gates.mjs");
   for (const rel of targets) {
     const path = resolve(rel);
     if (!existsSync(path)) { e(`${rel}: 文件不存在`, "路径写错,或 PLAN 还没落盘"); continue; }
@@ -309,6 +309,11 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
       // 判别力 lint(phase 13 D-03,issue #10):WARNING 通道,不拦红 —— warn 先行
       for (const p of checkDiscriminatingLints([{ id: name + " " + t.id, verify: v }]))
         w(p, "判别力提示(不拦红):让失败真的能失败 —— issue #10 的四类假绿");
+      // 零匹配假绿(phase 26 D-01,issue #22):ERROR 通道,阻断执行 ——
+      // go test -run / cargo test -- 过滤器零匹配时 exit 0,一个用例都没跑却判绿。
+      // 这不是「提示不够」,是验证根本没发生,所以走 e(...) 而不是 w(...)。
+      for (const p of checkZeroMatchErrors([{ id: name + " " + t.id, verify: v }]))
+        e(p, "票级 verify 存在假绿漏洞:零匹配时 exit 0 冒充测试通过 —— 补上断言(issue #22)");
       tickets.push({ id: `${name} ${t.id}`, files: tf, readFirst: (field(t, "read_first") ?? "").split(/[,\s]+/).filter(Boolean), verify: v, covers: (field(t, "covers") ?? "").split(/[,\s]+/).filter(Boolean) });
     }
 
@@ -508,7 +513,26 @@ if (process.argv.includes("--phases")) {
         }
       }
     }
-    if (group.length > 1 && !errs.length) console.log(`    ✓ 同波次 files_modified 零重叠 —— wave ${w} 可并行`);
+    // 空集 = 核验不了,不是核验通过(phase 26 D-02,REQ-33):files_modified 缺失/为空时
+    // parsePlanFile 交回空集,双层交集恒为空 —— 并行冲突静默漏过,冲突到执行期才爆。
+    // 全是模糊语同理:路径对不上真实文件,交集同样恒空(--plan 会另判红,但 --phases 自己不能装作查过了)。
+    // 静默通过比没有检查更危险,所以必须可见。只查并行波次(group.length > 1):
+    // 单 phase 波次不存在冲突可能,历史归档 phase 不该倾泻无意义告警。
+    let hasUnverifiable = false;
+    if (group.length > 1) {
+      for (const p of group) {
+        const s = filesOf.get(p.id);
+        if (!s || s.size === 0 || [...s].every((f) => VAGUE_FILE.test(f))) {
+          hasUnverifiable = true;
+          console.log(`    ⚠ ${p.id} 的 files_modified 缺失或全为模糊语，本轮无法核验文件冲突——请补充精确路径`);
+          warn(`${p.id} 的 files_modified 缺失或全为模糊语，本轮无法核验文件冲突`);
+        }
+      }
+    }
+    if (group.length > 1 && !errs.length) {
+      if (hasUnverifiable) console.log(`    ⚠ wave ${w} 存在未声明修改文件的 phase，无法保证可安全并行`);
+      else console.log(`    ✓ 同波次 files_modified 零重叠 —— wave ${w} 可并行`);
+    }
   }
   const pending = phases.filter((p) => !p.done);
   console.log(`\n  下一步:${pending.length ? pending[0].id + " " + (pending[0].title || "") : "(全部已完成)"}${pending[0]?.deps.length ? "  依赖: " + pending[0].deps.join(", ") : ""}`);
@@ -898,7 +922,7 @@ const artifactInfo = { context: null, plans: [], summaries: [], verification: nu
     err(`STATE status "${declared}" 非法`, `改为 ${STATUSES.join("|")}`);
   }
   if (declared && derived && declared !== derived && declared !== "paused") {
-    err(`STATE 声明 "${declared}" 但工件推导是 "${derived}" —— 声明与事实不符`, `把 STATE status 改为 ${derived}(或补齐缺失工件)`);
+    err(`STATE 声明 "${declared}" 但工件推导是 "${derived}" —— 请将 .planning/STATE.md 的 status: 改为 "${derived}" 后重跑`, `把 STATE status 改为 ${derived}(或补齐缺失工件)`);
   }
   if (declared === "paused") {
     const hasHandoff = existsSync(P("HANDOFF.md")) || existsSync(P("HANDOFF.json"));
