@@ -106,13 +106,15 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(dup, found.length, "同一目录重复传入不得产生重复条目");
   rmSync(ctxDir, { recursive: true, force: true });
   // ---- 漂移门此前**零会红用例**,而 gate-cases.json 声称三条各有用例 —— 台账登记是假的(R-16 就是拦这种事,T-03)。
-  const tck = (text, ticket) => ticketsCovered([{ file: "x-SUMMARY.md", text }], ticket);
+  const tck = (text, ticket, file = "x-SUMMARY.md", opts = {}) => ticketsCovered([{ file, text }], ticket, opts);
   eqN(tck('---\nphase: "02"\nplan: "01"\n---\n', "02-01"), true, "SUMMARY 的 plan 后缀匹配该票该判已完成");
   eqN(tck('---\nphase: "02"\nplan: "03,04,05"\n---\n', "02-03"), true, "一份 SUMMARY 覆盖多票时前三票都算完成(本仓真实格式)");
   eqN(tck('---\nphase: "02"\nplan: "03,04,05"\n---\n', "02-05"), true, "一份 SUMMARY 覆盖多票时最后一票也算完成");
   eqN(tck('---\nphase: "02"\nplan: "01"\n---\n', "02-02"), false, "plan:\"01\" 不该匹配 02-02 —— phase 与后缀必须都对上");
   eqN(tck('---\nphase: "03"\nplan: "01"\n---\n', "02-01"), false, "phase 不同不该匹配");
-  eqN(tck('---\nphase: "01"\nstatus: complete\n---\n', "01-01"), false, "无 plan 字段的 SUMMARY 不作数(fail-closed,01-01 就是这种)");
+  eqN(tck('---\nphase: "01"\nstatus: complete\n---\n', "01-01"), false, "文件名对不上的 SUMMARY 不作数(fail-closed)");
+  eqN(tck('---\nphase: "01"\nstatus: complete\n---\n', "01-01", "01-01-SUMMARY.md", { requireStatus: "complete" }), true, "文件名就是该票 + status=complete → 该票已收口(D-14 文件名规则)");
+  eqN(tck('---\nphase: "01"\nstatus: halted\n---\n', "01-01", "01-01-SUMMARY.md", { requireStatus: "complete" }), false, "文件名就是该票但 status=halted(受阻)→ 票还活着,不算收口");
   // 漂移门本体:PLAN 早于 CONTEXT 判红,不早于不判红
   const dDir = mkdtempSync(join(tmpdir(), "mm-gsd-drift-"));
   const planF = join(dDir, "p.md"), ctxF = join(dDir, "c.md");

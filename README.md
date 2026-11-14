@@ -650,8 +650,17 @@ I-900: 复发 1 次 —— 但它没有 github: 行,拉不回远端,本地标记
    不算 verify（要写进 verify 就得缩进）
    （`echo`/`printf` 段已被排除出标记来源，但 `x=$(...)` 这类段首不是 echo 的形态仍会漏）。
    门禁的价值在「挡住明显的假绿」，不是「证明断言真的来自测试输出」。
+8. **「文件名即票号」的收口判定认的是工件，不是事实**：一张 `NN-MM-SUMMARY.md` 只要
+   `status: complete`（文件名对得上、`phase` 对得上），那张票就退出门禁 —— 手写一份就能给某张票免判。
+   免掉的只是「这张票自己的检查」，项目级门（需求覆盖）不受影响。
+9. **收口判定只读平铺的 `.planning/`**：`.planning/phases/<NN>/` 布局下的 SUMMARY 读不到 →
+   那张票永远算活票 → 门禁对它照判（是严，不是错）。
+10. **wrapper 载荷只认这些形态**：`bash`/`sh`/`zsh`/`dash`/`ksh`（可带路径）+ `-c`/`-lc`，
+    前面可带 `env`/`sudo`/`nohup`/`command`/`time` 与 `NAME=VALUE` 赋值。
+    `eval "<命令>"`、反引号、`npm run bash -c "..."`、`sudo -u <user> bash -c "..."` 不在覆盖范围 ——
+    里面的触发命令门禁看不见（宁可漏，不可猜）。
 
-前三条是我知道该做还没做的，后两条需要更多真实数据才能判断是否值得做。
+前三条是我知道该做还没做的，其余几条需要更多真实数据才能判断是否值得做。
 
 > 第 4 条(`check-templates-self-validate` 覆盖不全)**已于 2026-10-19 解决**:新增 `--templates` 模式与
 > `references/template-gates.mjs`,6 份模板全有结构门禁,CONTEXT 补上了实例门禁。

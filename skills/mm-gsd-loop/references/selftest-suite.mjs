@@ -293,6 +293,25 @@ export function runPlanCheckE2ECases(st) {
     writeFileSync(join(dir, ".planning", "01-01-PLAN.md"), planBlankLazy);
     const p8 = run(["--plan", ".planning/01-01-PLAN.md"]);
     eqN(p8.code, 0, "verify 字段懒续行:空行后的零缩进是新块 → 不算 verify,不得误伤");
+    // ---- phase 26 D-12/D-14/REQ-40:已收口的票(status: complete)退出该票的全部门禁 ----
+    // 收口票不参与门禁:那张票自己的检查跑在历史工件上,恒红 = 门禁报废,不是严
+    // (ticket-alive.mjs 文件头的 T-13「恒红的门不是严,是废」)。
+    // 夹具故意缺 goal:活票必红(缺 goal)+ 两张同 phase 同 files 必撞文件(批图门红)。
+    const planDone = "---\nphase: \"01\"\nplan: \"01\"\nrollback: 删掉夹具即可\nfiles_modified:\n  - README.md\n---\n\n# 01-01 PLAN\n\n### T1 改一个常量\n\n- **files**: README.md\n- **read_first**: README.md\n- **action**: 改点东西。\n- **verify**: node test.js\n- **fails_when**: 测试退出码非 0(输出里没有 ok)\n- **done**: 测试输出 ok\n";
+    const planDone2 = "---\nphase: \"01\"\nplan: \"02\"\nrollback: 删掉夹具即可\nfiles_modified:\n  - README.md\n---\n\n# 01-02 PLAN\n\n### T1 改一个常量\n\n- **files**: README.md\n- **read_first**: README.md\n- **action**: 改点东西。\n- **verify**: node test.js\n- **fails_when**: 测试退出码非 0(输出里没有 ok)\n- **done**: 测试输出 ok\n";
+    writeFileSync(join(dir, ".planning", "01-01-PLAN.md"), planDone);
+    writeFileSync(join(dir, ".planning", "01-02-PLAN.md"), planDone2);
+    writeFileSync(join(dir, "README.md"), "x\n");
+    // 老版本 exec 没写 plan 字段 → 走「文件名即票号」规则(D-14/D-15)
+    writeFileSync(join(dir, ".planning", "01-01-SUMMARY.md"), "---\nphase: \"01\"\nstatus: complete\n---\n");
+    writeFileSync(join(dir, ".planning", "01-02-SUMMARY.md"), "---\nphase: \"01\"\nstatus: complete\n---\n");
+    const p9 = run(["--plan", ".planning/01-01-PLAN.md", ".planning/01-02-PLAN.md"]);
+    eqN(p9.code, 0, "已收口票:两张都有 status=complete 的 SUMMARY → 退出码 0(退出该票的全部门禁)");
+    eqN(p9.out.includes("skipped-done"), true, "已收口票:输出要交代跳过了几张(skipped-done)");
+    // status=halted = 受阻,票还活着 → 照判(缺 goal 判红)
+    writeFileSync(join(dir, ".planning", "01-02-SUMMARY.md"), "---\nphase: \"01\"\nstatus: halted\n---\n");
+    const p10 = run(["--plan", ".planning/01-01-PLAN.md", ".planning/01-02-PLAN.md"]);
+    eqN(p10.code, 1, "已收口票:status=halted 的票还活着 → 退出码非 0(照判)");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 

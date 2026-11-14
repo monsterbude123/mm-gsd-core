@@ -154,17 +154,35 @@ export function readSummaries(base) {
  *
  * @param summaries readSummaries() 的结果
  * @param ticket    完整票号,形如 "02-03"
+ * @param opts      { requireStatus } —— 只有 status 等于该值的 SUMMARY 才算数(phase 26 D-14:
+ *                  status=complete 才算收口;halted = 受阻,票还活着)
  * @returns true = 这张票已被某份 SUMMARY 覆盖
+ *
+ * 覆盖判定有两条规则,顺序写死(phase 26 D-15):
+ *   ① SUMMARY 有 `plan:` 字段 → **plan 字段说了算**(有 plan 却对不上,就是没覆盖);
+ *   ② SUMMARY **没有** `plan:` 字段 → 才看文件名:`NN-MM-SUMMARY.md` 就是 `NN-MM` 这张票的总结。
+ *      老版本 exec 没写 plan 字段,但 Task Commits 里写的就是 `fix(01-01)` —— 文件名是真实记录。
+ * 两条规则都要 status 满足 opts.requireStatus 才生效。
  */
-export function ticketsCovered(summaries, ticket) {
+export function ticketsCovered(summaries, ticket, opts = {}) {
   const cut = ticket.includes("-") ? ticket.indexOf("-") : ticket.length;
   const phase = ticket.slice(0, cut), suffix = ticket.slice(cut + 1);
   const fm = (text, key) => text.match(new RegExp(`^${key}:\\s*"?([^"\\n]*)"?\\s*$`, "m"))?.[1]?.trim();
+  const suffixTag = "-SUMMARY.md";
   for (const s of summaries) {
+    if (opts.requireStatus && fm(s.text, "status") !== opts.requireStatus) continue;
     const plan = fm(s.text, "plan");
-    if (!plan) continue;                     // 无 plan 字段不作数 —— 宁可漏判,不可凭空标成已完成
-    const ph = fm(s.text, "phase") ?? s.file.slice(0, 2);   // phase 缺失时从文件名取
-    if (ph === phase && plan.split(/[,、\s]+/).filter(Boolean).includes(suffix)) return true;
+    if (plan) {
+      const ph = fm(s.text, "phase") ?? s.file.slice(0, 2);   // phase 缺失时从文件名取
+      if (ph === phase && plan.split(/[,、\s]+/).filter(Boolean).includes(suffix)) return true;
+      continue;                       // plan 字段存在时它说了算 —— 对不上就是没覆盖
+    }
+    // 没有 plan 字段:文件名即票号(`01-01-SUMMARY.md` 就是 `01-01` 这张票的总结)
+    if (!s.file.endsWith(suffixTag)) continue;
+    if (s.file.slice(0, s.file.length - suffixTag.length) !== ticket) continue;
+    const ph = fm(s.text, "phase");
+    if (ph && ph !== phase) continue;  // phase 字段存在时必须等于票号的 phase 前缀
+    return true;
   }
   return false;
 }

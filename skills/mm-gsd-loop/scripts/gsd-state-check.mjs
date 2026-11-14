@@ -233,6 +233,11 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
   const depList = (v) => String(v ?? "").replace(/[[\]"'\s]/g, "").split(/[,、]/).filter(Boolean);
   const { checkTicketBudget } = await import("../references/worktree-view.mjs");
   const { checkDiscriminatingLints, checkZeroMatchErrors, checkBatchVerifyLints } = await import("../references/verification-gates.mjs");
+  // 已收口的票(status: complete)退出该票的全部门禁(phase 26 D-12/D-14):
+  // 那张票自己的检查跑在历史工件上,恒红 = 门禁报废,不是严(见 ticket-alive.mjs 的 T-13)。
+  const { readSummaries, ticketsCovered } = await import("../references/ticket-alive.mjs");
+  const summaries = readSummaries(root);
+  let skippedDone = 0;
   for (const rel of targets) {
     const path = resolve(rel);
     if (!existsSync(path)) { e(`${rel}: 文件不存在`, "路径写错,或 PLAN 还没落盘"); continue; }
@@ -252,6 +257,15 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
       const rr = checkPlanReady({ planPath: path });
       review.push({ name, state: rr.state });
       for (const p of rr.problems) reviewErrs.push({ message: p.msg, fix: p.fix });
+    }
+
+    // 已收口票:退出该票的全部门禁(票级门 / 决策契约 / 研究门 / 前提与载量 / 需求反核销),
+    // 也不进批图(它的 files 不再参与并行冲突判定)。
+    // 位置在 --plan-check 之后 —— 「这张计划能不能开工」照样查预审工件,收口不豁免它。
+    const ticketId = name.match(/^(\d+-\d+)/)?.[1];
+    if (ticketId && ticketsCovered(summaries, ticketId, { requireStatus: "complete" })) {
+      skippedDone++;
+      continue;
     }
 
     // ---- frontmatter 契约 ----
@@ -446,6 +460,9 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
   for (const t of targets) console.log("  " + t.split(/[\\/]/).pop());
   for (const x of errs) console.log(`  ✗ ${x.message}${x.fix ? `\n      → ${x.fix}` : ""}`);
   for (const x of warns) console.log(`  ! ${x.message}${x.fix ? `\n      → ${x.fix}` : ""}`);
+  // 收口票免判的交代行(phase 26 D-14):用 console.log 而不是 w() ——
+  // 有 warns 时 w() 通道会让「✓ 四件套完整…」那行不打印,收口不是警告。
+  console.log(`  · skipped-done: ${skippedDone} 份已收口的计划(SUMMARY status=complete)不参与门禁`);
   if (!errs.length && !warns.length) console.log("  ✓ 四件套完整、失败方向明确、文件清单可解析、预算未超");
   // ---- 本 phase 的过程健康三数(D-04):票数 / 受阻票数 / 缺口数 ----
   // 量来自工件历史,不是遥测(遥测不记 phase 维度,那是用户的口径);
