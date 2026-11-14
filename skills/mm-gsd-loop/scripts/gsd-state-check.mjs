@@ -29,8 +29,13 @@ const VERIF_STATUSES = ["passed", "gaps_found", "human_needed"];
 const SHIP_STATUSES = ["shipped", "held"];
 const PLACEHOLDER = /To be filled|待补|PLACEHOLDER|placeholder|\bTBD\b/i;
 
-const PLANNING = process.argv.includes("--planning") || process.env.GSD_PROJECT_DIR;
-const root = PLANNING ? String(process.argv[process.argv.indexOf("--planning") + 1] ?? process.env.GSD_PROJECT_DIR) : process.cwd();
+// 项目根三态(phase 26 D-21/REQ-48):--planning 的参数 → GSD_PROJECT_DIR → cwd。
+// 旧写法把两件事塞进一个 `??`:没有 --planning 时 argv[indexOf+1] 取到 argv[0](node 可执行文件路径),
+// `??` 根本不触发 → root 变成 node.exe 所在目录 → 检查器在替别人看别的项目。
+// 空串 = 没给(自测夹具故意传空串),--planning 不带值或下一个 token 是选项 → 不崩,按后面两级回落。
+const planArg = process.argv.includes("--planning") ? process.argv[process.argv.indexOf("--planning") + 1] : null;
+const envRoot = process.env.GSD_PROJECT_DIR && process.env.GSD_PROJECT_DIR.trim() ? process.env.GSD_PROJECT_DIR : null;
+const root = planArg && !String(planArg).startsWith("-") ? String(planArg) : envRoot ? envRoot : process.cwd();
 const P = (...s) => join(root, ".planning", ...s);
 
 // ---- 遥测:检查器每跑一次自动记一行。放在用户目录,跨项目可比,且不依赖任何人记得写 ----

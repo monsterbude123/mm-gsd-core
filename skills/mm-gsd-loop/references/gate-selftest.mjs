@@ -451,6 +451,20 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
       eqN(code !== 0 && out.includes("票级 verify 存在假绿漏洞"), true, "triplane 接线自测:wrapper 包住的触发命令,检查器要判红");
     } finally { rmSync(d, { recursive: true, force: true }); }
   }
+  // ---- 项目根解析必须尊重 GSD_PROJECT_DIR(phase 26 D-21,REQ-48):只设 GSD_PROJECT_DIR 时 root 不能落到 node 可执行文件路径 ----
+  // 改前 root = argv[0](node.exe 所在目录)→ 夹具的 .planning 读不到 → 断言必红。
+  {
+    const d = mkdtempSync(join(tmpdir(), "mm-gsd-rootdir-"));
+    try {
+      mkdirSync(join(d, ".planning"), { recursive: true });
+      writeFileSync(join(d, ".planning", "STATE.md"), "---\nstatus: planning\nactive_phase: \"01\"\n---\n");
+      let out = "", code = 0;
+      // cwd 另设别处:只靠 GSD_PROJECT_DIR 指夹具目录(不带 --planning)
+      try { out = execFileSync(process.execPath, [CHECKER], { cwd: tmpdir(), encoding: "utf8", stdio: "pipe", env: { ...process.env, GSD_TELEMETRY: "0", GSD_SANDBOX: "1", GSD_PROJECT_DIR: d } }); }
+      catch (e) { code = e.status ?? 1; out = String(e.stdout || "") + String(e.stderr || ""); }
+      eqN(out.includes("声明=planning"), true, "rootdir-gsd-project-dir:只设 GSD_PROJECT_DIR 时检查器要读那个目录的 .planning");
+    } finally { rmSync(d, { recursive: true, force: true }); }
+  }
   // ---- --phases 不可核验可见性(phase 26 D-02,REQ-33):模糊 files_modified 必须报警,且不能同时谎报「零重叠」 ----
   {
     const mkPhases = (d, files) => {
