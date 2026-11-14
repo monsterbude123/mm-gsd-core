@@ -357,9 +357,94 @@ function splitPipes(seg) {
   return out.map((s) => s.trim()).filter(Boolean);
 }
 
+/**
+ * 引号遮罩:引号内(含被 `\` 转义的引号)整段换成空格,**长度不变**。
+ *
+ * 26-07 D-13 三面口径的「分类面」:把引号内容抹掉,剩下的就是命令骨架 ——
+ * `grep -q "cargo test -- my_case" notes.md` 的骨架是 `grep -q  notes.md`,
+ * 引号里的字面量不是命令(G-26-9 的根因:以前触发面读原文,把它当成了命令)。
+ * 长度不变是硬要求:切出来的 token 位置要能对回原文,才能判断「`-c` 之后那个引号段」。
+ */
+function maskQuoted(s) {
+  let out = "";
+  let quote = null;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (quote) {
+      if (c === "\\" && i + 1 < s.length) { out += "  "; i++; continue; }
+      if (c === quote) { quote = null; out += " "; continue; }
+      out += " ";
+      continue;
+    }
+    if (c === "'" || c === '"' || c === "`") { quote = c; out += " "; continue; }
+    out += c;
+  }
+  return out;
+}
+
 /** 剥掉引号内容:分类只看命令骨架,引号里的字面量不是命令的一部分 */
-function stripQuoted(s) {
-  return s.replace(/'[^']*'|"[^"]*"|`[^`]*`/g, " ");
+const stripQuoted = (s) => maskQuoted(s);
+
+/**
+ * 扫描式取每个引号段(引号类型、内容已去转义、起止偏移)。
+ * wrapper 载荷定位要用它 —— 载荷是「`-c` 之后那个引号段」,不是全文第一个引号段
+ * (`FOO="x" bash -c "..."` 的第一个引号段是 x)。
+ */
+function quotedSegments(text) {
+  const segs = [];
+  let quote = null, start = -1, buf = "";
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quote) {
+      if (c === "\\" && i + 1 < text.length) { buf += text[i + 1]; i++; continue; }
+      if (c === quote) { segs.push({ quote, content: buf, start, end: i }); quote = null; buf = ""; start = -1; continue; }
+      buf += c;
+      continue;
+    }
+    if (c === "'" || c === '"' || c === "`") { quote = c; start = i; buf = ""; continue; }
+  }
+  return segs;
+}
+
+const SHELL_NAMES = new Set(["bash", "sh", "zsh", "dash", "ksh"]);
+const WRAPPER_WORDS = new Set(["env", "sudo", "nohup", "command", "time"]);
+/** wrapper 载荷最多展开几层(嵌套 bash -c "bash -c ..." 两层够用,再深不追) */
+const MAX_WRAPPER_DEPTH = 2;
+
+/**
+ * wrapper 识别 + 载荷提取 —— **一次判定**(26-07 D-15③)。
+ *
+ * 以前是两条独立口径(「骨架像不像 shell」+「尾部有没有 -c」),于是
+ * `bash -c "<cmd>" 2>&1 | tee out.txt` 这种最常见的 CI 形态被整段丢掉(G-26-8)。
+ * 现在只有一条路:找到命令词并取到载荷才算 wrapper,取不到就不是。
+ *
+ * 命令词位置的算法(写死,不许自创):跳过前导的 `NAME=VALUE` 赋值 token、
+ * 包装词 token(env/sudo/nohup/command/time)、`-` 开头的选项 token 之后的**第一个** token,
+ * 且它的 basename 必须是 shell —— 不是 shell 就返回 null(不是 wrapper)。
+ * 这样 `echo bash -c "..."`、`npm run bash -c "..."`、`grep -c "..."` 都不会被误当成 wrapper。
+ */
+function wrapperPayload(text) {
+  const skel = maskQuoted(text);
+  const toks = [];
+  const re = /\S+/g;
+  let m;
+  while ((m = re.exec(skel)) !== null) toks.push({ t: m[0], s: m.index });
+  let i = 0;
+  while (i < toks.length) {
+    const t = toks[i].t;
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(t)) { i++; continue; }
+    if (WRAPPER_WORDS.has(t)) { i++; continue; }
+    if (t.startsWith("-")) { i++; continue; }
+    break;
+  }
+  if (i >= toks.length) return null;
+  if (!SHELL_NAMES.has(toks[i].t.split("/").pop())) return null;
+  for (let j = i + 1; j < toks.length; j++) {
+    if (!/^-[A-Za-z]*c$/.test(toks[j].t)) continue;
+    const seg = quotedSegments(text).find((s) => s.start > toks[j].s);
+    return seg ? seg.content : null;
+  }
+  return null;
 }
 
 /**
@@ -419,14 +504,24 @@ export function checkZeroMatchErrors(tickets) {
     // 判定单位下沉到管道级(stage,phase 26 D-09):每个 stage 记着它所属的段号 ——
     // 报错里的「第 N 条命令」按**段号**报(用户看到的是 verify 文本里的第几条命令),
     // 但判定按 stage 做 —— 同段里的 `grep -v` / `echo` 不得把同段的触发命令一起作废(G-26-6)。
+    // 再叠一层 wrapper 载荷展开(phase 26 D-13/D-15):`bash -c "<cmd>"` 里那条命令真的会跑,
+    // 门禁必须看得见(G-26-8);载荷里的引号字面量仍不是命令(G-26-9)。
     const stages = [];
-    segs.forEach((seg, si) => {
-      for (const st of splitPipes(seg)) stages.push({ text: st, seg: si });
-    });
+    const push = (text, segIdx, depth) => {
+      for (const st of splitPipes(text)) {
+        stages.push({ text: st, seg: segIdx });
+        if (depth >= MAX_WRAPPER_DEPTH) continue;
+        const payload = wrapperPayload(st);
+        if (!payload) continue;
+        for (const sub of splitCommands(payload)) push(sub, segIdx, depth + 1);
+      }
+    };
+    segs.forEach((seg, si) => push(seg, si, 0));
     const posStages = stages.filter((s) => isPositiveStage(s.text));
     const assertText = posStages.map((s) => s.text).join("\n");
     const negStages = stages.filter((s) => isNegationStage(s.text));
-    const hasGoRun = stages.some((s) => /go\s+test\b.*-run\b/i.test(s.text));
+    // 触发面看**骨架**:引号里的字面量不是命令(G-26-9),wrapper 载荷是命令(G-26-8)。
+    const hasGoRun = stages.some((s) => /go\s+test\b.*-run\b/i.test(stripQuoted(s.text)));
     const goAsserted = /---\s+(?:PASS|FAIL)/.test(assertText)
       || (hasGoRun && negStages.some((s) => /no tests to run/.test(s.text)));
     const cargoAsserted = /\b[1-9]\d*\s+passed\b/.test(assertText)
@@ -437,9 +532,11 @@ export function checkZeroMatchErrors(tickets) {
     for (const s of stages) {
       const c = s.text;
       if (!isPositiveStage(c)) continue;
-      if (/go\s+test\b.*-run\b/i.test(c) && !goAsserted)
+      // 触发面读骨架:引号里的字面量(`grep -q "cargo test -- x" notes.md`)不是命令
+      const sk = stripQuoted(c);
+      if (/go\s+test\b.*-run\b/i.test(sk) && !goAsserted)
         problems.push(`${t.id}: verify 第 ${s.seg + 1} 条命令:go test -run <pattern> 的断言不判别 —— 零匹配时 go 打印 "no tests to run" 且 exit 0;须断言 "--- PASS"/"--- FAIL"(需 -v)或 ! grep "no tests to run"(issue #22)`);
-      if (/cargo\s+test\b/i.test(c) && /\s--\s/.test(c) && !cargoAsserted)
+      if (/cargo\s+test\b/i.test(sk) && /\s--\s/.test(sk) && !cargoAsserted)
         problems.push(`${t.id}: verify 第 ${s.seg + 1} 条命令:cargo test 带过滤器的断言不判别 —— 零匹配时 cargo 打印 "test result: ok. 0 passed" 且 exit 0;须断言实际计数("3 passed"/"test result: ok. 3 passed"/"running 1 test",N>=1 写实际数字)或 "test result: FAILED"(issue #10)`);
     }
   }

@@ -395,6 +395,44 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(checkZeroMatchErrors([{ id: "T1", verify: "go test ./pkg -run TestFoo -v 2>&1 | tee o.txt | grep -v \"^$\"" }]).length, 1, "管道级判定:同段 grep -v 不吞掉 go 触发命令");
   eqN(checkZeroMatchErrors([{ id: "T1", verify: "go test ./pkg -run TestFoo -v 2>&1 | tee o.txt\n! grep -qE \"other|no tests to run\" o.txt" }]).length, 0, "管道级判定:引号里的竖线不切开否定签名");
   eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- my_case 2>&1 | tee o.txt\n! grep -v \"running 0 tests\" o.txt" }]).length, 1, "管道级判定:! grep -v 不算否定签名");
+  // ---- 三面口径(phase 26 D-13 + D-15,REQ-41):分类面看骨架 / 触发面看真正会执行的命令 / 标记面看模式串 ----
+  // G-26-8:触发命令被引号包住(bash -c "...")就消失 —— 门禁看不见真正会跑的命令。
+  // G-26-9:引号里的字面量(grep -q "cargo test -- ...")被当成命令 —— 合法票被误伤。
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "bash -c \"cargo test -- my_case\"" }]).length, 1, "triplane-1 wrapper 载荷里的 cargo 触发命令看得见");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "sh -c \"go test ./pkg -run TestFoo\"" }]).length, 1, "triplane-2 wrapper 载荷里的 go 触发命令看得见");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "grep -q \"cargo test -- my_case\" README.md" }]).length, 0, "triplane-3 引号里的字面量不是命令(不误伤)");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "grep -q \"go test ./pkg -run TestFoo\" README.md" }]).length, 0, "triplane-4 引号里的字面量不是命令(不误伤)");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "bash -c 'cargo test -- my_case && grep -q \"3 passed\" o.txt'" }]).length, 0, "triplane-5 wrapper 载荷里有判别性断言就不误报");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "FOO=\"x\" bash -c \"cargo test -- my_case\"" }]).length, 1, "triplane-6 赋值前缀不影响 wrapper 识别");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "bash -c \"cargo test -- \\\"my_case\\\"\"" }]).length, 1, "triplane-7 载荷里的转义引号认得");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "bash -lc \"cargo test -- my_case\"" }]).length, 1, "triplane-8 -lc 也是 shell 载荷");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "bash script \"cargo test -- my_case\"" }]).length, 0, "triplane-9 不是 -c 载荷就不展开");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "env FOO=1 bash -c \"cargo test -- my_case\"" }]).length, 1, "triplane-10 env 前缀不影响 wrapper 识别");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "bash -c \"bash -c \\\"cargo test -- my_case\\\"\"" }]).length, 1, "triplane-11 嵌套 wrapper 载荷看得见");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "bash -c \"cargo test -- my_case\" 2>&1 | tee o.txt" }]).length, 1, "triplane-12 wrapper 后面接管道照样看得见");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "bash -c \"cargo test -- my_case\" > out.txt" }]).length, 1, "triplane-13 wrapper 后面接重定向照样看得见");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "grep -c \"cargo test -- my_case\" README.md" }]).length, 0, "triplane-14 grep -c 不是 shell 载荷(不误伤)");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "grep -c \"go test ./pkg -run TestFoo\" README.md" }]).length, 0, "triplane-15 grep -c 不是 shell 载荷(不误伤)");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "/bin/bash -c \"cargo test -- my_case\"" }]).length, 1, "triplane-16 带路径的 shell 名照样认");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "bash -c \"cargo test -- my_case\" 2>&1 | tee o.txt\ngrep -q \"test result: ok. 3 passed\" o.txt" }]).length, 0, "triplane-17 wrapper 载荷里有判别性断言就不误报");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "sh -c \"go test ./pkg -run TestFoo\" 2>&1 | tee o.txt\ngrep -q -- \"--- PASS\" o.txt" }]).length, 0, "triplane-18 sh wrapper 载荷里有判别性断言就不误报");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "sudo bash -c \"cargo test -- my_case\"" }]).length, 1, "triplane-19 sudo 前缀不影响 wrapper 识别");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "nohup bash -c \"cargo test -- my_case\"" }]).length, 1, "triplane-20 nohup 前缀不影响 wrapper 识别");
+  // 接线自测:函数算对了但接线空,门禁照样看不见那条命令 → 必须真的从检查器里看见判红。
+  {
+    const d = mkdtempSync(join(tmpdir(), "mm-gsd-triplane-"));
+    try {
+      mkdirSync(join(d, ".planning"), { recursive: true });
+      writeFileSync(join(d, "a.mjs"), "x\n");
+      const p = join(d, ".planning", "26-01-PLAN.md");
+      writeFileSync(p, '---\nphase: "26"\nplan: "01"\ngoal: g\nrollback: r\nfiles_modified:\n  - a.mjs\ndepends_on: []\n---\n\n'
+        + '### T1 事\n- **files**: a.mjs\n- **read_first**: a.mjs\n- **action**: 做\n- **verify**: bash -c "cargo test -- my_case"\n- **fails_when**: 退出码非 0(无 ok)\n- **done**: ok\n');
+      let out = "", code = 0;
+      try { out = execFileSync(process.execPath, [CHECKER, "--plan", p], { cwd: d, encoding: "utf8", stdio: "pipe", env: { ...process.env, GSD_TELEMETRY: "0", GSD_SANDBOX: "1", GSD_PROJECT_DIR: "" } }); }
+      catch (e) { code = e.status ?? 1; out = String(e.stdout || "") + String(e.stderr || ""); }
+      eqN(code !== 0 && out.includes("票级 verify 存在假绿漏洞"), true, "triplane 接线自测:wrapper 包住的触发命令,检查器要判红");
+    } finally { rmSync(d, { recursive: true, force: true }); }
+  }
   // ---- --phases 不可核验可见性(phase 26 D-02,REQ-33):模糊 files_modified 必须报警,且不能同时谎报「零重叠」 ----
   {
     const mkPhases = (d, files) => {
