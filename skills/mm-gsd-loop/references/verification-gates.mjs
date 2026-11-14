@@ -334,22 +334,55 @@ function stripTrailingComment(line) {
 }
 
 /**
- * 段分类:哪一段能当断言来源,哪一段只提供否定签名。
+ * 段 → stage:按单管道切分,引号感知。
  *
- * 为什么拆三类(phase 26 D-06② + D-08):
+ * 为什么判定单位要下沉到 stage(phase 26 D-09,G-26-6):段级分类是**整段布尔判定**,
+ * 同段里既有触发命令又有 `grep -v` / `echo` 时,整段被作废 —— 触发命令随段一起消失。
+ * `splitCommands` 只切 `;`/`\n`/`&&`/`||`,**单 `|` 不切** → 管道里的 `grep -v`
+ * 与触发命令必然落在同一段,所以必须再切一层。
+ * 引号里的 `|` 不是管道(`grep -q "a|b"` 是一个 stage)—— 引号感知是必须的,
+ * 切碎引号里的 `|` 会把否定签名切到另一个 stage,门禁就认不出它(误报)。
+ */
+function splitPipes(seg) {
+  const out = [];
+  let cur = "", q = null;
+  for (let i = 0; i < seg.length; i++) {
+    const c = seg[i];
+    if (q) { cur += c; if (c === q && seg[i - 1] !== "\\") q = null; continue; }
+    if (c === '"' || c === "'" || c === "`") { q = c; cur += c; continue; }
+    if (c === "|") { out.push(cur); cur = ""; continue; }
+    cur += c;
+  }
+  out.push(cur);
+  return out.map((s) => s.trim()).filter(Boolean);
+}
+
+/** 剥掉引号内容:分类只看命令骨架,引号里的字面量不是命令的一部分 */
+function stripQuoted(s) {
+  return s.replace(/'[^']*'|"[^"]*"|`[^`]*`/g, " ");
+}
+
+/**
+ * stage 分类:哪个 stage 能当断言来源,哪个只提供否定签名。
+ *
+ * 判据与段级一致(phase 26 D-06② + D-08),判定单位下沉到 stage(D-09):
  * - `grep -v "3 passed"` —— 退出码在「零匹配输出」与「真跑过输出」上都是 0,没有判别力。
  *   它既不提供正面标记,也不提供否定签名。
  * - `! grep -q "no tests to run"` —— 显式否定,是「断言零匹配没发生」的唯一合法写法,
- *   只提供否定签名,自己不是正面标记。
+ *   只提供否定签名,自己不是正面标记。`! grep -v X` 是双重否定(语义是「断言输出里**有** X」),
+ *   跟否定式签名相反,不当签名来源。
  * - `echo "3 passed"` —— 自己造的标记不是命令的输出(G-26-2),既不提供标记也不触发零匹配门。
- * 剩下的段(含正向 grep / test / awk / diff / rg)才是正向段:断言标记与触发扫描都只看它们。
+ * 剩下的 stage(含正向 grep / test / awk / diff / rg)才是正向 stage:断言标记与触发扫描都只看它们。
+ *
+ * 分类只看**命令骨架**(先把引号内容剥掉):`grep -q "test -v flag" o.txt` 不是 `grep -v`;
+ * 但断言标记仍取自 stage **原文** —— 引号里的断言词要算数。
  */
-const isNegGrepSeg = (s) => /\bgrep\b[^|]*\s-v(\s|$|[A-Za-z])/.test(s);
-const isNegationSig = (s) => /(^|[\s|])!\s*grep\b/.test(s);
-const isLiteralPrintSeg = (s) => /^\s*(echo|printf)\b/.test(s);
-const isPositiveSeg = (s) =>
-  !isNegGrepSeg(s) && !isNegationSig(s) && !isLiteralPrintSeg(s)
-  && /\b(grep|test|awk|diff|rg)\b/.test(s);
+const isNegGrepStage = (s) => /\bgrep\b[^|]*\s-v(\s|$|[A-Za-z])/.test(stripQuoted(s));
+const isNegationStage = (s) => /(^|[\s|])!\s*grep\b/.test(stripQuoted(s)) && !isNegGrepStage(s);
+const isLiteralPrintStage = (s) => /^\s*(echo|printf)\b/.test(s);
+const isPositiveStage = (s) =>
+  !isNegGrepStage(s) && !isNegationStage(s) && !isLiteralPrintStage(s)
+  && /\b(grep|test|awk|diff|rg)\b/.test(stripQuoted(s));
 
 /**
  * 零匹配假绿阻断(phase 26 D-01 + D-04,issue #22):`go test -run <pattern>` 与 `cargo test -- <name>`
@@ -383,24 +416,32 @@ export function checkZeroMatchErrors(tickets) {
       if (!s) continue;
       for (const seg of splitCommands(s)) segs.push(seg);
     }
-    const posSegs = segs.filter(isPositiveSeg);
-    const assertText = posSegs.join("\n");
-    const negSegs = segs.filter(isNegationSig);
-    const hasGoRun = segs.some((c) => /go\s+test\b.*-run\b/i.test(c));
+    // 判定单位下沉到管道级(stage,phase 26 D-09):每个 stage 记着它所属的段号 ——
+    // 报错里的「第 N 条命令」按**段号**报(用户看到的是 verify 文本里的第几条命令),
+    // 但判定按 stage 做 —— 同段里的 `grep -v` / `echo` 不得把同段的触发命令一起作废(G-26-6)。
+    const stages = [];
+    segs.forEach((seg, si) => {
+      for (const st of splitPipes(seg)) stages.push({ text: st, seg: si });
+    });
+    const posStages = stages.filter((s) => isPositiveStage(s.text));
+    const assertText = posStages.map((s) => s.text).join("\n");
+    const negStages = stages.filter((s) => isNegationStage(s.text));
+    const hasGoRun = stages.some((s) => /go\s+test\b.*-run\b/i.test(s.text));
     const goAsserted = /---\s+(?:PASS|FAIL)/.test(assertText)
-      || (hasGoRun && negSegs.some((s) => /no tests to run/.test(s)));
+      || (hasGoRun && negStages.some((s) => /no tests to run/.test(s.text)));
     const cargoAsserted = /\b[1-9]\d*\s+passed\b/.test(assertText)
       || /\[1-9\](?![?*+])[^\s]{0,12}\s+passed\b/.test(assertText)
       || /\brunning\s+[1-9]\d*\s+tests?\b/.test(assertText)
       || /\btest\s+result:\s*FAILED\b/.test(assertText)
-      || negSegs.some((s) => /running\s+0\s+tests/.test(s) || /test result: ok\\?\. 0 passed/.test(s));
-    segs.forEach((c, ci) => {
-      if (!isPositiveSeg(c)) return;
+      || negStages.some((s) => /running\s+0\s+tests/.test(s.text) || /test result: ok\\?\. 0 passed/.test(s.text));
+    for (const s of stages) {
+      const c = s.text;
+      if (!isPositiveStage(c)) continue;
       if (/go\s+test\b.*-run\b/i.test(c) && !goAsserted)
-        problems.push(`${t.id}: verify 第 ${ci + 1} 条命令:go test -run <pattern> 的断言不判别 —— 零匹配时 go 打印 "no tests to run" 且 exit 0;须断言 "--- PASS"/"--- FAIL"(需 -v)或 ! grep "no tests to run"(issue #22)`);
+        problems.push(`${t.id}: verify 第 ${s.seg + 1} 条命令:go test -run <pattern> 的断言不判别 —— 零匹配时 go 打印 "no tests to run" 且 exit 0;须断言 "--- PASS"/"--- FAIL"(需 -v)或 ! grep "no tests to run"(issue #22)`);
       if (/cargo\s+test\b/i.test(c) && /\s--\s/.test(c) && !cargoAsserted)
-        problems.push(`${t.id}: verify 第 ${ci + 1} 条命令:cargo test 带过滤器的断言不判别 —— 零匹配时 cargo 打印 "test result: ok. 0 passed" 且 exit 0;须断言实际计数("3 passed"/"test result: ok. 3 passed"/"running 1 test",N>=1 写实际数字)或 "test result: FAILED"(issue #10)`);
-    });
+        problems.push(`${t.id}: verify 第 ${s.seg + 1} 条命令:cargo test 带过滤器的断言不判别 —— 零匹配时 cargo 打印 "test result: ok. 0 passed" 且 exit 0;须断言实际计数("3 passed"/"test result: ok. 3 passed"/"running 1 test",N>=1 写实际数字)或 "test result: FAILED"(issue #10)`);
+    }
   }
   return problems;
 }

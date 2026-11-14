@@ -276,6 +276,23 @@ export function runPlanCheckE2ECases(st) {
     const p5 = run(["--plan", ".planning/01-01-PLAN.md"]);
     eqN(p5.code, 1, "verify 字段续行:续行里的 cargo 过滤器零匹配 → --plan 退出码非 0");
     eqN(p5.out.includes("票级 verify 存在假绿漏洞"), true, "verify 字段续行:续行里的 cargo 过滤器零匹配 → 输出零匹配报错");
+    // ---- phase 26 D-10 / REQ-38:零缩进的懒续行也是 verify 的内容(G-26-7) ----
+    // 用户渲染看到的「verify 里含那条命令」必须等于门禁看到的:懒续行(紧跟字段行、没隔空行)算 verify。
+    const planLazy = "---\nphase: \"01\"\nplan: \"01\"\ngoal: 夹具计划:零缩进懒续行也要被门禁看见\nrollback: 删掉夹具即可\nfiles_modified:\n  - a.mjs\n---\n\n# 01-01 PLAN\n\n### T1 改一个常量\n\n- **files**: a.mjs\n- **read_first**: a.mjs\n- **action**: 把常量改成 2,然后跑测试。\n- **verify**: npm run build\ncargo test -- my_case\n- **fails_when**: cargo 命令退出码非 0(输出里没有 passed 计数)\n- **done**: cargo 输出里出现实际计数\n";
+    writeFileSync(join(dir, ".planning", "01-01-PLAN.md"), planLazy);
+    const p6 = run(["--plan", ".planning/01-01-PLAN.md"]);
+    eqN(p6.code, 1, "verify 字段懒续行:零缩进懒续行里的 cargo 过滤器零匹配 → --plan 退出码非 0");
+    eqN(p6.out.includes("票级 verify 存在假绿漏洞"), true, "verify 字段懒续行:零缩进懒续行里的 cargo 过滤器零匹配 → 输出零匹配报错");
+    // 空行之后的缩进行仍是同一个列表项的续行 → 照旧进零匹配门
+    const planBlankIndent = "---\nphase: \"01\"\nplan: \"01\"\ngoal: 夹具计划:空行后的缩进续行也要被门禁看见\nrollback: 删掉夹具即可\nfiles_modified:\n  - a.mjs\n---\n\n# 01-01 PLAN\n\n### T1 改一个常量\n\n- **files**: a.mjs\n- **read_first**: a.mjs\n- **action**: 把常量改成 2,然后跑测试。\n- **verify**: npm run build\n\n  - cargo test -- my_case\n- **fails_when**: cargo 命令退出码非 0(输出里没有 passed 计数)\n- **done**: cargo 输出里出现实际计数\n";
+    writeFileSync(join(dir, ".planning", "01-01-PLAN.md"), planBlankIndent);
+    const p7 = run(["--plan", ".planning/01-01-PLAN.md"]);
+    eqN(p7.code, 1, "verify 字段懒续行:空行后的缩进续行里的 cargo 过滤器零匹配 → --plan 退出码非 0");
+    // 空行之后的零缩进行属新块(段落已被空行终结)→ 不算 verify → 不得误伤
+    const planBlankLazy = "---\nphase: \"01\"\nplan: \"01\"\ngoal: 夹具计划:空行后的零缩进属新块,不算 verify\nrollback: 删掉夹具即可\nfiles_modified:\n  - a.mjs\n---\n\n# 01-01 PLAN\n\n### T1 改一个常量\n\n- **files**: a.mjs\n- **read_first**: a.mjs\n- **action**: 把常量改成 2,然后跑测试。\n- **verify**: npm run build\n\ncargo test -- my_case\n- **fails_when**: cargo 命令退出码非 0(输出里没有 passed 计数)\n- **done**: cargo 输出里出现实际计数\n";
+    writeFileSync(join(dir, ".planning", "01-01-PLAN.md"), planBlankLazy);
+    const p8 = run(["--plan", ".planning/01-01-PLAN.md"]);
+    eqN(p8.code, 0, "verify 字段懒续行:空行后的零缩进是新块 → 不算 verify,不得误伤");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }
 

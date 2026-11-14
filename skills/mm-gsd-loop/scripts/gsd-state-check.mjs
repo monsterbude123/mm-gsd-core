@@ -283,11 +283,19 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
       return null;
     };
     /**
-     * 只服务 verify 的取值口:verify 的缩进续行也算 verify 的内容(phase 26 D-07 / REQ-36)。
+     * 只服务 verify 的取值口:verify 的续行也算 verify 的内容(phase 26 D-07 / REQ-36 / D-10)。
      * 为什么不动 field():它被 8 处消费,改成采集续行会让 26-02 的 action 续行里的
      * ```javascript 围栏触发「action 里含代码块」判红 —— 共享取值口的语义一个字都不许动。
-     * 续行判定:不匹配字段行正则,且是缩进行或空行;遇到下一个字段行、或非缩进的非空行就停。
+     *
+     * 续行语义按 CommonMark 懒续行(phase 26 D-10 / REQ-38,G-26-7):
+     * 用户渲染看到的「verify 里含那条命令」必须等于门禁看到的 ——
+     * - 字段行 → 停(下一个字段是别的字段)
+     * - 缩进行 → 采集(列表项的正常续行)
+     * - 零缩进非空行 → 只在「自字段行起没出现过空行」时采集(紧跟段落的懒续行);
+     *   出现过空行就停(空行终结段落,之后的零缩进行属新块,不属于这个列表项)
+     * - 块起始行(标题/列表项/引用/围栏/分隔线)→ 停
      */
+    const BLOCK_START = /^(#{1,6}\s|```|~~~|>|[-*+]\s|\d+[.)]\s|---|\*\*\*)/;
     const fieldBlock = (t, key) => {
       let idx = -1;
       for (let i = 0; i < t.lines.length; i++) {
@@ -296,11 +304,14 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
       }
       if (idx < 0) return null;
       const parts = [(t.lines[idx].match(FIELD_RE) || [])[2]?.trim() ?? ""];
+      let seenBlank = false;
       for (let i = idx + 1; i < t.lines.length; i++) {
         const l = t.lines[i];
         if (FIELD_RE.test(l)) break;
-        if (!l.trim()) { parts.push(""); continue; }
-        if (!/^\s/.test(l)) break;
+        if (!l.trim()) { seenBlank = true; parts.push(""); continue; }
+        if (BLOCK_START.test(l)) break;
+        if (/^\s/.test(l)) { parts.push(l.trim()); continue; }
+        if (seenBlank) break;
         parts.push(l.trim());
       }
       return parts.join("\n").trim();

@@ -378,6 +378,12 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(checkZeroMatchErrors([{ id: "T1", verify: "echo \"cargo test -- my_case\"" }]).length, 0, "echo 自造标记:echo 一条命令名不触发零匹配门");
   eqN(isFullSuite("cargo test -- my_case"), false, "全量套件判定:cargo test -- 单个用例名不是全量套件");
   eqN(isFullSuite("cargo test -- --nocapture"), true, "全量套件判定:cargo test -- 只有 flag 仍是全量套件");
+  // ---- 假绿通道收紧二轮(phase 26 D-09,REQ-37):判定单位下沉到管道级(stage) ----
+  // 段级判定会把「同段里既有触发命令又有 grep -v」的整段作废 → 触发命令随段一起消失(G-26-6)。
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- my_case 2>&1 | tee o.txt | grep -v \"^$\"" }]).length, 1, "管道级判定:同段 grep -v 不吞掉 cargo 触发命令");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "go test ./pkg -run TestFoo -v 2>&1 | tee o.txt | grep -v \"^$\"" }]).length, 1, "管道级判定:同段 grep -v 不吞掉 go 触发命令");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "go test ./pkg -run TestFoo -v 2>&1 | tee o.txt\n! grep -qE \"other|no tests to run\" o.txt" }]).length, 0, "管道级判定:引号里的竖线不切开否定签名");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- my_case 2>&1 | tee o.txt\n! grep -v \"running 0 tests\" o.txt" }]).length, 1, "管道级判定:! grep -v 不算否定签名");
   // ---- --phases 不可核验可见性(phase 26 D-02,REQ-33):模糊 files_modified 必须报警,且不能同时谎报「零重叠」 ----
   {
     const mkPhases = (d, files) => {
