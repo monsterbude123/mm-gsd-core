@@ -34,7 +34,10 @@
     --shadow: 0 1px 3px rgb(15 23 42 / .1);
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.55 system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; }
+  /* 应用壳:整页不滚动(html/body 锁死视口),只有内容区内部滚 —— 框架恒定不抖动 */
+  html, body { height: 100%; height: 100dvh; }
+  body { margin: 0; overflow: hidden; display: flex; flex-direction: column;
+    background: var(--bg); color: var(--fg); font: 14px/1.55 system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; }
   button, select, input, textarea { font: inherit; color: inherit; }
   button { cursor: pointer; }
   :is(button, select, input, textarea, summary, a):focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
@@ -43,9 +46,9 @@
     .pill, .dot { transition: background-color .15s ease; }
   }
 
-  /* ── 状态条(粘性头部)── */
-  header { position: sticky; top: 0; z-index: 10; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
-    padding: 10px 20px; background: color-mix(in srgb, var(--card) 92%, transparent); backdrop-filter: blur(6px);
+  /* ── 状态条(应用壳顶栏,恒定不滚)── */
+  header { position: relative; z-index: 10; flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+    padding: 10px 20px; background: color-mix(in srgb, var(--card) 92%, transparent);
     border-bottom: 1px solid var(--border); box-shadow: var(--shadow); }
   header h1 { font-size: 16px; margin: 0; letter-spacing: .3px; }
   header .spacer { flex: 1; }
@@ -60,12 +63,12 @@
   #live .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--grn); margin-right: 5px; vertical-align: 1px; }
   #live.stale .dot { background: var(--amb); }
 
-  main { max-width: 1180px; margin: 0 auto; padding: 16px 20px 48px; }
-  /* ── 壳布局:左栏(项目)+ 主区(D-04);窄屏左栏落到顶部 ── */
-  .shell { display: flex; gap: 18px; max-width: 1280px; margin: 0 auto; padding: 16px 20px 48px; align-items: flex-start; }
-  .shell aside { flex: none; width: 190px; position: sticky; top: 64px; display: grid; gap: 14px; }
-  .shell main { flex: 1; min-width: 0; max-width: none; margin: 0; padding: 0; }
-  @media (max-width: 900px) { .shell { flex-direction: column; } .shell aside { position: static; width: auto; } }
+  /* ── 应用壳布局:顶栏 + 左栏 + 内容区;只有内容区内部滚动 ── */
+  .shell { flex: 1; min-height: 0; display: flex; gap: 16px; width: 100%; max-width: 1440px;
+    margin: 0 auto; padding: 14px 20px 14px; overflow: hidden; }
+  .shell aside { flex: none; width: 190px; overflow-y: auto; overscroll-behavior: contain;
+    display: grid; gap: 14px; align-content: start; }
+  .shell main { flex: 1; min-width: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 2px 16px 0; }
   .sidebox { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
   .sidebox h3 { margin: 0 0 8px; font-size: 13px; color: var(--fg-mut); font-weight: 600; }
   .projlist { display: grid; gap: 2px; }
@@ -81,10 +84,19 @@
   .viewnav button:hover { color: var(--fg); border-color: var(--border); }
   .viewnav button.active { background: var(--muted); color: var(--fg); border-color: var(--border); }
 
-  /* ── 总览(D-05):对账黄条 + 筛选条 + phase 总览表 + 详情面板 ── */
+  /* ── 总览(D-05):提醒折叠条 + 筛选条 + phase 总览表 + 披露浮层 ── */
   .psw { background: var(--amb-bg); color: var(--amb); border: 1px solid color-mix(in srgb, var(--amb) 40%, var(--border));
     border-radius: 10px; padding: 8px 12px; margin-bottom: 12px; font-size: 13px; }
+  .psw summary { cursor: pointer; font-weight: 600; list-style: none; display: flex; align-items: center; gap: 6px; }
+  .psw summary::before { content: "▸"; transition: transform .15s ease; }
+  .psw[open] summary::before { transform: rotate(90deg); }
+  .psw[open] summary { margin-bottom: 6px; }
   .psw div { margin: 2px 0; }
+  /* 大表收进内滚容器:页面不滚,表头粘住,行在容器里滚 */
+  .tblwrap { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    overflow: auto; max-height: 46vh; overscroll-behavior: contain; }
+  .tblwrap table { border: 0; border-radius: 0; }
+  .tblwrap thead th { position: sticky; top: 0; z-index: 1; }
   .fbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
   .fbar select { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 4px 8px; font-size: 13px; }
   #phOverview tbody tr { cursor: pointer; }
@@ -173,8 +185,8 @@
   .annform .msg { font-size: 12px; color: var(--fg-dim); min-height: 1em; }
   .hint { font-size: 12px; color: var(--fg-dim); }
   .annform .msg.err { color: var(--red); }
-  .annlist { margin-top: 12px; display: grid; gap: 6px; }
-  .isslist { display: grid; gap: 6px; }
+  .annlist { margin-top: 12px; display: grid; gap: 6px; max-height: 46vh; overflow: auto; overscroll-behavior: contain; }
+  .isslist { display: grid; gap: 6px; max-height: 46vh; overflow: auto; overscroll-behavior: contain; }
   .iss { display: flex; gap: 10px; align-items: center; padding: 8px 12px; }
   .iss .itxt { flex: 1; font-size: 13px; }
   .iss .mutd { font-family: var(--mono); font-size: 11px; color: var(--fg-dim); }
@@ -196,8 +208,8 @@
   .debtsec > h3 .cnt { font-family: var(--mono); font-size: 12px; color: var(--fg-dim); font-weight: 400; }
   .debtsec.wide { grid-column: 1 / -1; }
   .debtsum { display: grid; gap: 6px; }
-  .drow { display: flex; gap: 10px; align-items: baseline; }
-  .drow .dtxt { flex: 1; min-width: 0; font-size: 13px; }
+  .drow { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+  .drow .dtxt { flex: 1 1 160px; min-width: 0; font-size: 13px; }
   .drow .dmut { font-family: var(--mono); font-size: 11px; color: var(--fg-dim); text-align: right; }
   #debt-deferred table { background: transparent; border: 0; }
   /* 挂条件项可达上百条:限高滚动,别把「一屏面板」撑成一页 */
@@ -231,6 +243,7 @@
   .topo .tnode circle { fill: var(--ink-bg); stroke: var(--ink); stroke-width: 1.6; }
   .topo .tnode.done circle { fill: var(--grn-bg); stroke: var(--grn); }
   .topo .tnode text { fill: var(--fg); font-family: var(--mono); font-size: 12px; text-anchor: middle; dominant-baseline: central; }
+  .topo .tnode .ttitle { fill: var(--fg-dim); font-family: inherit; font-size: 10px; dominant-baseline: auto; }
   .topo .tnode:hover circle { stroke-width: 3; }
   .topo .tedge { stroke: var(--fg-dim); stroke-width: 1.4; marker-end: url(#topoArrow); }
   .topo .tarrow { fill: var(--fg-dim); }
@@ -262,6 +275,16 @@
   .dpanel .dhead h3 { margin: 0; font-size: 15px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dpanel .dbody { overflow: auto; padding: 14px 16px 20px; }
   .dpanel .dbody h4 { font-size: 13px; color: var(--fg-mut); margin: 14px 0 6px; }
+
+  /* ── 窄屏(手机):侧栏变横排(必须放在所有基础规则之后 —— 后声明的同特异性规则会覆盖它)── */
+  @media (max-width: 900px) {
+    .shell { flex-direction: column; gap: 10px; padding: 10px 14px; }
+    .shell aside { width: auto; overflow: visible; }
+    .viewnav { display: flex; flex-wrap: wrap; gap: 6px; }
+    .viewnav button { width: auto; }
+    .projlist { display: flex; flex-wrap: wrap; gap: 6px; }
+    .tblwrap { max-height: none; }
+  }
 </style>
 </head>
 <body>
@@ -296,7 +319,7 @@
 </aside>
 <main>
   <section id="view-overview" class="view" aria-label="总览视图">
-  <div id="pswBar" class="psw" hidden></div>
+  <details id="pswBar" class="psw" hidden><summary id="pswSum"></summary><div id="pswBody"></div></details>
   <section class="kpis" aria-label="概览">
     <button class="kpi" id="kReq" type="button" title="分母只算新增需求(baseline 是已交付的基线能力,不参与认领)"><span class="n" id="nReq">—</span><span class="t">REQ 已认领 / 新增需求</span><span class="bar"><i id="barReq" style="width:0%"></i></span></button>
     <button class="kpi" id="kPh" type="button"><span class="n" id="nPh">—</span><span class="t">phase 已交付(SHIP 工件)/ 总数</span><span class="bar"><i id="barPh" style="width:0%"></i></span></button>
@@ -318,10 +341,10 @@
     <label class="hint" for="fReq">REQ</label>
     <select id="fReq"><option value="all">全部</option><option value="claimed">已认领</option><option value="unclaimed">未认领</option><option value="disposed">已处置</option></select>
   </div>
-  <table id="phOverview">
+  <div class="tblwrap"><table id="phOverview">
     <thead><tr><th scope="col">phase</th><th scope="col">标题</th><th scope="col">五步</th><th scope="col">票数</th><th scope="col">REQ 认领</th><th scope="col">SHIP</th><th scope="col" title="该 phase 工件里的未清偿 deferred 条数">挂账</th></tr></thead>
     <tbody id="phRows"></tbody>
-  </table>
+  </table></div>
   </section>
 
   <section id="view-debt" class="view" aria-label="欠账视图" hidden>
@@ -378,10 +401,10 @@
   <section id="view-reqs" class="view" aria-label="REQ 视图" hidden>
   <h2 id="hReq">REQ 溯源链 <small>原话一句话 → 认领票;红点 = 无人认领(需求遗漏)</small></h2>
   <div class="tools"><input id="q" type="search" placeholder="过滤 REQ / 原话 / 票号…" aria-label="过滤需求清单"></div><span id="qCount" class="hint" role="status"></span>
-  <table id="reqs">
+  <div class="tblwrap"><table id="reqs">
     <thead><tr><th scope="col">REQ</th><th scope="col">原话一句话</th><th scope="col">认领票</th><th scope="col"><span class="sr">操作</span></th></tr></thead>
     <tbody></tbody>
-  </table>
+  </table></div>
 
   </section>
 
@@ -538,27 +561,63 @@ function topoRender() {
     ? N + " 个阶段 / " + edges.length + " 条依赖 / 当前最长链 " + (maxLv + 1) + " 层"
     : "阶段清单还没建 —— STATE 的 Phases 落盘后显示";
   if (!N) { box.innerHTML = '<div class="empty">没有阶段,画不出依赖拓扑。</div>'; return; }
-  const W = 720, R = 18, padX = 52, padY = 26, rowH = 66;
+  /* 15s 自动刷新会整图重渲染:悬停摘要指向的是旧节点,残留在屏幕上就是脏东西 —— 渲染前收掉。
+     聚焦降淡一并复位(鼠标没动不会补发 mouseout,要靠下一轮 mouseover 重建)。 */
+  tipHide();
+  /* 蛇形流水布局:纯内联 SVG 的「一眼全图」。旧的分层竖排遇到链状依赖(每层 1 个节点)
+     就是一条竖珠串,又丑又浪费横向空间;改成按视觉行装箱(每行 ≤C 个,S 形折行),
+     链状图变紧凑流程带,分支图同层同行。同行相邻 → 直线;折行 → 竖直连接;
+     同行跳节点 → 绕行弧线;跨行 → 贝塞尔曲线,不穿节点。 */
+  const C = Math.min(7, Math.max(4, Math.round(Math.sqrt(N) + 1)));
   const byLv = new Map();
   for (const p of phases) {
     const l = p.level || 0;
     if (!byLv.has(l)) byLv.set(l, []);
     byLv.get(l).push(p);
   }
-  const rows = [...byLv.keys()].sort((a, b) => a - b);
-  const pos = new Map();
-  const H = padY * 2 + rows.length * rowH;
-  rows.forEach((lv, r) => {
+  const levels = [...byLv.keys()].sort((a, b) => a - b);
+  /* 视觉行装箱:连续的层共占一行(链状依赖每层只有 1 个节点,按层分行就是竖珠串);
+     单层超过 C 个才自占多行(同层是并排兄弟,不许拆散到不相邻的两行)。 */
+  const rows = [];
+  let cur = [];
+  for (const lv of levels) {
     const group = byLv.get(lv).slice().sort((a, b) => a.phase.localeCompare(b.phase));
-    group.forEach((p, i) => {
-      const x = group.length === 1 ? W / 2 : padX + ((W - 2 * padX) * i) / (group.length - 1);
-      pos.set(p.phase, { x, y: padY + r * rowH + rowH / 2 });
+    if (group.length > C) {
+      if (cur.length) { rows.push(cur); cur = []; }
+      for (let i = 0; i < group.length; i += C) rows.push(group.slice(i, i + C));
+    } else if (cur.length + group.length <= C) {
+      cur = cur.concat(group);
+    } else {
+      rows.push(cur);
+      cur = group.slice();
+    }
+  }
+  if (cur.length) rows.push(cur);
+  const cellW = 118, rowH = 96, padX = 46, padY = 40, R = 19;
+  const maxLen = Math.max(...rows.map((r) => r.length));
+  const W = padX * 2 + maxLen * cellW;
+  const pos = new Map();
+  rows.forEach((row, r) => {
+    const rev = r % 2 === 1;
+    row.forEach((p, i) => {
+      const slot = rev ? row.length - 1 - i : i;
+      pos.set(p.phase, { x: padX + cellW * (slot + 0.5), y: padY + r * rowH + 28, row: r });
     });
   });
+  const H = padY + rows.length * rowH + 30;
   const edgeOf = ([from, to]) => {
     const a = pos.get(from), b = pos.get(to);
     if (!a || !b) return ""; // 兜底:服务端已丢幽灵边,这里再挡一层,不画悬空线
-    return '<line class="tedge" data-from="' + esc(from) + '" data-to="' + esc(to) + '" x1="' + a.x + '" y1="' + (a.y + R + 5) + '" x2="' + b.x + '" y2="' + (b.y - R - 5) + '"/>';
+    if (a.row === b.row) {
+      const dir = Math.sign(b.x - a.x) || 1;
+      if (Math.abs(b.x - a.x) <= cellW * 1.6)
+        return '<line class="tedge" data-from="' + esc(from) + '" data-to="' + esc(to) + '" x1="' + (a.x + dir * (R + 4)) + '" y1="' + a.y + '" x2="' + (b.x - dir * (R + 6)) + '" y2="' + b.y + '"/>';
+      return '<path class="tedge" data-from="' + esc(from) + '" data-to="' + esc(to) + '" d="M ' + a.x + " " + (a.y + R + 3) + " Q " + ((a.x + b.x) / 2) + " " + (a.y + 64) + " " + b.x + " " + (b.y + R + 3) + '"/>'; // 同行跳节点:绕行弧线
+    }
+    if (Math.abs(a.x - b.x) < 2)
+      return '<line class="tedge" data-from="' + esc(from) + '" data-to="' + esc(to) + '" x1="' + a.x + '" y1="' + (a.y + R + 4) + '" x2="' + b.x + '" y2="' + (b.y - R - 6) + '"/>'; // 折行处:竖直连接
+    const midY = (a.y + b.y) / 2;
+    return '<path class="tedge" data-from="' + esc(from) + '" data-to="' + esc(to) + '" d="M ' + a.x + " " + (a.y + R + 4) + " C " + a.x + " " + midY + ", " + b.x + " " + midY + ", " + b.x + " " + (b.y - R - 6) + '"/>';
   };
   /* hover 一句话摘要(知识表面第 2 级):规模 + 生命周期 + 挂账,一眼定位这个节点是什么 */
   const tipOf = (p) => {
@@ -570,6 +629,7 @@ function topoRender() {
     if (p.debt > 0) bits.push('<span class="tmut">挂账 ' + p.debt + "</span>");
     return "<b>phase " + esc(p.phase) + "</b> " + esc(p.title || "") + "<br>" + bits.join(" · ");
   };
+  const shortTitle = (t) => { const s = String(t || "").split(/[（(]/)[0]; return s.length > 14 ? s.slice(0, 13) + "…" : s; };
   const nodeOf = (p) => {
     const shipped = p.ship?.status === "shipped" || p.done;
     const cls = "tnode" + (shipped ? " done" : "") + (last && last.activePhase === p.phase ? " act" : "");
@@ -578,7 +638,8 @@ function topoRender() {
     return '<g class="' + cls + '" data-phase="' + esc(p.phase) + '" role="button" aria-label="phase ' + esc(p.phase) + " " + esc(p.title || "") + ",点开明细\">" +
       ring +
       '<circle cx="' + posP.x + '" cy="' + posP.y + '" r="' + R + '"/>' +
-      '<text x="' + posP.x + '" y="' + (posP.y + 1) + '">' + esc(p.phase) + "</text></g>";
+      '<text x="' + posP.x + '" y="' + (posP.y + 1) + '">' + esc(p.phase) + "</text>" +
+      '<text class="ttitle" x="' + posP.x + '" y="' + (posP.y + R + 15) + '">' + esc(shortTitle(p.title)) + "</text></g>";
   };
   box.innerHTML = '<svg viewBox="0 0 ' + W + " " + H + '" width="' + W + '" height="' + H + '" role="img" aria-label="phase 依赖拓扑:共 ' + N + ' 个阶段、' + edges.length + ' 条依赖">' +
     '<defs><marker id="topoArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="tarrow" d="M0 0L10 5L0 10z"/></marker></defs>' +
@@ -898,10 +959,12 @@ async function load() {
   /* ── 总览上屏(D-05):对账黄条 + phase 总览表(卡片的用户原话/CONTEXT 折叠、R 票修复中 pill、
      预审/验收 meta 三处能力随迁进披露浮层 detailHtml,不许丢)── */
   const psw = st.productSurfaceWarn || [];
-  /* 防再积黄条(25-CONTEXT D-03):debtWarn 复用同一黄条通道,总览顶部随对账黄条一起上屏 */
+  /* 防再积黄条(25-CONTEXT D-03):debtWarn 复用同一提醒通道;默认收起一行摘要,展开看明细(抽屉化) */
   const dw = st.debtWarn || [];
-  $("pswBar").hidden = !(psw.length || dw.length);
-  $("pswBar").innerHTML = (psw.length ? "<div><b>product_surface 对账:</b>以下 REQ 已随 SHIP 声明产品面,但 req-ledger 还没有 delivered 行</div>" + psw.map((w) => "<div>" + esc(w) + "</div>").join("") : "")
+  const warns = psw.length + dw.length;
+  $("pswBar").hidden = !warns;
+  $("pswSum").textContent = "提醒 " + warns + " 条(product_surface 对账 / 欠账防再积)";
+  $("pswBody").innerHTML = (psw.length ? "<div><b>product_surface 对账:</b>以下 REQ 已随 SHIP 声明产品面,但 req-ledger 还没有 delivered 行</div>" + psw.map((w) => "<div>" + esc(w) + "</div>").join("") : "")
     + (dw.length ? "<div><b>欠账防再积:</b></div>" + dw.map((w) => "<div>" + esc(w) + "</div>").join("") : "");
   renderOverview();
   topoRender();
