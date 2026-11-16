@@ -120,6 +120,25 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(tck('---\nphase: "01"\nstatus: complete\n---\n', "01-01", "01-01-SUMMARY.md"), true, "donegate-1 文件名就是该票 + status=complete → 算收口(不传 opts,模拟 legacy 调用方)");
   eqN(tck('---\nphase: "01"\nstatus: halted\n---\n', "01-01", "01-01-SUMMARY.md"), false, "donegate-2 文件名就是该票但 status=halted(受阻)→ 不算收口(票还活着)");
   eqN(tck('---\nphase: "01"\n---\n', "01-01", "01-01-SUMMARY.md"), false, "donegate-3 文件名就是该票但没有 status → 不算收口(fail-closed)");
+  // conv-1..conv-13(phase 27 D-01/D-02/D-03 / REQ-49):两种命名约定都要认,反例必须仍判活。
+  // 口径纪律:自测侧与票面 verify 侧传**完全相同的 opts** —— 同一批用例不许在自测里绿、在 verify 里红。
+  const XC = "x-SUMMARY.md";
+  const OPTS_C = { requireStatus: "complete" };
+  const planFx = (ph, plan, st) => "---\nphase: \"" + ph + "\"\nplan: \"" + plan + "\"" + (st ? "\nstatus: \"" + st + "\"" : "") + "\n---\n";
+  const summFx = (ph, st) => "---\nphase: \"" + ph + "\"\nstatus: \"" + st + "\"\n---\n";
+  eqN(tck(planFx("07", "07-03", "complete"), "07-03", XC, OPTS_C), true, "conv-1 plan 字段给完整票号 → 覆盖该票(D-01)");
+  eqN(tck(planFx("07", "03", "complete"), "07-03", XC, OPTS_C), true, "conv-2 plan 字段给后缀 → 覆盖该票(旧口径不变)");
+  eqN(tck(planFx("08", "08-01", "complete"), "07-03", XC, OPTS_C), false, "conv-3 plan 指别的 phase → 不覆盖(跨 phase)");
+  eqN(tck(summFx("07", "complete"), "07-03", "07-03-T01-SUMMARY.md", OPTS_C), true, "conv-4 任务级文件名剥一层 -T<数字> → 覆盖该票(D-02)");
+  eqN(tck(summFx("07", "halted"), "07-03", "07-03-T01-SUMMARY.md", OPTS_C), false, "conv-5 任务级文件名但 halted → 不算收口(D-03:门槛不动)");
+  eqN(tck(summFx("08", "complete"), "07-03", "07-03-T01-SUMMARY.md", OPTS_C), false, "conv-6 任务级文件名但 phase 不符 → 不覆盖");
+  eqN(tck(summFx("07", "complete"), "07-03", "07-03-T01-T02-SUMMARY.md", OPTS_C), false, "conv-7 两层任务号 → 机器不猜,判活");
+  eqN(tck(summFx("07", "complete"), "07-03", "07-03-SUMMARY.md", OPTS_C), true, "conv-8 票级文件名 + complete → 收口(旧行为不变)");
+  eqN(tck(planFx("07", "07-03", "halted"), "07-03", XC, OPTS_C), false, "conv-9 plan 完整票号但 halted → 不算收口(钉住 plan 分支 status 门槛)");
+  eqN(tck(planFx("07", "07-04", "complete"), "07-03", XC, OPTS_C), false, "conv-10 同 phase 但 plan 指别的票 → 不覆盖(REQ-49 反例)");
+  eqN(tck(planFx("07", "07-03", null), "07-03", XC, {}), true, "conv-11 完整票号写法 + 无 status + 不传 opts(legacy 旧口径)→ 覆盖(钉住不单独加严)");
+  eqN(tck(planFx("07", "03", null), "07-03", XC, {}), true, "conv-12 后缀写法 + 无 status + 不传 opts(legacy 旧口径)→ 覆盖");
+  eqN(tck(planFx("07", "03", "halted"), "07-03", XC, OPTS_C), false, "conv-13 后缀写法 + halted → 不算收口(两种写法 status 门槛一致)");
   // 漂移门本体:PLAN 早于 CONTEXT 判红,不早于不判红
   const dDir = mkdtempSync(join(tmpdir(), "mm-gsd-drift-"));
   const planF = join(dDir, "p.md"), ctxF = join(dDir, "c.md");

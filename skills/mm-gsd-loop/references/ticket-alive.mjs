@@ -148,8 +148,8 @@ export function readSummaries(base) {
  * `phase: "02"` + `plan: "03,04,05"`。按「同名文件」判活会把这三票全判成未完成 ——
  * 本仓真实工件就是反例。所以判活读 frontmatter,不猜文件名。
  *
- * **票号是两个字段拼出来的**:`plan` 存的是票号后缀(`"01"` / `"03,04,05"`),
- * phase 单独存在 `phase:` 里。拿 `02-03` 去比对 `"01"` 是比不上的 —— phase 前缀
+ * **票号是两个字段拼出来的**:`plan` 存的是票号后缀(`"01"` / `"03,04,05"`)**或完整票号**(`"07-03"`,
+ * 真实项目两种写法并存,phase 27 起两种都认),phase 单独存在 `phase:` 里。拿 `02-03` 去比对 `"01"` 是比不上的 —— phase 前缀
  * 不在 `plan` 里。这是本函数第一版的 bug,由「改完 --plan 仍全红」的现象抓出来。
  *
  * @param summaries readSummaries() 的结果
@@ -178,12 +178,13 @@ export function ticketsCovered(summaries, ticket, opts = {}) {
     const plan = fm(s.text, "plan");
     if (plan) {
       const ph = fm(s.text, "phase") ?? s.file.slice(0, 2);   // phase 缺失时从文件名取
-      if (ph === phase && plan.split(/[,、\s]+/).filter(Boolean).includes(suffix)) return true;
+      const toks = plan.split(/[,、\s]+/).filter(Boolean); if (ph === phase && (toks.includes(suffix) || toks.includes(ticket))) return true;
       continue;                       // plan 字段存在时它说了算 —— 对不上就是没覆盖
     }
-    // 没有 plan 字段:文件名即票号(`01-01-SUMMARY.md` 就是 `01-01` 这张票的总结)
+    // 没有 plan 字段:文件名即票号(`01-01-SUMMARY.md` 就是 `01-01` 这张票的总结;
+    // 任务级 SUMMARY `07-03-T01-SUMMARY.md` 是 `07-03` 这张票的完成记录 —— 剥一层 -T<数字>,只剥一层,两层不猜)
     if (!s.file.endsWith(suffixTag)) continue;
-    if (s.file.slice(0, s.file.length - suffixTag.length) !== ticket) continue;
+    const base = s.file.slice(0, s.file.length - suffixTag.length); const ticketBase = base.replace(/-T\d+$/, ""); if (ticketBase !== ticket) continue;
     // D-16:文件名规则必须带 status 门槛,且**无条件**生效(不依赖 opts)。
     // 受阻的票还活着 —— 不能因为「文件名对得上」就当它已完成,
     // 否则研究门/漂移门对 halted 的票失明(G-26-11)。
