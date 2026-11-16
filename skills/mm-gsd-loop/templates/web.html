@@ -91,8 +91,6 @@
   .sdot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--fg-dim); margin-right: 4px; }
   .sdot.on { background: var(--grn); border-color: var(--grn); }
   .sdot.warn { background: var(--amb); border-color: var(--amb); }
-  .pddetail { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-top: 12px; }
-  .pddetail h4 { font-size: 13px; color: var(--fg-mut); margin: 14px 0 6px; }
   .pd-plan { padding: 4px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
   .pd-plan:last-child { border-bottom: 0; }
   .pill.mut { background: var(--muted); color: var(--fg-dim); }
@@ -236,6 +234,34 @@
   .topo .tnode:hover circle { stroke-width: 3; }
   .topo .tedge { stroke: var(--fg-dim); stroke-width: 1.4; marker-end: url(#topoArrow); }
   .topo .tarrow { fill: var(--fg-dim); }
+  /* 拓扑一眼全图:活跃 phase 加重;有挂账的节点外圈金环 */
+  .topo .tnode.act circle { stroke-width: 2.8; }
+  .topo .tnode.act text { font-weight: 700; }
+  .topo .tring { fill: none; stroke: var(--amb); stroke-width: 2; opacity: .85; }
+  /* 拓扑聚焦态:hover 节点 → 依赖边高亮,其余降淡(知识表面:关联要看得见) */
+  .topo svg.dim .tedge { opacity: .16; }
+  .topo svg.dim .tedge.hot { opacity: 1; stroke: var(--ink); stroke-width: 2; }
+  .topo svg.dim .tnode { opacity: .35; }
+  .topo svg.dim .tnode.hot, .topo svg.dim .tnode:hover { opacity: 1; }
+
+  /* ── 披露式明细(知识表面三级:概览 → hover 摘要 → 点开浮层;Esc/遮罩关闭,长文滚动)── */
+  .tip { position: fixed; z-index: 60; max-width: 340px; background: var(--card); border: 1px solid var(--border);
+    border-radius: 8px; padding: 7px 10px; font-size: 12px; line-height: 1.5; color: var(--fg-mut);
+    box-shadow: var(--shadow); pointer-events: none; white-space: normal; display: none; }
+  .tip b { color: var(--fg); }
+  .tip .tmut { color: var(--fg-dim); }
+  .dmask { position: fixed; inset: 0; z-index: 50; background: rgb(0 0 0 / .45); display: flex; justify-content: flex-end; }
+  .dmask[hidden] { display: none; }
+  .dpanel { width: min(560px, 94vw); height: 100%; background: var(--card); border-left: 1px solid var(--border);
+    box-shadow: var(--shadow); display: flex; flex-direction: column; }
+  @media (prefers-reduced-motion: no-preference) {
+    .dpanel { animation: dslide .18s ease; }
+    @keyframes dslide { from { transform: translateX(28px); opacity: .5; } }
+  }
+  .dpanel .dhead { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  .dpanel .dhead h3 { margin: 0; font-size: 15px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dpanel .dbody { overflow: auto; padding: 14px 16px 20px; }
+  .dpanel .dbody h4 { font-size: 13px; color: var(--fg-mut); margin: 14px 0 6px; }
 </style>
 </head>
 <body>
@@ -296,7 +322,6 @@
     <thead><tr><th scope="col">phase</th><th scope="col">标题</th><th scope="col">五步</th><th scope="col">票数</th><th scope="col">REQ 认领</th><th scope="col">SHIP</th><th scope="col" title="该 phase 工件里的未清偿 deferred 条数">挂账</th></tr></thead>
     <tbody id="phRows"></tbody>
   </table>
-  <section id="phase-detail" class="pddetail" hidden aria-label="phase 详情"></section>
   </section>
 
   <section id="view-debt" class="view" aria-label="欠账视图" hidden>
@@ -382,6 +407,13 @@
 
 </main>
 </div>
+<div id="dmask" class="dmask" hidden>
+  <div class="dpanel" role="dialog" aria-modal="true" aria-labelledby="dTitle">
+    <div class="dhead"><h3 id="dTitle">—</h3><button type="button" class="ghost" id="dClose">关闭(Esc)</button></div>
+    <div class="dbody" id="dBody"></div>
+  </div>
+</div>
+<div id="tip" class="tip" role="status" aria-hidden="true"></div>
 <script>
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const $ = (id) => document.getElementById(id);
@@ -460,7 +492,42 @@ function telChartSvg(series) {
 
 /* 依赖拓扑(24-01 T1b,D-01):数据 = 服务端 phases[].level 与 topo.edges —— 分层/剪环/幽灵边防御全在
    服务端 references/phase-topo.mjs 一处,客户端只渲染不计算(前端再算一遍就是第二个口径)。
-   边界:一句话能说清的不画图 —— 标题旁保留文字摘要;图不替代结论,点节点下钻详情面板。 */
+   边界:一句话能说清的不画图 —— 标题旁保留文字摘要;图不替代结论,点节点出披露浮层。
+   披露三级(知识表面范式):hover 节点出一句话摘要 + 依赖边高亮;点开出浮层明细;Esc/遮罩关闭。 */
+
+/* hover 摘要单例:一个 div 跟随目标,不动 DOM 结构;原生 <title> 慢半拍且不可样式化 */
+const tip = $("tip");
+function tipShow(html, x, y) { tip.innerHTML = html; tip.style.display = "block"; tipMove(x, y); }
+function tipMove(x, y) {
+  const r = tip.getBoundingClientRect();
+  let left = x + 14, top = y + 14;
+  if (left + r.width > innerWidth - 8) left = x - r.width - 14;
+  if (top + r.height > innerHeight - 8) top = y - r.height - 14;
+  tip.style.left = Math.max(8, left) + "px";
+  tip.style.top = Math.max(8, top) + "px";
+}
+function tipHide() { tip.style.display = "none"; }
+
+/* 披露浮层:Esc / 遮罩点击 / 关闭按钮三种关闭;关闭后焦点归还原处 */
+let lastFocus = null;
+function openDetail(titleHtml, bodyHtml) {
+  lastFocus = document.activeElement;
+  $("dTitle").innerHTML = titleHtml;
+  $("dBody").innerHTML = bodyHtml;
+  $("dmask").hidden = false;
+  $("dClose").focus();
+}
+function closeDetail() {
+  if ($("dmask").hidden) return;
+  $("dmask").hidden = true;
+  $("dBody").innerHTML = "";
+  if (lastFocus && lastFocus.focus) lastFocus.focus();
+  lastFocus = null;
+}
+$("dClose").addEventListener("click", closeDetail);
+$("dmask").addEventListener("click", (e) => { if (e.target === $("dmask")) closeDetail(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDetail(); });
+
 function topoRender() {
   const box = $("phase-topo");
   const phases = (last && last.phases) || [];
@@ -491,18 +558,49 @@ function topoRender() {
   const edgeOf = ([from, to]) => {
     const a = pos.get(from), b = pos.get(to);
     if (!a || !b) return ""; // 兜底:服务端已丢幽灵边,这里再挡一层,不画悬空线
-    return '<line class="tedge" x1="' + a.x + '" y1="' + (a.y + R + 5) + '" x2="' + b.x + '" y2="' + (b.y - R - 5) + '"/>';
+    return '<line class="tedge" data-from="' + esc(from) + '" data-to="' + esc(to) + '" x1="' + a.x + '" y1="' + (a.y + R + 5) + '" x2="' + b.x + '" y2="' + (b.y - R - 5) + '"/>';
+  };
+  /* hover 一句话摘要(知识表面第 2 级):规模 + 生命周期 + 挂账,一眼定位这个节点是什么 */
+  const tipOf = (p) => {
+    const tickets = p.plans.reduce((n, x) => n + x.tickets.length, 0);
+    const sums = p.plans.filter((x) => x.summary).length;
+    const bits = [tickets + " 票", "收口 " + sums + "/" + p.plans.length,
+      p.verification ? "验收 " + esc(p.verification.status) : "未验收",
+      p.ship?.status === "shipped" ? "已交付" : p.ship ? "SHIP " + esc(p.ship.status) : "未交付"];
+    if (p.debt > 0) bits.push('<span class="tmut">挂账 ' + p.debt + "</span>");
+    return "<b>phase " + esc(p.phase) + "</b> " + esc(p.title || "") + "<br>" + bits.join(" · ");
   };
   const nodeOf = (p) => {
     const shipped = p.ship?.status === "shipped" || p.done;
-    const tip = esc("phase:" + p.phase + (p.title ? " · " + p.title : ""));
-    return '<g class="tnode' + (shipped ? " done" : "") + '" data-phase="' + esc(p.phase) + '"><title>' + tip + "</title>" +
-      '<circle cx="' + pos.get(p.phase).x + '" cy="' + pos.get(p.phase).y + '" r="' + R + '"/>' +
-      '<text x="' + pos.get(p.phase).x + '" y="' + (pos.get(p.phase).y + 1) + '">' + esc(p.phase) + "</text></g>";
+    const cls = "tnode" + (shipped ? " done" : "") + (last && last.activePhase === p.phase ? " act" : "");
+    const posP = pos.get(p.phase);
+    const ring = p.debt > 0 ? '<circle class="tring" cx="' + posP.x + '" cy="' + posP.y + '" r="' + (R + 4) + '"/>' : "";
+    return '<g class="' + cls + '" data-phase="' + esc(p.phase) + '" role="button" aria-label="phase ' + esc(p.phase) + " " + esc(p.title || "") + ",点开明细\">" +
+      ring +
+      '<circle cx="' + posP.x + '" cy="' + posP.y + '" r="' + R + '"/>' +
+      '<text x="' + posP.x + '" y="' + (posP.y + 1) + '">' + esc(p.phase) + "</text></g>";
   };
   box.innerHTML = '<svg viewBox="0 0 ' + W + " " + H + '" width="' + W + '" height="' + H + '" role="img" aria-label="phase 依赖拓扑:共 ' + N + ' 个阶段、' + edges.length + ' 条依赖">' +
     '<defs><marker id="topoArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="tarrow" d="M0 0L10 5L0 10z"/></marker></defs>' +
     edges.map(edgeOf).join("") + phases.map(nodeOf).join("") + "</svg>";
+
+  /* 聚焦态:悬停节点 → 依赖边高亮、其余降淡;hover 摘要跟随鼠标 */
+  const svg = box.querySelector("svg");
+  const setHot = (phase) => {
+    svg.classList.toggle("dim", Boolean(phase));
+    for (const g of svg.querySelectorAll("g.tnode")) g.classList.toggle("hot", Boolean(phase) && g.dataset.phase === phase);
+    for (const e of svg.querySelectorAll("line.tedge"))
+      e.classList.toggle("hot", Boolean(phase) && (e.dataset.from === phase || e.dataset.to === phase));
+  };
+  box.onmouseover = (e) => {
+    const g = e.target.closest("g.tnode");
+    if (!g) return;
+    const p = phases.find((x) => x.phase === g.dataset.phase);
+    if (p) tipShow(tipOf(p), e.clientX, e.clientY);
+    setHot(g.dataset.phase);
+  };
+  box.onmousemove = (e) => { if (e.target.closest("g.tnode")) tipMove(e.clientX, e.clientY); };
+  box.onmouseout = (e) => { if (e.target.closest("g.tnode")) { tipHide(); setHot(null); } };
 }
 
 /* 生命周期五步:呈现工件在场(不判对错,推导归 checker) */
@@ -518,10 +616,9 @@ function stepsHtml(p) {
   return '<div class="steps" role="img" aria-label="生命周期:讨论' + (steps[0][1] ? "已落盘" : "未落盘") + "、计划" + (plan ? "已落盘" : "未落盘") + "、执行" + (sum ? "有 SUMMARY" : "未收口") + "、验收" + (ver ? "已落盘" : "未落盘") + "、交付" + (ship ? "已落盘" : "未落盘") + '">' + html.join("") + "</div>";
 }
 
-/* ── 总览(D-05):phase 总览表 + 详情面板 ──
+/* ── 总览(D-05):phase 总览表 + 披露浮层 ──
    挂账列口径唯一 = phases[].debt(服务端按 deferred source 的 <NN>- 前缀归 phase,未清偿口径);
    REQ 处置 pill 数据 = reqs[].disposition(23-01 台账读端:active/delivered/superseded/obsolete)。 */
-let detailPhase = null;
 const PILL_BY_DISP = { delivered: "ship", superseded: "info", obsolete: "rep", active: "mut" };
 const dispPill = (d) => '<span class="pill ' + (PILL_BY_DISP[d] || "mut") + '">' + esc(d || "?") + "</span>";
 
@@ -566,14 +663,10 @@ function renderOverview() {
     tr.insertCell().innerHTML = p.debt > 0 ? '<strong style="color:var(--amb)">' + p.debt + "</strong>" : "0";
   }
   if (!tb.rows.length) tb.innerHTML = '<tr><td colspan="7" class="empty">没有匹配筛选条件的 phase。</td></tr>';
-  if (detailPhase) renderDetail();
 }
 
-function renderDetail() {
-  const box = $("phase-detail");
-  const p = (last.phases || []).find((x) => x.phase === detailPhase);
-  if (!p) { box.hidden = true; detailPhase = null; return; }
-  box.hidden = false;
+/* 披露浮层正文:chips → 标题 → meta → 工件清单 → covers REQ → 相关批注 → CONTEXT(段序按知识表面明细范式) */
+function detailHtml(p) {
   const ship = p.ship ? (p.ship.status === "shipped" ? '<span class="pill ship">shipped</span>' : '<span class="pill warn">' + esc(p.ship.status) + "</span>") : "";
   const openRep = p.plans.filter((x) => x.isRepair && !x.summary).length;
   const rep = openRep ? '<span class="pill rep">R×' + openRep + " 修复中</span>" : "";
@@ -581,11 +674,9 @@ function renderDetail() {
   const cov = coveredReqs(p);
   const covIds = cov.map((r) => "REQ:" + r.id);
   const relAnns = (last.annotations || []).filter((a) => a.target === "phase:" + p.phase || covIds.includes(a.target));
-  box.innerHTML =
-    '<div class="ph"><b>' + esc(p.phase) + '</b><span class="title">' + esc(p.title || "") + "</span>" + ship + rep +
-    ' <button type="button" class="ghost" id="pdClose">收起</button></div>' +
-    stepsHtml(p) +
+  return stepsHtml(p) +
     '<div class="meta"><span>' + p.plans.reduce((n, x) => n + x.tickets.length, 0) + " 票</span>" +
+    (p.debt > 0 ? '<span style="color:var(--amb)">挂账 ' + p.debt + "</span>" : "") +
     (p.verification ? "<span>验收 " + esc(p.verification.status) + "</span>" : "") +
     (checks ? "<span>预审 " + checks + "</span>" : "") + "</div>" +
     "<h4>工件清单</h4>" +
@@ -612,13 +703,17 @@ function renderDetail() {
     '<details><summary>用户原话 / CONTEXT</summary><div class="ctx">' +
     (last.contexts && last.contexts[p.phase] ? esc(String(last.contexts[p.phase]).slice(0, 2000)) : "(无 CONTEXT domain 原文)") + "</div></details>" +
     '<div class="cardfoot"><button type="button" class="ghost" data-t="' + esc("phase:" + p.phase) + '">批注此 phase</button></div>';
-  $("pdClose").onclick = () => { detailPhase = null; box.hidden = true; };
 }
 
 function phaseDetail(phase) {
-  detailPhase = phase;
-  renderDetail();
-  $("phase-detail").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+  const p = (last.phases || []).find((x) => x.phase === phase);
+  if (!p) return;
+  openDetail(
+    "<b>" + esc(p.phase) + "</b> " + esc(p.title || "") +
+    (p.ship ? (p.ship.status === "shipped" ? ' <span class="pill ship">shipped</span>' : ' <span class="pill warn">' + esc(p.ship.status) + "</span>") : "") +
+    (p.plans.some((x) => x.isRepair && !x.summary) ? '<span class="pill rep">修复中</span>' : ""),
+    detailHtml(p),
+  );
 }
 
 let last = null;
@@ -801,7 +896,7 @@ async function load() {
   if (!tb.rows.length) tb.innerHTML = '<tr><td colspan="4" class="empty">没有匹配的 REQ。</td></tr>';
 
   /* ── 总览上屏(D-05):对账黄条 + phase 总览表(卡片的用户原话/CONTEXT 折叠、R 票修复中 pill、
-     预审/验收 meta 三处能力随迁进详情面板 renderDetail,不许丢)── */
+     预审/验收 meta 三处能力随迁进披露浮层 detailHtml,不许丢)── */
   const psw = st.productSurfaceWarn || [];
   /* 防再积黄条(25-CONTEXT D-03):debtWarn 复用同一黄条通道,总览顶部随对账黄条一起上屏 */
   const dw = st.debtWarn || [];
