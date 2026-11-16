@@ -5,6 +5,7 @@
 import { validateVerification, checkTicketPremises, checkTicketLoad, checkReqClaims, checkReqCoverage, checkIssueLedger, checkDiscriminatingLints, checkZeroMatchErrors, checkBatchVerifyLints } from "./verification-gates.mjs";
 import { checkDecisions, locateContexts, checkDrift, checkConclusionDrift } from "./decision-gates.mjs";
 import { ticketsCovered } from "./ticket-alive.mjs";
+import { mmGsdVersion, splitByVersion } from "./version.mjs";
 import { mkAssert, runArtifactCases, runCoverageCases, runLedgerGateCases, runPhaseHealthCases, runRouteCases, runPlanReadyCases, runPlanCheckE2ECases, runBoundaryCases, runPremiseLocateCases } from "./selftest-suite.mjs";
 import { researchRequired, researchCompliant, checkResearchConsumed, checkResearchSummary } from "./research-gates.mjs";
 import { checkBatchGraph, checkTicketBudget, isFullSuite } from "./worktree-view.mjs";
@@ -14,7 +15,7 @@ import { buildDebt } from "./debt-panel.mjs";
 import { runToolStats } from "./telemetry-aggregate.mjs";
 import { aggregateByDay } from "./telemetry-view.mjs";
 import { mkdtempSync, writeFileSync, rmSync, utimesSync, mkdirSync, readFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -966,6 +967,29 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
       : [];
     eqN(rows.length > 0 && rows.every((r) => r.sandbox === true), true, "自测遥测:telemetry-sandbox 临时文件非空且每条记录都带 sandbox 标记");
     eqN(rows.filter((r) => r.exit === 1 && r.sandbox !== true).length, 0, "自测遥测:telemetry-sandbox 没有未标 sandbox 的失败记录");
+  }
+  // ---- 版本自报(phase 27 T1 / D-04 / REQ-50):遥测行带 ver,版本解析与分桶可判 ----
+  {
+    const hereDir = dirname(fileURLToPath(import.meta.url));
+    const skillDir = dirname(dirname(CHECKER));   // = skills/mm-gsd-loop(仓库与安装布局同形)
+    const expectVer = mmGsdVersion(skillDir);
+    eqN(expectVer !== "unknown", true, "ver-1 版本可解析(仓库 package.json 或安装清单),不落 unknown");
+    eqN(mmGsdVersion(hereDir), expectVer, "ver-1 版本解析:references 目录往上找 = 检查器视角的版本");
+    const vTmp = mkdtempSync(join(tmpdir(), "mm-gsd-ver-"));
+    const noFile = join(vTmp, "no-such.json");
+    eqN(mmGsdVersion(vTmp, { manifestPath: noFile, installManifestPath: noFile }), "unknown", "ver-2 两个口子都读不到 → unknown(不许崩、不许瞎猜)");
+    writeFileSync(join(vTmp, "fake.json"), JSON.stringify({ version: "9.9.9" }), "utf8");
+    eqN(mmGsdVersion(join(vTmp, "no-such-dir"), { installManifestPath: join(vTmp, "fake.json") }), "9.9.9", "ver-2 起点目录不存在 → 不往上找,读安装清单的 9.9.9");
+    const b3 = splitByVersion([{ ver: expectVer }, { ver: "0.0.1" }, {}, { ver: "unknown" }], expectVer);
+    eqN(b3.cur.length, 1, "ver-3 分桶:当前版本的行进 cur");
+    eqN(b3.old.length, 3, "ver-3 分桶:旧版本行 / 无 ver 老行 / unknown 行都进 old(不许丢)");
+    const u3 = splitByVersion([{ ver: "unknown" }, {}, { ver: expectVer }], "unknown");
+    eqN(u3.cur.length, 0, "ver-3 观察方版本未知 → 全部归 old(没有已知版本就没有「当前版本」)");
+    const tel4 = join(vTmp, "run.jsonl");
+    execFileSync(process.execPath, [CHECKER, "--stats"], { cwd: tmpdir(), encoding: "utf8", stdio: "pipe", env: { ...process.env, GSD_TELEMETRY: "1", GSD_TELEMETRY_PATH: tel4, GSD_SANDBOX: "1" } });
+    const rec4 = JSON.parse(readFileSync(tel4, "utf8").split("\n").filter(Boolean).pop());
+    eqN(rec4.ver, expectVer, "ver-4 遥测行带 ver 且等于写记录方自报的版本");
+    rmSync(vTmp, { recursive: true, force: true });
   }
   // 还原环境变量:原值不存在就用 delete —— 写 = undefined 会被 Node 变成字符串 "undefined"(truthy),
   // 之后任何 spawn 检查器都会往一个叫 undefined 的文件写遥测。

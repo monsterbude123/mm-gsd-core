@@ -26,7 +26,7 @@ const R = (...s) => join(ROOT, ...s);
 const HOME_SKILLS = join(homedir(), ".agents", "skills");
 const MANIFEST_NAME = ".mm-gsd-install.json";
 const CHECKER = R("skills", "mm-gsd-loop", "scripts", "gsd-state-check.mjs");
-const TELEMETRY = join(homedir(), ".agents", "mm-gsd-runs.jsonl");
+const TELEMETRY = process.env.GSD_TELEMETRY_PATH || join(homedir(), ".agents", "mm-gsd-runs.jsonl");
 const ISSUES = R(".planning", "issues");
 const GH_BIN = process.platform === "win32" ? "gh.exe" : "gh";
 
@@ -454,31 +454,50 @@ const CMD = {
   // GitHub 往返在 tools/gh-issues.mjs(拆分理由见那个文件头),挂进来当普通命令
   ...makeInboxClose({ ISSUES, GH_BIN, log, ok, bad, warn, head, C }),
 
-  // 1. 观察:读遥测找重复失败
-  observe() {
+  // 1. 观察:读遥测找重复失败 —— 排行按版本分两段(phase 27 D-05):当前版本还活着的在前,
+  //    更早版本的累计折叠成一行。旧记录不是噪声(是事实),但排第一的应该是「现在还会再发生」的事。
+  async observe() {
     head("① observe —— 读遥测找重复失败");
     if (!existsSync(TELEMETRY)) { warn(`还没有遥测:${TELEMETRY}`); log("  检查器每跑一次会自动记一行;跑一次任意模式即产生。\n"); return 0; }
     const rows = readFileSync(TELEMETRY, "utf8").split(/\r?\n/).filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
     // 自测沙盒里的失败是**故意造的**(门禁自测要证明自己会红),混进排行会淹掉真问题。
     // 检查器早就给这些行打了 sandbox 标记,这里第一次真正用它。
     const bad = rows.filter((r) => r.exit === 1 && !r.sandbox);
-    const groups = {};
-    for (const r of bad) for (const m of r.errors ?? []) {
-      // 聚类口径用共享函数:复发判定要用同一把尺子(见 gh-issues.mjs 的 clusterKey)
-      const k = clusterKey(m);
-      (groups[k] ??= { count: 0, projects: new Set(), sample: m, modes: new Set() });
-      groups[k].count++; groups[k].projects.add(r.cwd); groups[k].modes.add(r.mode);
-    }
-    const list = Object.entries(groups).sort((a, b) => b[1].count - a[1].count);
-    log(`  遥测 ${rows.length} 次运行,其中门禁失败 ${bad.length} 次(自测沙盒的失败不计),聚合出 ${list.length} 类问题\n`);
+    // 版本分桶(phase 27 D-04/D-05):观察方与写记录方共用同一份版本解析(skills/.../version.mjs)。
+    const { mmGsdVersion, splitByVersion } = await import("../skills/mm-gsd-loop/references/version.mjs");
+    const curVer = mmGsdVersion(dirname(fileURLToPath(import.meta.url)));
+    const { cur, old } = splitByVersion(bad, curVer);
+    const cluster = (list) => {
+      const groups = {};
+      for (const r of list) for (const m of r.errors ?? []) {
+        // 聚类口径用共享函数:复发判定要用同一把尺子(见 gh-issues.mjs 的 clusterKey)
+        const k = clusterKey(m);
+        (groups[k] ??= { count: 0, projects: new Set(), sample: m, modes: new Set() });
+        groups[k].count++; groups[k].projects.add(r.cwd); groups[k].modes.add(r.mode);
+      }
+      return Object.entries(groups).sort((a, b) => b[1].count - a[1].count);
+    };
+    const curList = cluster(cur);
+    const oldList = cluster(old);
+    // 旧版本段的「版本×次数」按失败行数计,缺 ver 的老行记 unknown(它们来自更早的版本,不许回填)
+    const oldVers = {};
+    for (const r of old) { const v = r.ver ?? "unknown"; oldVers[v] = (oldVers[v] ?? 0) + 1; }
+    const versTxt = Object.entries(oldVers).sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([v, n]) => `${v}×${n}`).join(", ");
+    log(`  遥测 ${rows.length} 次运行,其中门禁失败 ${bad.length} 次(自测沙盒的失败不计):当前版本 ${curVer} —— ${cur.length} 次 / ${curList.length} 类;更早的版本 —— ${old.length} 次 / ${oldList.length} 类\n`);
+    if (curList.length) log(`  当前版本(${curVer})还活着的:`);
     let i = 0;
-    for (const [k, g] of list.slice(0, 8)) {
+    for (const [k, g] of curList.slice(0, 8)) {
       const cross = g.projects.size > 1 ? `(跨 ${g.projects.size} 个项目 → 系统性问题)` : `(仅 ${[...g.projects][0]})`;
       const hot = g.projects.size >= 1 && g.count >= 3 ? " ← 重复失败,值得转 issue" : "";
       log(`  ${String(++i).padStart(2)}. ${g.count}× ${k}\n      ${cross};模式:${[...g.modes].join(",")}${hot}`);
       log(`      ${C.d}原文:${g.sample.slice(0, 90)}${C.x}`);
     }
-    if (!list.length) log("  没有失败记录\n");
+    if (!curList.length) log(`  当前版本(${curVer})没有失败记录`);
+    if (old.length) {
+      log(`  旧版本累计: ${old.length} 次 / ${oldList.length} 类(${versTxt})—— 多半已随升级修掉,升级后重跑一次门禁这里会重置`);
+      for (const [k, g] of oldList.slice(0, 3)) log(`      · ${k} ×${g.count}`);
+    }
+    if (!curList.length && !oldList.length) log("  没有失败记录\n");
 
     // 复发(phase 03 D-03):关掉的 issue 不再是终态 —— 同一根因又出现就把它拉回来。
     const local = readLocalIssues(ISSUES);

@@ -20,6 +20,7 @@ import { join, dirname } from "node:path";
 import { execSync, spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { createHash } from "node:crypto";
+import { mmGsdVersion } from "../references/version.mjs";
 import { fileURLToPath } from "node:url";
 
 // reopened = 已交付 phase 开了点修 R 票(D-09):重验 passed 后回 shipped;STATE 不许说谎,声明要与推导一致
@@ -56,7 +57,7 @@ const SANDBOX = process.env.GSD_SANDBOX === "1";
 const PLAN_CHECK = process.argv.includes("--plan-check");
 const MODE = ["init", "worktrees", "plan", "plan-check", "phases", "stats", "route"].find((m) => process.argv.includes("--" + m))
   ?? (process.argv.includes("--json") ? "check-json" : "check");
-const runRec = { ts: new Date().toISOString(), mode: MODE, cwd: root, sandbox: SANDBOX, declared: null, derived: null, phase: null, errors: [], warnings: [] };
+const runRec = { ts: new Date().toISOString(), mode: MODE, cwd: root, sandbox: SANDBOX, ver: mmGsdVersion(SKILL_DIR), declared: null, derived: null, phase: null, errors: [], warnings: [] };
 // exit 钩子保证每个 process.exit 路径都被记到,不靠人工在分支里记得写
 process.on("exit", (code) => {
   if (!TELEMETRY) return;
