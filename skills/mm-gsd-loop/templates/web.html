@@ -1,434 +1,465 @@
 <!doctype html>
-<!-- mm-gsd 过程看板 —— 区块随工件增长(状态条/KPI/欠账/REQ 溯源链/phase 卡网格/批注/本地账问题…),
-     数据来自 /api/state;对 .planning 只读,唯一写通道是批注 POST /api/annotations。
-     设计:暗色运维风(暗/亮双主题 prefers-color-scheme + 手动切换),系统字栈(零外部请求,R-06),
-     模块化字号 12/14/16/18/24,8px 间距节奏,内联 SVG 图标(不用 emoji),reduced-motion 降级。 -->
+<!-- mm-gsd 过程看板 v2 —— 按 ui-ux-pro-max 设计系统重做:dark ops console + bento grid。
+     应用壳(整页不滚,内容区内部滚);左侧图标导航 rail;数据来自 /api/state;
+     对 .planning 只读,唯一写通道是批注 POST /api/annotations。
+     设计基调:暗色数据中心控制台 —— 深底 #0B1220 / 卡 #131C2E / 强调 #22C55E,
+     玻璃拟态只用于浮层与顶栏(背饰模糊),系统字栈 + 等宽数字(零外部请求,R-06),
+     内联 SVG 图标(无 emoji),prefers-reduced-motion 全量降级,暗/亮双主题。 -->
 <html lang="zh">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
 <title>mm-gsd 过程看板</title>
 <style>
   :root {
-    --bg: #0f172a; --card: #111827; --muted: #1e293b; --border: #334155;
-    --fg: #f8fafc; --fg-mut: #cbd5e1; --fg-dim: #94a3b8;
-    --grn: #16a34a; --grn-bg: #14532d; --red: #f87171; --red-bg: #450a0a;
-    --amb: #fbbf24; --amb-bg: #451a03; --ink: #93c5fd; --ink-bg: #172554;
-    --ring: #16a34a; --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
-    --shadow: 0 1px 3px rgb(0 0 0 / .4);
+    --bg: #0B1220; --bg-glow: rgba(34, 197, 94, .05);
+    --card: #131C2E; --card2: #182238; --muted: #1C2739; --inset: #0F1830;
+    --border: #233150; --border-2: #33415C;
+    --fg: #F1F5F9; --fg-mut: #A9B6CC; --fg-dim: #78879F;
+    --acc: #22C55E; --acc-ink: #052E16; --acc-bg: rgba(34, 197, 94, .13);
+    --amb: #FBBF24; --amb-bg: rgba(251, 191, 36, .12);
+    --red: #F87171; --red-bg: rgba(248, 113, 113, .12);
+    --ink: #60A5FA; --ink-bg: rgba(96, 165, 250, .13);
+    --ring: #22C55E; --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+    --r: 16px; --r-sm: 10px;
+    --shadow: 0 10px 30px rgb(2 6 23 / .45);
+    --rail-w: 76px;
   }
   @media (prefers-color-scheme: light) {
     :root:not([data-theme="dark"]) {
-      --bg: #f1f5f9; --card: #ffffff; --muted: #e2e8f0; --border: #cbd5e1;
-      --fg: #0f172a; --fg-mut: #334155; --fg-dim: #64748b;
-      --grn: #15803d; --grn-bg: #dcfce7; --red: #b91c1c; --red-bg: #fee2e2;
-      --amb: #a16207; --amb-bg: #fef3c7; --ink: #1d4ed8; --ink-bg: #dbeafe;
-      --shadow: 0 1px 3px rgb(15 23 42 / .1);
+      --bg: #EEF2F7; --bg-glow: rgba(34, 197, 94, .06);
+      --card: #FFFFFF; --card2: #F7FAFD; --muted: #E8EEF5; --inset: #EDF2F8;
+      --border: #D7DFEA; --border-2: #B9C6D8;
+      --fg: #0F172A; --fg-mut: #3D4C63; --fg-dim: #64748B;
+      --acc: #16A34A; --acc-ink: #FFFFFF; --acc-bg: rgba(22, 163, 74, .12);
+      --amb: #B45309; --amb-bg: rgba(180, 83, 9, .1);
+      --red: #DC2626; --red-bg: rgba(220, 38, 38, .09);
+      --ink: #2563EB; --ink-bg: rgba(37, 99, 235, .1);
+      --shadow: 0 8px 22px rgb(15 23 42 / .08);
     }
   }
   :root[data-theme="light"] {
-    --bg: #f1f5f9; --card: #ffffff; --muted: #e2e8f0; --border: #cbd5e1;
-    --fg: #0f172a; --fg-mut: #334155; --fg-dim: #64748b;
-    --grn: #15803d; --grn-bg: #dcfce7; --red: #b91c1c; --red-bg: #fee2e2;
-    --amb: #a16207; --amb-bg: #fef3c7; --ink: #1d4ed8; --ink-bg: #dbeafe;
-    --shadow: 0 1px 3px rgb(15 23 42 / .1);
+    --bg: #EEF2F7; --bg-glow: rgba(34, 197, 94, .06);
+    --card: #FFFFFF; --card2: #F7FAFD; --muted: #E8EEF5; --inset: #EDF2F8;
+    --border: #D7DFEA; --border-2: #B9C6D8;
+    --fg: #0F172A; --fg-mut: #3D4C63; --fg-dim: #64748B;
+    --acc: #16A34A; --acc-ink: #FFFFFF; --acc-bg: rgba(22, 163, 74, .12);
+    --amb: #B45309; --amb-bg: rgba(180, 83, 9, .1);
+    --red: #DC2626; --red-bg: rgba(220, 38, 38, .09);
+    --ink: #2563EB; --ink-bg: rgba(37, 99, 235, .1);
+    --shadow: 0 8px 22px rgb(15 23 42 / .08);
   }
   * { box-sizing: border-box; }
-  /* 应用壳:整页不滚动(html/body 锁死视口),只有内容区内部滚 —— 框架恒定不抖动 */
+  /* 应用壳:整页不滚,框架恒定 */
   html, body { height: 100%; height: 100dvh; }
-  body { margin: 0; overflow: hidden; display: flex; flex-direction: column;
-    background: var(--bg); color: var(--fg); font: 14px/1.55 system-ui, "Segoe UI", "Microsoft YaHei", sans-serif; }
+  body {
+    margin: 0; overflow: hidden; display: flex;
+    background:
+      radial-gradient(900px 500px at 85% -10%, var(--bg-glow), transparent 60%),
+      radial-gradient(700px 420px at -10% 110%, var(--ink-bg), transparent 55%),
+      var(--bg);
+    color: var(--fg); font: 13.5px/1.55 "Segoe UI", system-ui, "Microsoft YaHei", sans-serif;
+  }
   button, select, input, textarea { font: inherit; color: inherit; }
   button { cursor: pointer; }
-  :is(button, select, input, textarea, summary, a):focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+  :is(button, select, input, textarea, summary, a):focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 6px; }
   @media (prefers-reduced-motion: no-preference) {
-    .card, .kpi { transition: border-color .15s ease, transform .15s ease; }
-    .pill, .dot { transition: background-color .15s ease; }
+    .tile, .kpi, .railbtn { transition: border-color .18s ease, background-color .18s ease, transform .18s ease, box-shadow .18s ease; }
+    .pill, .dot, .chip { transition: background-color .15s ease, color .15s ease; }
+    .dpanel { animation: dslide .2s cubic-bezier(.2, .8, .2, 1); }
+    @keyframes dslide { from { transform: translateX(32px); opacity: .4; } }
   }
 
-  /* ── 状态条(应用壳顶栏,恒定不滚)── */
-  header { position: relative; z-index: 10; flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
-    padding: 10px 20px; background: color-mix(in srgb, var(--card) 92%, transparent);
-    border-bottom: 1px solid var(--border); box-shadow: var(--shadow); }
-  header h1 { font-size: 16px; margin: 0; letter-spacing: .3px; }
-  header .spacer { flex: 1; }
-  .chip { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--border); border-radius: 999px;
-    padding: 2px 10px; font-size: 12px; background: var(--muted); white-space: nowrap; }
-  .chip b { font-weight: 600; }
-  .icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px;
-    border: 1px solid var(--border); border-radius: 8px; background: var(--card); color: var(--fg-mut); }
-  .icon-btn:hover { border-color: var(--fg-dim); color: var(--fg); }
-  .icon-btn[aria-pressed="true"] { color: var(--grn); border-color: var(--grn); }
-  #live { font-family: var(--mono); font-size: 12px; color: var(--fg-dim); }
-  #live .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--grn); margin-right: 5px; vertical-align: 1px; }
+  /* ── 左侧图标导航 rail ── */
+  .rail { flex: none; width: var(--rail-w); display: flex; flex-direction: column; align-items: center;
+    gap: 6px; padding: 14px 0 12px; border-right: 1px solid var(--border);
+    background: color-mix(in srgb, var(--card) 55%, transparent); }
+  .rail-logo { width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center;
+    background: var(--acc-bg); color: var(--acc); font-family: var(--mono); font-weight: 700; font-size: 15px;
+    border: 1px solid color-mix(in srgb, var(--acc) 35%, transparent); margin-bottom: 10px; }
+  .railnav { display: flex; flex-direction: column; gap: 4px; }
+  .railbtn { width: 58px; padding: 7px 0 6px; border: 1px solid transparent; border-radius: 12px;
+    background: transparent; color: var(--fg-dim); display: grid; justify-items: center; gap: 3px; }
+  .railbtn svg { width: 20px; height: 20px; }
+  .railbtn span { font-size: 10.5px; letter-spacing: .04em; }
+  .railbtn:hover { color: var(--fg); background: var(--muted); }
+  .railbtn.active { color: var(--acc); background: var(--acc-bg); border-color: color-mix(in srgb, var(--acc) 30%, transparent); }
+  .rail-sp { flex: 1; }
+  .railbtn[aria-pressed="true"] { color: var(--amb); }
+
+  /* ── 右侧框架:顶栏 + 内容区 ── */
+  .frame { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .topbar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px;
+    padding: 12px 22px; border-bottom: 1px solid var(--border);
+    background: color-mix(in srgb, var(--card) 72%, transparent); backdrop-filter: blur(10px); }
+  .brand { font-weight: 650; font-size: 15px; letter-spacing: .02em; display: flex; align-items: baseline; gap: 8px; margin-right: 6px; }
+  .brand .sub { color: var(--fg-dim); font-weight: 400; font-size: 12.5px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border);
+    border-radius: 999px; padding: 3px 11px; font-size: 12px; background: color-mix(in srgb, var(--muted) 70%, transparent); white-space: nowrap; }
+  .chip b { font-weight: 600; font-family: var(--mono); }
+  .chip.warn { color: var(--amb); border-color: color-mix(in srgb, var(--amb) 45%, var(--border)); background: var(--amb-bg); }
+  .chip.warn:hover { border-color: var(--amb); }
+  .spacer { flex: 1; }
+  #live { font-family: var(--mono); font-size: 12px; color: var(--fg-dim); display: inline-flex; align-items: center; gap: 6px; }
+  #live .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--acc); }
   #live.stale .dot { background: var(--amb); }
+  .sel { background: color-mix(in srgb, var(--muted) 70%, transparent); border: 1px solid var(--border);
+    border-radius: 999px; padding: 3px 11px; font-size: 12px; max-width: 210px; }
 
-  /* ── 应用壳布局:顶栏 + 左栏 + 内容区;只有内容区内部滚动 ── */
-  .shell { flex: 1; min-height: 0; display: flex; gap: 16px; width: 100%; max-width: 1440px;
-    margin: 0 auto; padding: 14px 20px 14px; overflow: hidden; }
-  .shell aside { flex: none; width: 190px; overflow-y: auto; overscroll-behavior: contain;
-    display: grid; gap: 14px; align-content: start; }
-  .shell main { flex: 1; min-width: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 2px 16px 0; }
-  .sidebox { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
-  .sidebox h3 { margin: 0 0 8px; font-size: 13px; color: var(--fg-mut); font-weight: 600; }
-  .projlist { display: grid; gap: 2px; }
-  .proj { display: block; width: 100%; text-align: left; background: transparent; border: 1px solid transparent;
-    border-radius: 7px; padding: 4px 8px; font-size: 12px; color: var(--fg-mut);
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .proj:hover { border-color: var(--border); color: var(--fg); }
-  .proj.cur { background: var(--muted); color: var(--fg); border-color: var(--border); }
-  .proj.off { opacity: .45; }
-  .viewnav { display: grid; gap: 2px; }
-  .viewnav button { display: block; width: 100%; text-align: left; background: transparent; border: 1px solid transparent;
-    border-radius: 7px; padding: 5px 10px; font-size: 13px; color: var(--fg-mut); }
-  .viewnav button:hover { color: var(--fg); border-color: var(--border); }
-  .viewnav button.active { background: var(--muted); color: var(--fg); border-color: var(--border); }
+  /* ── 内容区(唯一内部滚动面)── */
+  .content { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 18px 22px 26px; }
+  .view { max-width: 1360px; margin: 0 auto; }
+  h2 { font-size: 12px; font-weight: 650; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--fg-dim); margin: 4px 0 10px; display: flex; align-items: baseline; gap: 10px; }
+  h2 small { font-size: 12px; letter-spacing: 0; text-transform: none; font-weight: 400; }
 
-  /* ── 总览(D-05):提醒折叠条 + 筛选条 + phase 总览表 + 披露浮层 ── */
-  .psw { background: var(--amb-bg); color: var(--amb); border: 1px solid color-mix(in srgb, var(--amb) 40%, var(--border));
-    border-radius: 10px; padding: 8px 12px; margin-bottom: 12px; font-size: 13px; }
-  .psw summary { cursor: pointer; font-weight: 600; list-style: none; display: flex; align-items: center; gap: 6px; }
-  .psw summary::before { content: "▸"; transition: transform .15s ease; }
-  .psw[open] summary::before { transform: rotate(90deg); }
-  .psw[open] summary { margin-bottom: 6px; }
-  .psw div { margin: 2px 0; }
-  /* 大表收进内滚容器:页面不滚,表头粘住,行在容器里滚 */
-  .tblwrap { background: var(--card); border: 1px solid var(--border); border-radius: 10px;
-    overflow: auto; max-height: 46vh; overscroll-behavior: contain; }
-  .tblwrap table { border: 0; border-radius: 0; }
-  .tblwrap thead th { position: sticky; top: 0; z-index: 1; }
-  .fbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
-  .fbar select { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 4px 8px; font-size: 13px; }
-  #phOverview tbody tr { cursor: pointer; }
-  .sdot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--fg-dim); margin-right: 4px; }
-  .sdot.on { background: var(--grn); border-color: var(--grn); }
-  .sdot.warn { background: var(--amb); border-color: var(--amb); }
-  .pd-plan { padding: 4px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
-  .pd-plan:last-child { border-bottom: 0; }
-  .pill.mut { background: var(--muted); color: var(--fg-dim); }
-  #debt-parked summary { font-size: 13px; color: var(--fg-mut); font-weight: 600; }
-  #debt-parked[open] > summary { margin-bottom: 8px; }
-  h2 { font-size: 16px; margin: 26px 0 10px; display: flex; align-items: baseline; gap: 8px; }
-  h2 small { font-size: 12px; font-weight: 400; color: var(--fg-dim); }
+  /* ── Bento 网格 ── */
+  .bento { display: grid; grid-template-columns: repeat(12, 1fr); gap: 12px; }
+  .tile { background: linear-gradient(180deg, var(--card), var(--card2)); border: 1px solid var(--border);
+    border-radius: var(--r); padding: 14px 16px; min-width: 0; }
+  .tile-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+  .tile-head h3 { margin: 0; font-size: 12px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; color: var(--fg-dim); }
+  .tile-head .stat { font-size: 12px; color: var(--fg-dim); font-family: var(--mono); }
+  @media (prefers-reduced-motion: no-preference) {
+    .tile:hover, .kpi:hover { transform: translateY(-1px); }
+  }
+  .s2 { grid-column: span 2; } .s3 { grid-column: span 3; } .s4 { grid-column: span 4; } .s6 { grid-column: span 6; } .s12 { grid-column: span 12; }
+  @media (max-width: 1240px) { .s2 { grid-column: span 3; } .s3 { grid-column: span 6; } .s4 { grid-column: span 6; } .s6 { grid-column: span 12; } }
+  @media (max-width: 760px) { .bento { grid-template-columns: repeat(2, 1fr); }
+    .s2, .s3, .s4, .s6, .s12 { grid-column: span 2; } }
+  .kpi .n { white-space: nowrap; }
 
-  /* ── KPI 概览条 ── */
-  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
-  .kpi { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px;
-    text-align: left; display: block; width: 100%; }
-  .kpi:hover { border-color: var(--fg-dim); }
+  /* ── KPI 卡 ── */
+  .kpi { text-align: left; display: block; width: 100%; position: relative; overflow: hidden; }
   .kpi .n, .kpi .t, .kpi .bar { display: block; }
-  .kpi .n { font-family: var(--mono); font-size: 24px; font-weight: 600; line-height: 1.2; }
-  .kpi .n small { font-size: 13px; color: var(--fg-dim); font-weight: 400; }
-  .kpi .t { font-size: 12px; color: var(--fg-mut); }
-  .kpi.warn .n { color: var(--amb); }
-  .kpi.bad .n { color: var(--red); }
-  .kpi .bar { height: 4px; border-radius: 2px; background: var(--muted); margin-top: 6px; overflow: hidden; }
-  .kpi .bar i { display: block; height: 100%; background: var(--grn); }
+  .kpi .n { font-family: var(--mono); font-size: 27px; font-weight: 600; line-height: 1.15; letter-spacing: -.02em; }
+  .kpi .n small { font-size: 13px; color: var(--fg-dim); font-weight: 400; letter-spacing: 0; }
+  .kpi .t { font-size: 11.5px; color: var(--fg-mut); margin-top: 3px; }
+  .kpi.warn .n { color: var(--amb); } .kpi.bad .n { color: var(--red); }
+  .kpi .bar { height: 4px; border-radius: 2px; background: var(--muted); margin-top: 9px; overflow: hidden; }
+  .kpi .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--acc), color-mix(in srgb, var(--acc) 55%, var(--ink))); }
+  .kpi:hover { border-color: color-mix(in srgb, var(--acc) 40%, var(--border)); }
 
-  /* ── REQ 溯源链 ── */
-  .tools { display: flex; gap: 8px; margin-bottom: 8px; }
-  .tools input { flex: 1; max-width: 320px; background: var(--card); border: 1px solid var(--border);
-    border-radius: 8px; padding: 5px 10px; }
-  table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--border);
-    border-radius: 10px; overflow: hidden; }
-  th, td { text-align: left; padding: 7px 12px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: top; }
-  th { background: var(--muted); font-size: 12px; color: var(--fg-mut); font-weight: 600; }
-  tr:last-child td { border-bottom: 0; }
-  tbody tr:hover { background: color-mix(in srgb, var(--muted) 55%, transparent); }
-  tr.miss { background: color-mix(in srgb, var(--red-bg) 45%, transparent); }
-  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; vertical-align: 0; }
-  .dot.ok { background: var(--grn); } .dot.miss { background: var(--red); } .dot.base { background: var(--fg-dim); }
-  .tk { font-family: var(--mono); font-size: 12px; background: var(--muted); border-radius: 5px; padding: 1px 6px; margin-right: 4px; }
-  .reqtext { color: var(--fg-mut); }
-
-  /* ── phase 卡网格 ── */
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 10px; }
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
-  .card.done { border-color: color-mix(in srgb, var(--grn) 55%, var(--border)); }
-  .ph { display: flex; align-items: center; gap: 8px; }
-  .ph b { font-family: var(--mono); font-size: 15px; }
-  .ph .title { color: var(--fg-mut); font-size: 13px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .pill { display: inline-block; border-radius: 999px; padding: 1px 9px; font-size: 12px; font-weight: 500; }
-  .pill.ship { background: var(--grn-bg); color: var(--grn); }
+  /* ── pill / 徽标 ── */
+  .pill { display: inline-block; border-radius: 999px; padding: 1px 9px; font-size: 11.5px; font-weight: 550; }
+  .pill.ship { background: var(--acc-bg); color: var(--acc); }
   .pill.warn { background: var(--amb-bg); color: var(--amb); }
   .pill.rep  { background: var(--red-bg); color: var(--red); }
   .pill.info { background: var(--ink-bg); color: var(--ink); }
-  /* 生命周期五步(工件在场呈现,推导判定仍归 checker) */
-  .steps { display: flex; align-items: center; gap: 4px; margin: 10px 0 8px; }
-  .step { display: flex; flex-direction: column; align-items: center; gap: 3px; flex: 1; }
+  .pill.mut  { background: var(--muted); color: var(--fg-dim); }
+  .tk { font-family: var(--mono); font-size: 11.5px; background: var(--muted); border: 1px solid var(--border);
+    border-radius: 6px; padding: 1px 7px; margin-right: 4px; color: var(--fg-mut); }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; }
+  .dot.ok { background: var(--acc); } .dot.miss { background: var(--red); } .dot.base { background: var(--fg-dim); }
+  .reqtext { color: var(--fg-mut); }
+
+  /* ── 表格 ── */
+  .tblwrap { background: color-mix(in srgb, var(--card) 80%, transparent); border: 1px solid var(--border);
+    border-radius: 14px; overflow: auto; max-height: 44vh; overscroll-behavior: contain; }
+  .tblwrap table { border: 0; border-radius: 0; background: transparent; }
+  .tblwrap thead th { position: sticky; top: 0; z-index: 1; background: var(--card2); }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 8px 14px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: top; }
+  th { font-size: 11.5px; color: var(--fg-dim); font-weight: 600; letter-spacing: .04em; }
+  tr:last-child td { border-bottom: 0; }
+  tbody tr:hover { background: color-mix(in srgb, var(--muted) 55%, transparent); }
+  tr.miss { background: color-mix(in srgb, var(--red-bg) 45%, transparent); }
+  #phOverview tbody tr { cursor: pointer; }
+  .sdot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--fg-dim); margin-right: 4px; }
+  .sdot.on { background: var(--acc); border-color: var(--acc); }
+  .sdot.warn { background: var(--amb); border-color: var(--amb); }
+  .tools { display: flex; gap: 8px; margin-bottom: 8px; }
+  .tools input { flex: 1; max-width: 340px; background: var(--inset); border: 1px solid var(--border);
+    border-radius: 10px; padding: 6px 12px; }
+  .hint { font-size: 12px; color: var(--fg-dim); }
+  .fbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  .fbar select, .annform select { background: var(--inset); border: 1px solid var(--border); border-radius: 9px; padding: 4px 9px; font-size: 12.5px; }
+  .empty { color: var(--fg-dim); font-size: 13px; padding: 12px 4px; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+  /* ── 生命周期五步 ── */
+  .steps { display: flex; align-items: center; gap: 4px; margin: 12px 0 8px; }
+  .step { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1; }
   .step i { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--fg-dim); }
-  .step.on i { background: var(--grn); border-color: var(--grn); }
+  .step.on i { background: var(--acc); border-color: var(--acc); }
   .step.warn i { background: var(--amb); border-color: var(--amb); }
   .step span { font-size: 11px; color: var(--fg-dim); }
   .step.on span, .step.warn span { color: var(--fg-mut); }
-  .steps .ln { flex: 1; height: 1px; background: var(--border); margin-bottom: 14px; }
-  .meta { font-size: 12px; color: var(--fg-dim); display: flex; flex-wrap: wrap; gap: 4px 10px; }
+  .steps .ln { flex: 1; height: 1px; background: var(--border); margin-bottom: 16px; }
+  .meta { font-size: 12px; color: var(--fg-dim); display: flex; flex-wrap: wrap; gap: 4px 12px; }
   details { margin-top: 8px; }
   summary { cursor: pointer; font-size: 12px; color: var(--fg-mut); }
   summary:hover { color: var(--fg); }
-  .ctx { white-space: pre-wrap; font-size: 12px; color: var(--fg-mut); background: var(--muted);
-    border-radius: 8px; padding: 8px 10px; margin: 6px 0; max-height: 220px; overflow: auto; }
-  .cardfoot { display: flex; justify-content: flex-end; margin-top: 6px; }
-  .ghost { border: 1px solid var(--border); background: transparent; border-radius: 7px; padding: 2px 10px; font-size: 12px; color: var(--fg-mut); white-space: nowrap; }
+  .ctx { white-space: pre-wrap; font-size: 12px; color: var(--fg-mut); background: var(--inset);
+    border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin: 8px 0; max-height: 240px; overflow: auto; }
+  .cardfoot { display: flex; justify-content: flex-end; margin-top: 8px; }
+  .ghost { border: 1px solid var(--border); background: transparent; border-radius: 9px; padding: 3px 12px;
+    font-size: 12px; color: var(--fg-mut); white-space: nowrap; }
   .ghost:hover { color: var(--fg); border-color: var(--fg-dim); }
+  .primary { background: var(--acc); color: var(--acc-ink); border: 0; border-radius: 10px; padding: 6px 18px; font-weight: 600; }
+  .primary:hover { filter: brightness(1.08); }
 
-  /* ── 批注区 ── */
-  .annbox { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
-  .annform { display: grid; gap: 8px; }
-  .annform .row { display: flex; gap: 8px; flex-wrap: wrap; }
-  .annform select { background: var(--muted); border: 1px solid var(--border); border-radius: 8px; padding: 5px 8px; }
-  .annform textarea { width: 100%; min-height: 60px; resize: vertical; background: var(--muted);
-    border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; }
-  .annform .go { display: flex; align-items: center; gap: 10px; }
-  .primary { background: var(--grn); color: #fff; border: 0; border-radius: 8px; padding: 5px 16px; font-weight: 500; }
-  .primary:hover { filter: brightness(1.1); }
-  .annform .msg { font-size: 12px; color: var(--fg-dim); min-height: 1em; }
-  .hint { font-size: 12px; color: var(--fg-dim); }
-  .annform .msg.err { color: var(--red); }
-  .annlist { margin-top: 12px; display: grid; gap: 6px; max-height: 46vh; overflow: auto; overscroll-behavior: contain; }
-  .isslist { display: grid; gap: 6px; max-height: 46vh; overflow: auto; overscroll-behavior: contain; }
-  .iss { display: flex; gap: 10px; align-items: center; padding: 8px 12px; }
-  .iss .itxt { flex: 1; font-size: 13px; }
-  .iss .mutd { font-family: var(--mono); font-size: 11px; color: var(--fg-dim); }
-  .ann { display: flex; gap: 10px; align-items: flex-start; background: var(--muted); border-left: 3px solid var(--border);
-    border-radius: 8px; padding: 7px 10px; }
-  .ann.open { border-left-color: var(--amb); }
-  .ann.digested { border-left-color: var(--grn); opacity: .72; }
-  .ann .who { font-size: 12px; white-space: nowrap; }
-  .ann .txt { flex: 1; font-size: 13px; }
-  .ann .when { font-family: var(--mono); font-size: 11px; color: var(--fg-dim); white-space: nowrap; }
-  .empty { color: var(--fg-dim); font-size: 13px; padding: 10px 4px; }
-  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
-
-  /* ── 欠账面板(本地账 open + 未消化批注 + 挂起项,一屏合并)── */
-  .debt { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; align-items: start; }
-  .debtsec { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
-  .debtsec > h3 { margin: 0 0 8px; font-size: 13px; color: var(--fg-mut); font-weight: 600;
-    display: flex; align-items: baseline; gap: 8px; }
-  .debtsec > h3 .cnt { font-family: var(--mono); font-size: 12px; color: var(--fg-dim); font-weight: 400; }
+  /* ── 欠账 / 面板族 ── */
+  .debt { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; align-items: start; }
+  .debtsec { background: linear-gradient(180deg, var(--card), var(--card2)); border: 1px solid var(--border);
+    border-radius: var(--r); padding: 14px 16px; }
+  .debtsec > h3 { margin: 0 0 10px; font-size: 12px; color: var(--fg-dim); font-weight: 650;
+    letter-spacing: .08em; text-transform: uppercase; display: flex; align-items: baseline; gap: 8px; }
+  .debtsec > h3 .cnt { font-family: var(--mono); font-size: 12px; color: var(--fg-mut); font-weight: 400; }
   .debtsec.wide { grid-column: 1 / -1; }
-  .debtsum { display: grid; gap: 6px; }
+  .debtsum { display: grid; gap: 7px; }
   .drow { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
   .drow .dtxt { flex: 1 1 160px; min-width: 0; font-size: 13px; }
   .drow .dmut { font-family: var(--mono); font-size: 11px; color: var(--fg-dim); text-align: right; }
-  #debt-deferred table { background: transparent; border: 0; }
-  /* 挂条件项可达上百条:限高滚动,别把「一屏面板」撑成一页 */
   #debt-deferred .dscroll { max-height: 320px; overflow: auto; }
-  #debt-deferred .dscroll thead th { position: sticky; top: 0; z-index: 1; }
-  #debt-deferred th, #debt-deferred td { font-size: 12px; padding: 5px 10px; }
-  /* 固定列宽:auto 布局下「项」里的长段落会把其余列挤成一字宽 */
   #debt-deferred table { table-layout: fixed; }
+  #debt-deferred thead th { position: sticky; top: 0; z-index: 1; background: var(--card2); }
+  #debt-deferred th, #debt-deferred td { font-size: 12px; padding: 5px 10px; }
   #debt-deferred th:nth-child(1), #debt-deferred td:nth-child(1) { width: 34%; }
   #debt-deferred th:nth-child(2), #debt-deferred td:nth-child(2) { width: 8%; }
   #debt-deferred th:nth-child(3), #debt-deferred td:nth-child(3) { width: 30%; }
   #debt-deferred th:nth-child(4), #debt-deferred td:nth-child(4) { width: 14%; }
   #debt-deferred th:nth-child(5), #debt-deferred td:nth-child(5) { width: 14%; }
   #debt-deferred td:last-child { font-family: var(--mono); font-size: 11px; color: var(--fg-dim); }
-  /* 「项」常是整段话:夹成几行,全文挂 title 供悬停看 */
   #debt-deferred .clip { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+  #debt-parked summary { font-size: 12px; color: var(--fg-dim); font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
+  #debt-parked[open] > summary { margin-bottom: 8px; }
+  .isslist { display: grid; gap: 8px; max-height: 46vh; overflow: auto; overscroll-behavior: contain; }
+  .iss { display: flex; gap: 10px; align-items: center; padding: 9px 14px; }
+  .iss .itxt { flex: 1; font-size: 13px; }
+  .iss .mutd { font-family: var(--mono); font-size: 11px; color: var(--fg-dim); }
 
-  /* ── 工具遥测迷你图(内联 SVG,零第三方库;零命中给文案,不画空图)── */
+  /* ── 批注 ── */
+  .annbox { background: linear-gradient(180deg, var(--card), var(--card2)); border: 1px solid var(--border);
+    border-radius: var(--r); padding: 16px; }
+  .annform { display: grid; gap: 9px; }
+  .annform .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .annform textarea { width: 100%; min-height: 64px; resize: vertical; background: var(--inset);
+    border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; }
+  .annform .go { display: flex; align-items: center; gap: 12px; }
+  .annform .msg { font-size: 12px; color: var(--fg-dim); min-height: 1em; }
+  .annform .msg.err { color: var(--red); }
+  .annlist { margin-top: 14px; display: grid; gap: 7px; max-height: 46vh; overflow: auto; overscroll-behavior: contain; }
+  .ann { display: flex; gap: 10px; align-items: flex-start; background: var(--inset); border-left: 3px solid var(--border);
+    border-radius: 10px; padding: 8px 12px; }
+  .ann.open { border-left-color: var(--amb); }
+  .ann.digested { border-left-color: var(--acc); opacity: .74; }
+  .ann .who { font-size: 12px; white-space: nowrap; }
+  .ann .txt { flex: 1; font-size: 13px; }
+  .ann .when { font-family: var(--mono); font-size: 11px; color: var(--fg-dim); white-space: nowrap; }
+
+  /* ── 遥测迷你图 ── */
   .telsvg { display: block; width: 100%; height: auto; }
   .telsvg .tbar { fill: var(--ink); }
-  .telsvg .tbar:hover { fill: var(--grn); }
+  .telsvg .tbar:hover { fill: var(--acc); }
   .telsvg .taxis { stroke: var(--border); stroke-width: 1; }
   .telsvg .tlbl { fill: var(--fg-dim); font-size: 10px; }
   .tprog { flex: 1; height: 6px; border-radius: 3px; background: var(--muted); overflow: hidden; }
   .tprog i { display: block; height: 100%; background: var(--ink); }
 
-  /* ── 依赖拓扑(24-01 T1b):零依赖内联 SVG;数据 = 服务端 phases[].level / topo.edges,客户端只渲染不计算 ── */
-  .topo { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; overflow: auto; }
+  /* ── 依赖拓扑:蛇形流水(数据 = 服务端 phases[].level / topo.edges,客户端只渲染)── */
+  .topo { overflow: auto; }
   .topo svg { display: block; margin: 0 auto; }
   .topo .tnode { cursor: pointer; }
-  .topo .tnode circle { fill: var(--ink-bg); stroke: var(--ink); stroke-width: 1.6; }
-  .topo .tnode.done circle { fill: var(--grn-bg); stroke: var(--grn); }
+  .topo .tnode circle { fill: var(--card2); stroke: var(--border-2); stroke-width: 1.6; }
+  .topo .tnode.done circle { fill: var(--acc-bg); stroke: var(--acc); }
   .topo .tnode text { fill: var(--fg); font-family: var(--mono); font-size: 12px; text-anchor: middle; dominant-baseline: central; }
   .topo .tnode .ttitle { fill: var(--fg-dim); font-family: inherit; font-size: 10px; dominant-baseline: auto; }
   .topo .tnode:hover circle { stroke-width: 3; }
-  .topo .tedge { stroke: var(--fg-dim); stroke-width: 1.4; marker-end: url(#topoArrow); }
-  .topo .tarrow { fill: var(--fg-dim); }
-  /* 拓扑一眼全图:活跃 phase 加重;有挂账的节点外圈金环 */
-  .topo .tnode.act circle { stroke-width: 2.8; }
+  .topo .tnode.act circle { stroke: var(--ink); stroke-width: 2.6; }
   .topo .tnode.act text { font-weight: 700; }
   .topo .tring { fill: none; stroke: var(--amb); stroke-width: 2; opacity: .85; }
-  /* 拓扑聚焦态:hover 节点 → 依赖边高亮,其余降淡(知识表面:关联要看得见) */
-  .topo svg.dim .tedge { opacity: .16; }
-  .topo svg.dim .tedge.hot { opacity: 1; stroke: var(--ink); stroke-width: 2; }
-  .topo svg.dim .tnode { opacity: .35; }
+  .topo svg.dim .tedge { opacity: .14; }
+  .topo svg.dim .tedge.hot { opacity: 1; stroke: var(--acc); stroke-width: 2; }
+  .topo svg.dim .tnode { opacity: .32; }
   .topo svg.dim .tnode.hot, .topo svg.dim .tnode:hover { opacity: 1; }
+  .topo .tedge { stroke: var(--border-2); stroke-width: 1.5; marker-end: url(#topoArrow); }
+  .topo .tarrow { fill: var(--border-2); }
 
-  /* ── 披露式明细(知识表面三级:概览 → hover 摘要 → 点开浮层;Esc/遮罩关闭,长文滚动)── */
-  .tip { position: fixed; z-index: 60; max-width: 340px; background: var(--card); border: 1px solid var(--border);
-    border-radius: 8px; padding: 7px 10px; font-size: 12px; line-height: 1.5; color: var(--fg-mut);
-    box-shadow: var(--shadow); pointer-events: none; white-space: normal; display: none; }
+  /* ── 披露浮层(玻璃拟态只在浮层)+ hover 摘要单例 ── */
+  .tip { position: fixed; z-index: 60; max-width: 340px; background: color-mix(in srgb, var(--card2) 88%, transparent);
+    backdrop-filter: blur(10px); border: 1px solid var(--border-2); border-radius: 12px; padding: 8px 11px;
+    font-size: 12px; line-height: 1.55; color: var(--fg-mut); box-shadow: var(--shadow);
+    pointer-events: none; white-space: normal; display: none; }
   .tip b { color: var(--fg); }
   .tip .tmut { color: var(--fg-dim); }
-  .dmask { position: fixed; inset: 0; z-index: 50; background: rgb(0 0 0 / .45); display: flex; justify-content: flex-end; }
+  .dmask { position: fixed; inset: 0; z-index: 50; background: rgb(2 6 23 / .55); backdrop-filter: blur(3px);
+    display: flex; justify-content: flex-end; }
   .dmask[hidden] { display: none; }
-  .dpanel { width: min(560px, 94vw); height: 100%; background: var(--card); border-left: 1px solid var(--border);
-    box-shadow: var(--shadow); display: flex; flex-direction: column; }
-  @media (prefers-reduced-motion: no-preference) {
-    .dpanel { animation: dslide .18s ease; }
-    @keyframes dslide { from { transform: translateX(28px); opacity: .5; } }
-  }
-  .dpanel .dhead { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  .dpanel { width: min(560px, 94vw); height: 100%; background: color-mix(in srgb, var(--card) 92%, transparent);
+    backdrop-filter: blur(14px); border-left: 1px solid var(--border-2); box-shadow: var(--shadow);
+    display: flex; flex-direction: column; }
+  .dpanel .dhead { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
   .dpanel .dhead h3 { margin: 0; font-size: 15px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .dpanel .dbody { overflow: auto; padding: 14px 16px 20px; }
-  .dpanel .dbody h4 { font-size: 13px; color: var(--fg-mut); margin: 14px 0 6px; }
+  .dpanel .dbody { overflow: auto; padding: 16px 18px 22px; }
+  .dpanel .dbody h4 { font-size: 11.5px; color: var(--fg-dim); font-weight: 650; letter-spacing: .08em;
+    text-transform: uppercase; margin: 16px 0 8px; }
 
-  /* ── 窄屏(手机):侧栏变横排(必须放在所有基础规则之后 —— 后声明的同特异性规则会覆盖它)── */
-  @media (max-width: 900px) {
-    .shell { flex-direction: column; gap: 10px; padding: 10px 14px; }
-    .shell aside { width: auto; overflow: visible; }
-    .viewnav { display: flex; flex-wrap: wrap; gap: 6px; }
-    .viewnav button { width: auto; }
-    .projlist { display: flex; flex-wrap: wrap; gap: 6px; }
+  /* ── 窄屏 ── */
+  @media (max-width: 1240px) { .topbar { padding: 10px 14px; } .content { padding: 14px 14px 20px; } }
+  @media (max-width: 760px) {
+    .rail { width: 62px; }
+    .topbar { padding: 10px 12px; }
+    .content { padding: 12px 12px 18px; }
     .tblwrap { max-height: none; }
+    .kpi .n { font-size: 23px; }
   }
 </style>
 </head>
 <body>
-<header>
-  <h1>mm-gsd 过程看板</h1>
-  <span class="chip">声明 <b id="declared">—</b></span>
-  <span class="chip">活跃 phase <b id="phase">—</b></span>
-  <span class="chip">工件 <b id="arts">—</b></span>
-  <span class="spacer"></span>
-  <span id="live" aria-live="polite"><span class="dot" aria-hidden="true"></span><span id="liveText">连接中…</span></span>
-  <button id="pauseBtn" class="icon-btn" aria-pressed="false" title="暂停/恢复自动刷新(15s)" aria-label="暂停或恢复自动刷新">
-    <svg id="icoPause" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M5 3v10M11 3v10"/></svg>
-    <svg id="icoPlay" width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" style="display:none"><path d="M4 3l9 5-9 5z"/></svg>
-  </button>
-  <button id="themeBtn" class="icon-btn" title="切换暗/亮主题" aria-label="切换暗亮主题">
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M8 2v2M8 12v2M2 8h2M12 8h2M4 4l1.4 1.4M10.6 10.6L12 12M12 4l-1.4 1.4M5.4 10.6L4 12"/><circle cx="8" cy="8" r="2.4"/></svg>
-  </button>
-</header>
-<div class="shell">
-<aside>
-  <nav id="views" class="viewnav" aria-label="视图">
-    <button type="button" data-view="overview">总览</button>
-    <button type="button" data-view="reqs">REQ</button>
-    <button type="button" data-view="debt">欠账</button>
-    <button type="button" data-view="telemetry">遥测</button>
-    <button type="button" data-view="annotations">批注</button>
+<aside class="rail">
+  <div class="rail-logo" aria-hidden="true">G</div>
+  <nav id="views" class="railnav" aria-label="视图">
+    <button type="button" class="railbtn" data-view="overview" title="总览">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="2" y="2" width="5" height="5" rx="1.2"/><rect x="9" y="2" width="5" height="5" rx="1.2"/><rect x="2" y="9" width="5" height="5" rx="1.2"/><rect x="9" y="9" width="5" height="5" rx="1.2"/></svg>
+      <span>总览</span></button>
+    <button type="button" class="railbtn" data-view="reqs" title="需求">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 2.5h10M3 2.5v11l5-2.4 5 2.4v-11"/><path d="M5.5 5.5h5"/></svg>
+      <span>需求</span></button>
+    <button type="button" class="railbtn" data-view="debt" title="欠账">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M8 1.5l6 2.7v3.3c0 3.4-2.4 5.9-6 7-3.6-1.1-6-3.6-6-7V4.2z"/><path d="M5.6 8l1.7 1.7L10.7 6"/></svg>
+      <span>欠账</span></button>
+    <button type="button" class="railbtn" data-view="telemetry" title="遥测">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 13.5V8M6 13.5V4M10 13.5V6.5M14 13.5V2.5"/></svg>
+      <span>遥测</span></button>
+    <button type="button" class="railbtn" data-view="annotations" title="批注">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2.5 3.5A1.5 1.5 0 0 1 4 2h8a1.5 1.5 0 0 1 1.5 1.5v6A1.5 1.5 0 0 1 12 11H8l-3.5 3v-3H4a1.5 1.5 0 0 1-1.5-1.5z"/></svg>
+      <span>批注</span></button>
   </nav>
-  <section class="sidebox" id="projBox" aria-label="项目">
-    <h3>项目</h3>
-    <div class="projlist" id="projList"></div>
-  </section>
+  <div class="rail-sp"></div>
+  <button id="themeBtn" type="button" class="railbtn" title="切换暗/亮主题" aria-label="切换暗亮主题">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M8 2v2M8 12v2M2 8h2M12 8h2M4 4l1.4 1.4M10.6 10.6L12 12M12 4l-1.4 1.4M5.4 10.6L4 12"/><circle cx="8" cy="8" r="2.4"/></svg>
+    <span>主题</span></button>
+  <button id="pauseBtn" type="button" class="railbtn" aria-pressed="false" title="暂停/恢复自动刷新(15s)" aria-label="暂停或恢复自动刷新">
+    <svg id="icoPause" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M5.5 3.5v9M10.5 3.5v9"/></svg>
+    <svg id="icoPlay" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" style="display:none"><path d="M4.5 3l8.5 5-8.5 5z"/></svg>
+    <span>刷新</span></button>
 </aside>
-<main>
+<div class="frame">
+  <header class="topbar">
+    <div class="brand">mm-gsd <span class="sub">过程看板</span></div>
+    <span class="chip">声明 <b id="declared">—</b></span>
+    <span class="chip">活跃 <b id="phase">—</b></span>
+    <span class="chip">工件 <b id="arts">—</b></span>
+    <button id="warnChip" type="button" class="chip warn" hidden aria-label="查看提醒明细">⚠ <b id="warnN">0</b></button>
+    <span class="spacer"></span>
+    <select id="projSel" class="sel" aria-label="项目切换"></select>
+    <span id="live" aria-live="polite"><span class="dot" aria-hidden="true"></span><span id="liveText">连接中…</span></span>
+  </header>
+  <main class="content">
+
   <section id="view-overview" class="view" aria-label="总览视图">
-  <details id="pswBar" class="psw" hidden><summary id="pswSum"></summary><div id="pswBody"></div></details>
-  <section class="kpis" aria-label="概览">
-    <button class="kpi" id="kReq" type="button" title="分母只算新增需求(baseline 是已交付的基线能力,不参与认领)"><span class="n" id="nReq">—</span><span class="t">REQ 已认领 / 新增需求</span><span class="bar"><i id="barReq" style="width:0%"></i></span></button>
-    <button class="kpi" id="kPh" type="button"><span class="n" id="nPh">—</span><span class="t">phase 已交付(SHIP 工件)/ 总数</span><span class="bar"><i id="barPh" style="width:0%"></i></span></button>
-    <button class="kpi" id="kAnn" type="button"><span class="n" id="nAnn">—</span><span class="t">open 批注待消化</span></button>
-    <button class="kpi" id="kIss" type="button"><span class="n" id="nIss">—</span><span class="t">open 本地账问题</span></button>
-    <button class="kpi" id="kRep" type="button"><span class="n" id="nRep">—</span><span class="t">点修票挂起(R 票)</span></button>
-    <button class="kpi" id="kDebt" type="button"><span class="n" id="nDebt">—</span><span class="t">欠账合计(问题/批注/未清偿挂账)</span></button>
-  </section>
+    <div class="bento">
+      <button class="kpi tile s2" id="kReq" type="button" title="分母只算新增需求(baseline 是已交付的基线能力,不参与认领)"><span class="n" id="nReq">—</span><span class="t">REQ 已认领 / 新增</span><span class="bar"><i id="barReq" style="width:0%"></i></span></button>
+      <button class="kpi tile s2" id="kPh" type="button"><span class="n" id="nPh">—</span><span class="t">phase 已交付 / 总数</span><span class="bar"><i id="barPh" style="width:0%"></i></span></button>
+      <button class="kpi tile s2" id="kAnn" type="button"><span class="n" id="nAnn">—</span><span class="t">open 批注待消化</span></button>
+      <button class="kpi tile s2" id="kIss" type="button"><span class="n" id="nIss">—</span><span class="t">open 本地账问题</span></button>
+      <button class="kpi tile s2" id="kRep" type="button"><span class="n" id="nRep">—</span><span class="t">点修票挂起(R 票)</span></button>
+      <button class="kpi tile s2" id="kDebt" type="button"><span class="n" id="nDebt">—</span><span class="t">欠账合计</span></button>
 
-  <h2 id="hTopo">依赖拓扑 <small id="topoSummary">—</small></h2>
-  <div id="phase-topo" class="topo" aria-label="phase 依赖拓扑图"></div>
+      <section class="tile s12" aria-label="phase 依赖拓扑">
+        <div class="tile-head"><h3>依赖拓扑</h3><span class="stat" id="topoSummary">—</span></div>
+        <div id="phase-topo" class="topo"></div>
+      </section>
 
-  <h2 id="hPh">Phases 总览 <small>五步 = 工件在场(讨论/计划/执行/验收/交付);判定以检查器为准;点行看详情</small></h2>
-  <div class="fbar">
-    <label class="hint" for="fPhase">phase</label>
-    <select id="fPhase"><option value="all">全部</option><option value="active">进行中</option><option value="shipped">已交付</option></select>
-    <label class="hint" for="fDebt">挂账</label>
-    <select id="fDebt"><option value="all">全部</option><option value="debt">只看有挂账</option></select>
-    <label class="hint" for="fReq">REQ</label>
-    <select id="fReq"><option value="all">全部</option><option value="claimed">已认领</option><option value="unclaimed">未认领</option><option value="disposed">已处置</option></select>
-  </div>
-  <div class="tblwrap"><table id="phOverview">
-    <thead><tr><th scope="col">phase</th><th scope="col">标题</th><th scope="col">五步</th><th scope="col">票数</th><th scope="col">REQ 认领</th><th scope="col">SHIP</th><th scope="col" title="该 phase 工件里的未清偿 deferred 条数">挂账</th></tr></thead>
-    <tbody id="phRows"></tbody>
-  </table></div>
+      <section class="tile s12" aria-label="Phases 总览">
+        <div class="tile-head"><h3>Phases 总览</h3><span class="stat">五步 = 工件在场;判定以检查器为准 · 点行看明细</span></div>
+        <div class="fbar">
+          <label class="hint" for="fPhase">phase</label>
+          <select id="fPhase"><option value="all">全部</option><option value="active">进行中</option><option value="shipped">已交付</option></select>
+          <label class="hint" for="fDebt">挂账</label>
+          <select id="fDebt"><option value="all">全部</option><option value="debt">只看有挂账</option></select>
+          <label class="hint" for="fReq">REQ</label>
+          <select id="fReq"><option value="all">全部</option><option value="claimed">已认领</option><option value="unclaimed">未认领</option><option value="disposed">已处置</option></select>
+        </div>
+        <div class="tblwrap"><table id="phOverview">
+          <thead><tr><th scope="col">phase</th><th scope="col">标题</th><th scope="col">五步</th><th scope="col">票数</th><th scope="col">REQ 认领</th><th scope="col">SHIP</th><th scope="col" title="该 phase 工件里的未清偿 deferred 条数">挂账</th></tr></thead>
+          <tbody id="phRows"></tbody>
+        </table></div>
+      </section>
+    </div>
   </section>
 
   <section id="view-debt" class="view" aria-label="欠账视图" hidden>
-  <h2 id="hDebt">欠账 <small>未闭环本地账问题 + 待消化批注 + 未清偿挂账;口径以台账处置为准(挂条件 / 关闭在下方折叠区,不计数)</small></h2>
-  <div id="debt" class="debt">
-    <section class="debtsec" id="debt-issues">
-      <h3>本地账未闭环 <span class="cnt" id="cntDebtIssues">—</span></h3>
-      <div class="debtsum" id="listDebtIssues"></div>
-    </section>
-    <section class="debtsec" id="debt-anns">
-      <h3>待消化批注 <span class="cnt" id="cntDebtAnns">—</span></h3>
-      <div class="debtsum" id="listDebtAnns"></div>
-    </section>
-    <section class="debtsec wide" id="debt-deferred">
-      <h3>未清偿挂账 <span class="cnt" id="cntDebtDeferred">—</span></h3>
+    <h2>欠账 <small>未闭环本地账 + 待消化批注 + 未清偿挂账;口径以台账处置为准</small></h2>
+    <div id="debt" class="debt">
+      <section class="debtsec" id="debt-issues">
+        <h3>本地账未闭环 <span class="cnt" id="cntDebtIssues">—</span></h3>
+        <div class="debtsum" id="listDebtIssues"></div>
+      </section>
+      <section class="debtsec" id="debt-anns">
+        <h3>待消化批注 <span class="cnt" id="cntDebtAnns">—</span></h3>
+        <div class="debtsum" id="listDebtAnns"></div>
+      </section>
+      <section class="debtsec wide" id="debt-deferred">
+        <h3>未清偿挂账 <span class="cnt" id="cntDebtDeferred">—</span></h3>
+        <div class="dscroll">
+          <table>
+            <thead><tr><th scope="col">项</th><th scope="col">分类</th><th scope="col">触发条件或关闭理由</th><th scope="col">归属</th><th scope="col">来源文件</th></tr></thead>
+            <tbody id="tblDebtDeferred"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+    <details id="debt-parked" class="debtsec wide">
+      <summary>挂条件 / 关闭 <span class="cnt" id="cntDebtParked">—</span> <small>已有触发条件 / 关闭理由的项,不计入欠账合计(D-03)</small></summary>
       <div class="dscroll">
         <table>
           <thead><tr><th scope="col">项</th><th scope="col">分类</th><th scope="col">触发条件或关闭理由</th><th scope="col">归属</th><th scope="col">来源文件</th></tr></thead>
-          <tbody id="tblDebtDeferred"></tbody>
+          <tbody id="tblDebtParked"></tbody>
         </table>
       </div>
-    </section>
-  </div>
-
-  <details id="debt-parked" class="debtsec wide">
-    <summary>挂条件 / 关闭 <span class="cnt" id="cntDebtParked">—</span> <small>已有触发条件 / 关闭理由的项,不计入欠账合计(D-03)</small></summary>
-    <div class="dscroll">
-      <table>
-        <thead><tr><th scope="col">项</th><th scope="col">分类</th><th scope="col">触发条件或关闭理由</th><th scope="col">归属</th><th scope="col">来源文件</th></tr></thead>
-        <tbody id="tblDebtParked"></tbody>
-      </table>
-    </div>
-  </details>
-
-  <h2 id="hIss">本地账问题 <small>agent 记下但还没闭环的问题;闭环后本区自动清空</small></h2>
-  <div id="issues" class="isslist"></div>
+    </details>
+    <h2>本地账问题 <small>agent 记下但还没闭环的问题;闭环后本区自动清空</small></h2>
+    <div id="issues" class="isslist"></div>
   </section>
 
   <section id="view-telemetry" class="view" aria-label="遥测视图" hidden>
-  <h2 id="hTel">工具遥测 <small>本机工具调用按天计数(本地日);数据源 ~/.agents/mm-gsd-tools.jsonl,只读</small></h2>
-  <div id="telemetry" class="debt">
-    <section class="debtsec wide" id="tel-chart">
-      <h3>按天调用 <span class="cnt" id="cntTelDays">—</span></h3>
-      <div id="telChart"></div>
-    </section>
-    <section class="debtsec" id="tel-tools">
-      <h3>工具分布 <span class="cnt" id="cntTelTools">—</span></h3>
-      <div class="debtsum" id="telTools"></div>
-    </section>
-  </div>
-
+    <h2>工具遥测 <small>本机工具调用按天计数(本地日);数据源 ~/.agents/mm-gsd-tools.jsonl,只读</small></h2>
+    <div id="telemetry" class="debt">
+      <section class="debtsec wide" id="tel-chart">
+        <h3>按天调用 <span class="cnt" id="cntTelDays">—</span></h3>
+        <div id="telChart"></div>
+      </section>
+      <section class="debtsec" id="tel-tools">
+        <h3>工具分布 <span class="cnt" id="cntTelTools">—</span></h3>
+        <div class="debtsum" id="telTools"></div>
+      </section>
+    </div>
   </section>
 
   <section id="view-reqs" class="view" aria-label="REQ 视图" hidden>
-  <h2 id="hReq">REQ 溯源链 <small>原话一句话 → 认领票;红点 = 无人认领(需求遗漏)</small></h2>
-  <div class="tools"><input id="q" type="search" placeholder="过滤 REQ / 原话 / 票号…" aria-label="过滤需求清单"></div><span id="qCount" class="hint" role="status"></span>
-  <div class="tblwrap"><table id="reqs">
-    <thead><tr><th scope="col">REQ</th><th scope="col">原话一句话</th><th scope="col">认领票</th><th scope="col"><span class="sr">操作</span></th></tr></thead>
-    <tbody></tbody>
-  </table></div>
-
+    <h2>REQ 溯源链 <small>原话一句话 → 认领票;红点 = 无人认领(需求遗漏)</small></h2>
+    <div class="tools"><input id="q" type="search" placeholder="过滤 REQ / 原话 / 票号…" aria-label="过滤需求清单"></div><span id="qCount" class="hint" role="status"></span>
+    <div class="tblwrap"><table id="reqs">
+      <thead><tr><th scope="col">REQ</th><th scope="col">原话一句话</th><th scope="col">认领票</th><th scope="col"><span class="sr">操作</span></th></tr></thead>
+      <tbody></tbody>
+    </table></div>
   </section>
 
   <section id="view-annotations" class="view" aria-label="批注视图" hidden>
-  <h2 id="hAnn">批注 <small>用户审核 → agent 消化;验收不过会触发点修分流</small></h2>
-  <div class="annbox">
-    <form class="annform" id="annForm">
-      <div class="row">
-        <select id="a-target" aria-label="批注目标"><option value="">目标…</option></select>
-        <select id="a-type" aria-label="批注类型">
-          <option>备注</option><option>需求遗漏</option><option>方向不对</option><option>验收不过</option>
-        </select>
-      </div>
-      <textarea id="a-text" placeholder="批注内容…(验收不过 → 触发点修分流)" aria-label="批注内容"></textarea>
-      <div class="hint">类型怎么选:需求遗漏 → 补 REQ 走确认门 · 方向不对 → 回讨论重开决策 · 验收不过 → 点修分流 · 备注 → 记录参考</div>
-      <div class="go">
-        <button type="submit" class="primary">提交批注</button>
-        <span id="a-msg" class="msg" role="status"></span>
-      </div>
-    </form>
-    <div class="annlist" id="anns"></div>
-  </div>
+    <h2>批注 <small>用户审核 → agent 消化;验收不过会触发点修分流</small></h2>
+    <div class="annbox">
+      <form class="annform" id="annForm">
+        <div class="row">
+          <select id="a-target" aria-label="批注目标"><option value="">目标…</option></select>
+          <select id="a-type" aria-label="批注类型">
+            <option>备注</option><option>需求遗漏</option><option>方向不对</option><option>验收不过</option>
+          </select>
+        </div>
+        <textarea id="a-text" placeholder="批注内容…(验收不过 → 触发点修分流)" aria-label="批注内容"></textarea>
+        <div class="hint">类型怎么选:需求遗漏 → 补 REQ 走确认门 · 方向不对 → 回讨论重开决策 · 验收不过 → 点修分流 · 备注 → 记录参考</div>
+        <div class="go">
+          <button type="submit" class="primary">提交批注</button>
+          <span id="a-msg" class="msg" role="status"></span>
+        </div>
+      </form>
+      <div class="annlist" id="anns"></div>
+    </div>
+  </section>
 
-</main>
+  </main>
 </div>
 <div id="dmask" class="dmask" hidden>
   <div class="dpanel" role="dialog" aria-modal="true" aria-labelledby="dTitle">
@@ -457,7 +488,7 @@ const MONO_ID = (s) => '<span class="tk">' + esc(s) + "</span>";
   };
 })();
 
-/* ── 视图路由(D-05):五个视图容器 + 原生 hash 路由,刷新保持视图 ── */
+/* ── 视图路由(D-05):hash 路由,刷新保持视图 ── */
 const VIEWS = ["overview", "reqs", "debt", "telemetry", "annotations"];
 function showView(v) {
   const cur = VIEWS.includes(v) ? v : "overview";
@@ -490,8 +521,7 @@ const relTime = (iso) => { const d = new Date(iso); if (isNaN(d)) return esc(iso
   if (s < 86400) return Math.floor(s / 3600) + " 小时前"; if (s < 604800) return Math.floor(s / 86400) + " 天前";
   return d.toLocaleDateString("zh-CN"); };
 
-/* 工具遥测迷你图:按天柱状,纯内联 SVG(零第三方图表库,守 R-06 零外部请求)。
-   柱高按当日峰值归一;日期只标首末两端 —— 一天一根柱子,标不下每个标签。 */
+/* 工具遥测迷你图:按天柱状,纯内联 SVG(零第三方图表库,守 R-06 零外部请求)。 */
 function telChartSvg(series) {
   const W = 640, H = 120, padL = 4, padR = 4, padT = 8, padB = 18;
   const max = Math.max(1, ...series.map((s) => s.count));
@@ -513,12 +543,7 @@ function telChartSvg(series) {
     axis + bars + labels + "</svg>";
 }
 
-/* 依赖拓扑(24-01 T1b,D-01):数据 = 服务端 phases[].level 与 topo.edges —— 分层/剪环/幽灵边防御全在
-   服务端 references/phase-topo.mjs 一处,客户端只渲染不计算(前端再算一遍就是第二个口径)。
-   边界:一句话能说清的不画图 —— 标题旁保留文字摘要;图不替代结论,点节点出披露浮层。
-   披露三级(知识表面范式):hover 节点出一句话摘要 + 依赖边高亮;点开出浮层明细;Esc/遮罩关闭。 */
-
-/* hover 摘要单例:一个 div 跟随目标,不动 DOM 结构;原生 <title> 慢半拍且不可样式化 */
+/* hover 摘要单例(知识表面第 2 级):一个 div 跟随目标;原生 <title> 慢且不可样式化 */
 const tip = $("tip");
 function tipShow(html, x, y) { tip.innerHTML = html; tip.style.display = "block"; tipMove(x, y); }
 function tipMove(x, y) {
@@ -558,16 +583,13 @@ function topoRender() {
   const N = phases.length;
   const maxLv = N ? Math.max(...phases.map((p) => p.level || 0)) : 0;
   $("topoSummary").textContent = N
-    ? N + " 个阶段 / " + edges.length + " 条依赖 / 当前最长链 " + (maxLv + 1) + " 层"
+    ? N + " 阶段 · " + edges.length + " 依赖 · 最长链 " + (maxLv + 1)
     : "阶段清单还没建 —— STATE 的 Phases 落盘后显示";
   if (!N) { box.innerHTML = '<div class="empty">没有阶段,画不出依赖拓扑。</div>'; return; }
-  /* 15s 自动刷新会整图重渲染:悬停摘要指向的是旧节点,残留在屏幕上就是脏东西 —— 渲染前收掉。
-     聚焦降淡一并复位(鼠标没动不会补发 mouseout,要靠下一轮 mouseover 重建)。 */
+  /* 15s 自动刷新会整图重渲染:悬停摘要指向旧节点会残留 —— 渲染前收掉 */
   tipHide();
-  /* 蛇形流水布局:纯内联 SVG 的「一眼全图」。旧的分层竖排遇到链状依赖(每层 1 个节点)
-     就是一条竖珠串,又丑又浪费横向空间;改成按视觉行装箱(每行 ≤C 个,S 形折行),
-     链状图变紧凑流程带,分支图同层同行。同行相邻 → 直线;折行 → 竖直连接;
-     同行跳节点 → 绕行弧线;跨行 → 贝塞尔曲线,不穿节点。 */
+  /* 蛇形流水布局:连续层共占视觉行(每行 ≤C 个,S 形折行,同层不拆散);
+     同行相邻直线 / 折行竖连 / 同行跳节点绕弧 / 跨行贝塞尔。 */
   const C = Math.min(7, Math.max(4, Math.round(Math.sqrt(N) + 1)));
   const byLv = new Map();
   for (const p of phases) {
@@ -576,8 +598,6 @@ function topoRender() {
     byLv.get(l).push(p);
   }
   const levels = [...byLv.keys()].sort((a, b) => a - b);
-  /* 视觉行装箱:连续的层共占一行(链状依赖每层只有 1 个节点,按层分行就是竖珠串);
-     单层超过 C 个才自占多行(同层是并排兄弟,不许拆散到不相邻的两行)。 */
   const rows = [];
   let cur = [];
   for (const lv of levels) {
@@ -607,19 +627,18 @@ function topoRender() {
   const H = padY + rows.length * rowH + 30;
   const edgeOf = ([from, to]) => {
     const a = pos.get(from), b = pos.get(to);
-    if (!a || !b) return ""; // 兜底:服务端已丢幽灵边,这里再挡一层,不画悬空线
+    if (!a || !b) return ""; // 兜底:服务端已丢幽灵边,这里再挡一层
     if (a.row === b.row) {
       const dir = Math.sign(b.x - a.x) || 1;
       if (Math.abs(b.x - a.x) <= cellW * 1.6)
         return '<line class="tedge" data-from="' + esc(from) + '" data-to="' + esc(to) + '" x1="' + (a.x + dir * (R + 4)) + '" y1="' + a.y + '" x2="' + (b.x - dir * (R + 6)) + '" y2="' + b.y + '"/>';
-      return '<path class="tedge" data-from="' + esc(from) + '" data-to="' + esc(to) + '" d="M ' + a.x + " " + (a.y + R + 3) + " Q " + ((a.x + b.x) / 2) + " " + (a.y + 64) + " " + b.x + " " + (b.y + R + 3) + '"/>'; // 同行跳节点:绕行弧线
+      return '<path class="tedge" data-from="' + esc(from) + '" data-to="' + esc(to) + '" d="M ' + a.x + " " + (a.y + R + 3) + " Q " + ((a.x + b.x) / 2) + " " + (a.y + 64) + " " + b.x + " " + (b.y + R + 3) + '"/>';
     }
     if (Math.abs(a.x - b.x) < 2)
-      return '<line class="tedge" data-from="' + esc(from) + '" data-to="' + esc(to) + '" x1="' + a.x + '" y1="' + (a.y + R + 4) + '" x2="' + b.x + '" y2="' + (b.y - R - 6) + '"/>'; // 折行处:竖直连接
+      return '<line class="tedge" data-from="' + esc(from) + '" data-to="' + esc(to) + '" x1="' + a.x + '" y1="' + (a.y + R + 4) + '" x2="' + b.x + '" y2="' + (b.y - R - 6) + '"/>';
     const midY = (a.y + b.y) / 2;
     return '<path class="tedge" data-from="' + esc(from) + '" data-to="' + esc(to) + '" d="M ' + a.x + " " + (a.y + R + 4) + " C " + a.x + " " + midY + ", " + b.x + " " + midY + ", " + b.x + " " + (b.y - R - 6) + '"/>';
   };
-  /* hover 一句话摘要(知识表面第 2 级):规模 + 生命周期 + 挂账,一眼定位这个节点是什么 */
   const tipOf = (p) => {
     const tickets = p.plans.reduce((n, x) => n + x.tickets.length, 0);
     const sums = p.plans.filter((x) => x.summary).length;
@@ -635,7 +654,7 @@ function topoRender() {
     const cls = "tnode" + (shipped ? " done" : "") + (last && last.activePhase === p.phase ? " act" : "");
     const posP = pos.get(p.phase);
     const ring = p.debt > 0 ? '<circle class="tring" cx="' + posP.x + '" cy="' + posP.y + '" r="' + (R + 4) + '"/>' : "";
-    return '<g class="' + cls + '" data-phase="' + esc(p.phase) + '" role="button" aria-label="phase ' + esc(p.phase) + " " + esc(p.title || "") + ",点开明细\">" +
+    return '<g class="' + cls + '" data-phase="' + esc(p.phase) + '" role="button" aria-label="phase ' + esc(p.phase) + " " + esc(p.title || "") + ',点开明细">' +
       ring +
       '<circle cx="' + posP.x + '" cy="' + posP.y + '" r="' + R + '"/>' +
       '<text x="' + posP.x + '" y="' + (posP.y + 1) + '">' + esc(p.phase) + "</text>" +
@@ -645,12 +664,11 @@ function topoRender() {
     '<defs><marker id="topoArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="tarrow" d="M0 0L10 5L0 10z"/></marker></defs>' +
     edges.map(edgeOf).join("") + phases.map(nodeOf).join("") + "</svg>";
 
-  /* 聚焦态:悬停节点 → 依赖边高亮、其余降淡;hover 摘要跟随鼠标 */
   const svg = box.querySelector("svg");
   const setHot = (phase) => {
     svg.classList.toggle("dim", Boolean(phase));
     for (const g of svg.querySelectorAll("g.tnode")) g.classList.toggle("hot", Boolean(phase) && g.dataset.phase === phase);
-    for (const e of svg.querySelectorAll("line.tedge"))
+    for (const e of svg.querySelectorAll("line.tedge, path.tedge"))
       e.classList.toggle("hot", Boolean(phase) && (e.dataset.from === phase || e.dataset.to === phase));
   };
   box.onmouseover = (e) => {
@@ -677,9 +695,7 @@ function stepsHtml(p) {
   return '<div class="steps" role="img" aria-label="生命周期:讨论' + (steps[0][1] ? "已落盘" : "未落盘") + "、计划" + (plan ? "已落盘" : "未落盘") + "、执行" + (sum ? "有 SUMMARY" : "未收口") + "、验收" + (ver ? "已落盘" : "未落盘") + "、交付" + (ship ? "已落盘" : "未落盘") + '">' + html.join("") + "</div>";
 }
 
-/* ── 总览(D-05):phase 总览表 + 披露浮层 ──
-   挂账列口径唯一 = phases[].debt(服务端按 deferred source 的 <NN>- 前缀归 phase,未清偿口径);
-   REQ 处置 pill 数据 = reqs[].disposition(23-01 台账读端:active/delivered/superseded/obsolete)。 */
+/* ── 总览(D-05):phase 总览表 + 披露浮层 ── */
 const PILL_BY_DISP = { delivered: "ship", superseded: "info", obsolete: "rep", active: "mut" };
 const dispPill = (d) => '<span class="pill ' + (PILL_BY_DISP[d] || "mut") + '">' + esc(d || "?") + "</span>";
 
@@ -687,7 +703,7 @@ function coveredReqs(p) {
   return (last.reqs || []).filter((r) => p.plans.some((pl) => r.claimed.some((t) => t.startsWith(pl.plan + " "))));
 }
 
-/* 总览表里的五步:纯圆点(文字版 stepsHtml 留给详情面板) */
+/* 总览表里的五步:纯圆点(文字版 stepsHtml 留给披露浮层) */
 function stepsDots(p) {
   const plan = p.plans.length > 0, sum = p.plans.some((x) => x.summary),
     ver = Boolean(p.verification), ship = Boolean(p.ship);
@@ -726,9 +742,8 @@ function renderOverview() {
   if (!tb.rows.length) tb.innerHTML = '<tr><td colspan="7" class="empty">没有匹配筛选条件的 phase。</td></tr>';
 }
 
-/* 披露浮层正文:chips → 标题 → meta → 工件清单 → covers REQ → 相关批注 → CONTEXT(段序按知识表面明细范式) */
+/* 披露浮层正文:生命周期 → meta → 工件清单 → covers REQ → 相关批注 → CONTEXT */
 function detailHtml(p) {
-  const ship = p.ship ? (p.ship.status === "shipped" ? '<span class="pill ship">shipped</span>' : '<span class="pill warn">' + esc(p.ship.status) + "</span>") : "";
   const openRep = p.plans.filter((x) => x.isRepair && !x.summary).length;
   const rep = openRep ? '<span class="pill rep">R×' + openRep + " 修复中</span>" : "";
   const checks = p.plans.filter((x) => x.check).map((x) => x.plan + " " + esc(x.check.status)).join(" · ");
@@ -778,22 +793,23 @@ function phaseDetail(phase) {
 }
 
 let last = null;
+let lastWarnHtml = "";
 async function load() {
   let st;
   try { st = await (await fetch("/api/state" + projQuery())).json(); }
   catch { $("live").classList.add("stale"); $("liveText").textContent = "服务失联 · 上次 " + (last ? fmtTime(last.generated) : "—"); return; }
   last = st;
   $("live").classList.remove("stale");
-  $("liveText").textContent = "每 15s 刷新 · 更新于 " + fmtTime(st.generated);
+  $("liveText").textContent = "15s · 更新于 " + fmtTime(st.generated);
 
-  /* ── 左栏项目段(D-04):名单每请求现读;当前项高亮,目录不存在灰显 ── */
+  /* ── 项目切换(顶栏 select):名单每请求现读;目录不存在的项 disabled ── */
   try {
     const prjs = await (await fetch("/api/projects")).json();
-    $("projList").innerHTML = prjs.map((p) =>
-      '<button type="button" class="proj' + (p.root === st.root ? " cur" : "") + (p.exists ? "" : " off") + '" data-root="' + esc(p.root) + '"' +
-      (p.exists ? "" : ' title="目录不存在 —— 可能已删除或移动"') + ">" + esc(p.name || p.root) + "</button>"
-    ).join("") || '<div class="empty">项目名单为空。</div>';
-  } catch { $("projList").innerHTML = '<div class="empty">项目名单读不到。</div>'; }
+    const sel = $("projSel");
+    sel.innerHTML = prjs.map((p) =>
+      '<option value="' + esc(p.root) + '"' + (p.root === st.root ? " selected" : "") + (p.exists ? "" : " disabled") + ">" + esc(p.name || p.root) + "</option>"
+    ).join("") || '<option value="">(名单为空)</option>';
+  } catch { $("projSel").innerHTML = '<option value="">(名单读不到)</option>'; }
 
   /* ── 状态条 ── */
   const noState = !st.declared;
@@ -803,9 +819,7 @@ async function load() {
   $("phase").title = noState ? "初始化并填好 Phases 清单后显示活跃 phase" : "";
   $("arts").textContent = st.state ? st.state.plans + " 票 / " + st.state.summaries + " 收口" : "—";
 
-  /* ── 欠账三源(本地账未闭环 + 待消化批注 + 挂条件项)──
-     口径只有一份:服务端 references/debt-panel.mjs(台账处置列为准,D-02)。屏上所有数字都取自这里,
-     不在前端另算一遍 —— 前端再算一遍就会出现两个打架的「open」数。 */
+  /* ── 欠账三源(口径只有一份:服务端 references/debt-panel.mjs)── */
   const debt = st.debt || { localIssues: [], openAnnotations: [], deferred: [], counts: {} };
 
   /* ── KPI ── */
@@ -813,18 +827,18 @@ async function load() {
   const claimed = claimable.filter((r) => r.claimed.length).length;
   $("nReq").innerHTML = claimed + ' <small>/ ' + claimable.length + "</small>";
   $("barReq").style.width = (claimable.length ? Math.round(100 * claimed / claimable.length) : 0) + "%";
-  $("kReq").className = "kpi" + (claimable.length && claimed < claimable.length ? " warn" : "");
+  $("kReq").className = "kpi tile s2" + (claimable.length && claimed < claimable.length ? " warn" : "");
   const donePh = st.phases.filter((p) => p.ship?.status === "shipped" || p.done).length;
   $("nPh").innerHTML = donePh + ' <small>/ ' + st.phases.length + "</small>";
   $("barPh").style.width = (st.phases.length ? Math.round(100 * donePh / st.phases.length) : 0) + "%";
   const openAnn = debt.counts.openAnnotations != null ? debt.counts.openAnnotations : st.annotations.filter((a) => a.status === "open").length;
   $("nAnn").textContent = openAnn;
-  $("kAnn").className = "kpi" + (openAnn ? " warn" : "");
+  $("kAnn").className = "kpi tile s2" + (openAnn ? " warn" : "");
   $("nIss").textContent = debt.localIssues.length;
-  $("kIss").className = "kpi" + (debt.localIssues.length ? " bad" : "");
+  $("kIss").className = "kpi tile s2" + (debt.localIssues.length ? " bad" : "");
   $("nRep").textContent = st.state ? st.state.repairsPending : 0;
 
-  /* ── 欠账面板(本地账未闭环 + 待消化批注 + 挂条件项)── */
+  /* ── 欠账面板 ── */
   const stripId = (title, id) => String(title ?? "").replace(new RegExp("^" + String(id).replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*", "i"), "");
   const dil = $("listDebtIssues");
   dil.innerHTML = "";
@@ -876,7 +890,6 @@ async function load() {
   }
   $("cntDebtDeferred").textContent = debt.deferred.length + " 条";
 
-  /* ── 挂条件 / 关闭折叠区(D-03):数据 = debt.parked,不计数 —— 已有机器可读的处置理由 ── */
   const parked = debt.parked || [];
   const pdp = $("tblDebtParked");
   pdp.innerHTML = "";
@@ -906,19 +919,14 @@ async function load() {
     ? debt.counts.total
     : debt.localIssues.length + debt.openAnnotations.length + debt.deferred.length;
   $("nDebt").textContent = debtTotal;
-  $("kDebt").className = "kpi" + (debtTotal ? " warn" : "");
+  $("kDebt").className = "kpi tile s2" + (debtTotal ? " warn" : "");
 
-  /* ── 工具遥测迷你图(22-CONTEXT D-03)──
-     数据源 ~/.agents/mm-gsd-tools.jsonl(只读),服务端现读现算。
-     口径(按本地日切桶 + 按 cwd 归一比较)只在服务端 references/telemetry-view.mjs 一处,
-     前端不再另算 —— 前端再算一遍就会出现两个打架的「今天」数。 */
+  /* ── 工具遥测(口径只在服务端 telemetry-view.mjs 一处)── */
   const tel = st.telemetry || { series: [], byTool: {}, total: 0, empty: true };
   const telDays = tel.series.length;
   const telLast = telDays ? tel.series[telDays - 1].date : "—";
   $("cntTelDays").textContent = telDays ? telDays + " 天 · 共 " + tel.total + " 次(截至 " + telLast + ")" : "—";
   $("cntTelTools").textContent = Object.keys(tel.byTool).length + " 种";
-
-  // 零命中不画空图 —— 空图会被读成「图坏了」,给文案(22-CONTEXT D-03 空态口径)
   $("telChart").innerHTML = tel.empty
     ? '<div class="empty">本项目暂无工具遥测记录</div>'
     : telChartSvg(tel.series);
@@ -956,16 +964,16 @@ async function load() {
   $("qCount").textContent = q ? "命中 " + tb.rows.length + " / " + st.reqs.length + " 条" : "";
   if (!tb.rows.length) tb.innerHTML = '<tr><td colspan="4" class="empty">没有匹配的 REQ。</td></tr>';
 
-  /* ── 总览上屏(D-05):对账黄条 + phase 总览表(卡片的用户原话/CONTEXT 折叠、R 票修复中 pill、
-     预审/验收 meta 三处能力随迁进披露浮层 detailHtml,不许丢)── */
+  /* ── 提醒(product_surface 对账 + 欠账防再积)→ 顶栏抽屉,默认收起 ── */
   const psw = st.productSurfaceWarn || [];
-  /* 防再积黄条(25-CONTEXT D-03):debtWarn 复用同一提醒通道;默认收起一行摘要,展开看明细(抽屉化) */
   const dw = st.debtWarn || [];
   const warns = psw.length + dw.length;
-  $("pswBar").hidden = !warns;
-  $("pswSum").textContent = "提醒 " + warns + " 条(product_surface 对账 / 欠账防再积)";
-  $("pswBody").innerHTML = (psw.length ? "<div><b>product_surface 对账:</b>以下 REQ 已随 SHIP 声明产品面,但 req-ledger 还没有 delivered 行</div>" + psw.map((w) => "<div>" + esc(w) + "</div>").join("") : "")
+  lastWarnHtml = (psw.length ? "<div><b>product_surface 对账:</b>以下 REQ 已随 SHIP 声明产品面,但 req-ledger 还没有 delivered 行</div>" + psw.map((w) => "<div>" + esc(w) + "</div>").join("") : "")
     + (dw.length ? "<div><b>欠账防再积:</b></div>" + dw.map((w) => "<div>" + esc(w) + "</div>").join("") : "");
+  $("warnChip").hidden = !warns;
+  $("warnN").textContent = warns;
+  $("warnChip").title = warns ? "点开看提醒明细" : "";
+
   renderOverview();
   topoRender();
 
@@ -995,7 +1003,7 @@ async function load() {
   ib.innerHTML = openIss.length ? "" : '<div class="card empty">没有未闭环的本地账问题。</div>';
   for (const i of openIss) {
     const div = document.createElement("div");
-    div.className = "card iss";
+    div.className = "iss tile";
     div.innerHTML = '<span class="tk">' + esc(i.id) + "</span>" +
       '<span class="itxt">' + esc(i.title) + "</span>" +
       '<span class="mutd">' + esc(i.file) + "</span>" +
@@ -1004,11 +1012,14 @@ async function load() {
   }
 }
 
-/* 项目切换(D-04):整页带 ?project= 跳转(hash 保留,视图不丢);名单由服务端每请求现读 */
-$("projList").addEventListener("click", (e) => {
-  const b = e.target.closest("button[data-root]");
-  if (!b) return;
-  location.href = location.pathname + "?project=" + encodeURIComponent(b.dataset.root) + location.hash;
+/* 提醒抽屉:顶栏计数徽标 → 点开看明细 */
+$("warnChip").addEventListener("click", () => {
+  openDetail("提醒", lastWarnHtml || '<div class="empty">没有提醒。</div>');
+});
+/* 项目切换:顶栏 select,change 即带 ?project= 跳转(hash 保留) */
+$("projSel").addEventListener("change", (e) => {
+  if (!e.target.value) return;
+  location.href = location.pathname + "?project=" + encodeURIComponent(e.target.value) + location.hash;
 });
 
 /* 提交批注(有反馈:loading → 成功/失败文案) */
@@ -1038,12 +1049,12 @@ document.addEventListener("click", (e) => {
 const goView = (v) => { if (routeFromHash() !== v) location.hash = "#" + v; else showView(v); };
 for (const [id, v] of [["kReq", "reqs"], ["kPh", "overview"], ["kAnn", "annotations"], ["kIss", "debt"], ["kRep", "overview"], ["kDebt", "debt"]])
   $(id).onclick = () => goView(v);
-/* 总览:行点击 → 详情面板;筛选条变化 → 只重排总览表 */
+/* 总览:行点击 → 披露浮层;筛选条变化 → 只重排总览表 */
 $("phOverview").addEventListener("click", (e) => {
   const tr = e.target.closest("tr[data-phase]");
   if (tr) phaseDetail(tr.dataset.phase);
 });
-/* 拓扑节点点击 → 既有详情面板下钻(与总览表行同一通道,24-01 T1b) */
+/* 拓扑节点点击 → 同一浮层通道(24-01 T1b) */
 $("phase-topo").addEventListener("click", (e) => {
   const g = e.target.closest("g.tnode[data-phase]");
   if (g) phaseDetail(g.dataset.phase);
@@ -1051,14 +1062,14 @@ $("phase-topo").addEventListener("click", (e) => {
 for (const id of ["fPhase", "fDebt", "fReq"]) $(id).addEventListener("change", () => renderOverview());
 $("q").addEventListener("input", () => last && load());
 
-/* 自动刷新 15s,可暂停;reduced-motion 不影响数据刷新,只影响滚动动画 */
+/* 自动刷新 15s,可暂停;reduced-motion 不影响数据刷新 */
 let paused = false;
 $("pauseBtn").onclick = () => {
   paused = !paused;
   $("pauseBtn").setAttribute("aria-pressed", String(paused));
   $("icoPause").style.display = paused ? "none" : "";
   $("icoPlay").style.display = paused ? "" : "none";
-  $("liveText").textContent = paused ? "自动刷新已暂停" : "每 15s 刷新 · 更新于 " + (last ? fmtTime(last.generated) : "—");
+  $("liveText").textContent = paused ? "自动刷新已暂停" : "15s · 更新于 " + (last ? fmtTime(last.generated) : "—");
 };
 setInterval(() => { if (!paused && !document.hidden) load(); }, 15000);
 load();
