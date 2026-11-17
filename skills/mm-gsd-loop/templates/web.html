@@ -196,6 +196,16 @@
   .ctx { white-space: pre-wrap; font-size: 12px; color: var(--fg-mut); background: var(--inset);
     border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin: 8px 0; max-height: 240px; overflow: auto; }
   .cardfoot { display: flex; justify-content: flex-end; margin-top: 8px; }
+  /* 排查提示词:按 phase 当前状态现生成的一段指令,点复制直接丢给 agent */
+  .promptbox { margin-top: 12px; border: 1px solid var(--border); border-radius: var(--r);
+    background: var(--inset); overflow: hidden; }
+  .promptbox .ph-head { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 8px 12px; border-bottom: 1px solid var(--border); }
+  .promptbox .ph-head span { font-size: 11.5px; color: var(--fg-dim); font-weight: 600; letter-spacing: .04em; }
+  .prompttext { margin: 0; padding: 10px 12px; font-family: var(--mono); font-size: 11.5px;
+    line-height: 1.55; color: var(--fg-mut); white-space: pre-wrap; word-break: break-word;
+    max-height: 260px; overflow: auto; }
+  .copybtn.copied { color: var(--acc); border-color: var(--acc); }
   .ghost { border: 1px solid var(--border); background: transparent; border-radius: 9px; padding: 3px 12px;
     font-size: 12px; color: var(--fg-mut); white-space: nowrap; }
   .ghost:hover { color: var(--fg); border-color: var(--fg-dim); }
@@ -1005,6 +1015,55 @@ function renderOverview() {
   if (!tb.rows.length) tb.innerHTML = '<tr><td colspan="7" class="empty">没有匹配筛选条件的 phase。</td></tr>';
 }
 
+/* 排查提示词:按 phase 当前状态现生成的一段指令,点「复制」直接丢给 agent。
+   状态口径全部取自屏上已有字段(五步/工件/预审/验收/交付/REQ/挂账),不另算一套 —— T-17。 */
+function phasePrompt(p) {
+  const L = [];
+  const shipped = p.ship && p.ship.status === "shipped";
+  const hasPlan = p.plans.length > 0;
+  const hasSum = p.plans.some((x) => x.summary);
+  const hasVer = Boolean(p.verification);
+  const hasShip = Boolean(p.ship);
+  const openSum = p.plans.filter((x) => !x.summary).map((x) => x.plan);
+  const openRep = p.plans.filter((x) => x.isRepair && !x.summary).map((x) => x.plan);
+  const noChk = p.plans.filter((x) => !x.check).map((x) => x.plan);
+  const cov = coveredReqs(p);
+  const root = (last && last.root) || "(项目根目录)";
+
+  L.push(shipped
+    ? "帮我独立复验 phase " + p.phase + (p.title ? "（" + p.title + "）" : "") + " —— 看板说它已交付，我要一份不采信看板的复核结论。"
+    : "帮我查清 phase " + p.phase + (p.title ? "（" + p.title + "）" : "") + " 现在到底卡在哪一步、为什么没收口。");
+  L.push("项目根目录：" + root);
+  L.push("");
+  L.push("看板读到的现状（这是观测值，不是结论，请自己复核后再下判断）：");
+  L.push("- 交付工件：" + (hasShip ? p.ship.file + "（status: " + p.ship.status + "）" : "没有"));
+  L.push("- 验收工件：" + (hasVer ? p.verification.file + "（status: " + p.verification.status + "）" : "没有"));
+  L.push("- 五步：讨论 有 · 计划 " + (hasPlan ? "有" : "没有") + " · 执行 " +
+    (!hasPlan ? "无 PLAN" : !hasSum ? "未收口" : openSum.length ? "部分收口（" + openSum.length + " 张无 SUMMARY）" : "已收口") +
+    " · 验收 " + (hasVer ? "有" : "没有") + " · 交付 " + (hasShip ? "有" : "没有"));
+  L.push("- 工件：" + (hasPlan
+    ? p.plans.length + " 张 PLAN" + (openSum.length ? "，没有 SUMMARY 的：" + openSum.join("、") : "，全部有 SUMMARY") +
+      (noChk.length ? "；缺 PLAN-CHECK 的：" + noChk.join("、") : "")
+    : "没有 PLAN"));
+  if (openRep.length) L.push("- 挂着的点修票（R）：" + openRep.join("、") + "（有 PLAN 没 SUMMARY）");
+  L.push("- covers 的 REQ：" + (cov.length ? cov.length + " 条（" + cov.map((r) => r.id).join("、") + "）" : "无"));
+  L.push("- 挂账：" + p.debt + " 条");
+  L.push("- 依赖：" + (p.depends_on && p.depends_on.length ? p.depends_on.join("、") : "无"));
+  L.push("");
+  L.push("请按这个顺序查（先诊断，别替我改文件，除非我后面再说）：");
+  L.push("1. 读 .planning/ 里这个 phase 的全部工件（CONTEXT / PLAN / PLAN-CHECK / SUMMARY / VERIFICATION / SHIP），逐项对照上面那份清单，说清缺哪一环、缺的那环为什么缺。");
+  L.push("2. 跑 `node skills/mm-gsd-loop/scripts/gsd-state-check.mjs --plan .planning/" + p.phase + "-*-PLAN.md`，把每一条红解释成「哪条纪律没过、为什么、怎么改」。");
+  L.push("3. 跑 `node skills/mm-gsd-loop/scripts/gsd-state-check.mjs`（状态机），看它推导的状态和 .planning/STATE.md 里声明的是否一致；不一致就把两个值都列出来。");
+  L.push("4. 对没有 SUMMARY 的 PLAN：先在 .planning/ 里找有没有对应的 SUMMARY（文件名可能是 NN-MM-SUMMARY.md 或 NN-MM-TN-SUMMARY.md）；有就说明为什么没被算成已收口，没有就用 git log 里的提交判断这个票到底做没做完。");
+  L.push("5. 核这个 phase 的 REQ 与债：台账里它认领的 REQ 是不是都有 delivered 行；未清偿的挂账是不是就是它欠的。");
+  L.push("");
+  L.push("回报格式（先结论，后证据）：");
+  L.push("- 一句话结论：这个 phase 属于「没做完」/「做完了但没记录收口」/「记录了但门禁没过」/「已收口，复核通过」中的哪一种。");
+  L.push("- 证据：文件路径 + 行号、命令 + 它的实际输出（不要转述你的推测当输出）。");
+  L.push("- 要收口它，按顺序该做哪几步，每步一句话。");
+  return L.join("\n");
+}
+
 /* 披露浮层正文:生命周期 → meta → 工件清单 → covers REQ → 相关批注 → CONTEXT */
 function detailHtml(p) {
   const openRep = p.plans.filter((x) => x.isRepair && !x.summary).length;
@@ -1041,6 +1100,9 @@ function detailHtml(p) {
       : '<div class="empty">无相关批注。</div>') +
     '<details><summary>用户原话 / CONTEXT</summary><div class="ctx">' +
     (last.contexts && last.contexts[p.phase] ? esc(String(last.contexts[p.phase]).slice(0, 2000)) : "(无 CONTEXT domain 原文)") + "</div></details>" +
+    '<div class="promptbox"><div class="ph-head"><span>排查提示词 · 点「复制」直接丢给 agent</span>' +
+    '<button type="button" class="ghost copybtn" data-copy="1">复制</button></div>' +
+    '<pre class="prompttext">' + esc(phasePrompt(p)) + "</pre></div>" +
     '<div class="cardfoot"><button type="button" class="ghost" data-t="' + esc("phase:" + p.phase) + '">批注此 phase</button></div>';
 }
 
@@ -1317,6 +1379,31 @@ document.addEventListener("click", (e) => {
   $("a-target").value = b.dataset.t;
   $("a-text").focus();
   goView("annotations");
+});
+/* 「复制提示词」:抄的就是框里显示的那段(所见即所抄),失败也如实说,不给假成功 */
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("button[data-copy]");
+  if (!b) return;
+  const box = b.closest(".promptbox");
+  const pre = box && box.querySelector(".prompttext");
+  const text = pre ? pre.textContent : "";
+  let ok = false;
+  try {
+    await navigator.clipboard.writeText(text);
+    ok = true;
+  } catch {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.cssText = "position:fixed;left:-9999px;opacity:0";
+    document.body.appendChild(ta);
+    ta.select();
+    try { ok = document.execCommand("copy"); } catch { ok = false; }
+    ta.remove();
+  }
+  const old = b.textContent;
+  b.textContent = ok ? "已复制 ✓" : "复制失败 · 请手动选中";
+  b.classList.toggle("copied", ok);
+  setTimeout(() => { b.textContent = old; b.classList.remove("copied"); }, 1600);
 });
 /* KPI 点击 → 跳对应视图(D-05 总览优先) */
 const goView = (v) => { if (routeFromHash() !== v) location.hash = "#" + v; else showView(v); };
