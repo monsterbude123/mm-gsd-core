@@ -269,7 +269,28 @@
   .view { flex: none; width: 100%; max-width: 1360px; margin: 0 auto; }
   .view-fit { flex: 1 1 auto; min-height: 0; max-width: none; display: flex; flex-direction: column; gap: 12px; }
   .content:has(#view-overview:not([hidden])) { overflow: hidden; }
-  .kpis6 { flex: none; display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
+  .kpis6 { flex: none; display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-top: 10px; }
+  .kpis6[hidden] { display: none; }
+  /* 指标条:折叠态只占一行,展开才见六张大卡(用户:这几个很占用视线) */
+  .kpiwrap { flex: none; }
+  .kpibar { width: 100%; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    background: var(--card); border: 1px solid var(--border-2); border-radius: var(--r-sm);
+    padding: 8px 12px; font: inherit; color: var(--fg-mut); text-align: left; }
+  .kpibar:hover { border-color: color-mix(in srgb, var(--acc) 35%, var(--border-2)); }
+  .kpibar .kl { flex: none; font-size: 10.5px; font-weight: 700; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--fg-dim); }
+  .kpibar .kchips { flex: 1; min-width: 0; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .kpibar .kc { font-size: 12px; color: var(--fg-dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .kpibar .kc b { color: var(--fg-mut); font-weight: 600; font-family: var(--mono); }
+  .kpibar .kc.ok b { color: var(--acc); }
+  .kpibar .kc.warn b { color: var(--amb); }
+  .kpibar .kc.bad b { color: var(--red); }
+  .kpibar .chev { flex: none; color: var(--fg-dim); }
+  @media (prefers-reduced-motion: no-preference) {
+    .kpibar { transition: border-color .18s ease; }
+    .kpibar .chev { transition: transform .18s ease; }
+    .kpibar[aria-expanded="true"] .chev { transform: rotate(180deg); }
+  }
   .board-tile { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
   .sheet { position: fixed; z-index: 30; left: var(--rail-w); right: 0; bottom: 0;
     height: min(54vh, 580px); background: color-mix(in srgb, var(--card) 96%, transparent);
@@ -355,13 +376,20 @@
   <main class="content">
 
   <section id="view-overview" class="view view-fit" aria-label="总览视图">
-    <div class="kpis6">
+    <div class="kpiwrap">
+      <button type="button" id="kpiToggle" class="kpibar" aria-expanded="false" aria-controls="kpiGrid">
+        <span class="kl">指标</span>
+        <span class="kchips" id="kpiSum">—</span>
+        <svg class="chev" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 6l4.5 4.5L12.5 6"/></svg>
+      </button>
+      <div class="kpis6" id="kpiGrid" hidden>
       <button class="kpi tile s2" id="kReq" type="button" title="分母只算新增需求(baseline 是已交付的基线能力,不参与认领)"><span class="n" id="nReq">—</span><span class="t">REQ 已认领 / 新增</span><span class="bar"><i id="barReq" style="width:0%"></i></span></button>
       <button class="kpi tile s2" id="kPh" type="button"><span class="n" id="nPh">—</span><span class="t">phase 已交付 / 总数</span><span class="bar"><i id="barPh" style="width:0%"></i></span></button>
       <button class="kpi tile s2" id="kAnn" type="button"><span class="n" id="nAnn">—</span><span class="t">open 批注待消化</span></button>
       <button class="kpi tile s2" id="kIss" type="button"><span class="n" id="nIss">—</span><span class="t">open 本地账问题</span></button>
       <button class="kpi tile s2" id="kRep" type="button"><span class="n" id="nRep">—</span><span class="t">点修票挂起(R 票)</span></button>
       <button class="kpi tile s2" id="kDebt" type="button"><span class="n" id="nDebt">—</span><span class="t">欠账合计</span></button>
+      </div>
     </div>
     <section class="tile board-tile" aria-label="phase 依赖拓扑画布">
       <div class="tile-head"><h3>依赖拓扑</h3><span class="stat" id="topoSummary">—</span>
@@ -600,6 +628,25 @@ const board = { phases: [], pos: new Map(), edges: [], W: 0, H: 0,
 const RM = matchMedia("(prefers-reduced-motion: reduce)");
 
 function boardXY(p) { return { x: board.ox + p.x * board.fit, y: board.oy + p.y * board.fit }; }
+/* 每行放几个:窄画布少放 —— 位置随 fit 缩、标签字号有下限,列多了必叠字 */
+function topoCols(n, cw) {
+  return cw < 560 ? Math.max(2, Math.min(3, Math.round(Math.sqrt(n) + 1)))
+    : Math.min(7, Math.max(4, Math.round(Math.sqrt(n) + 1)));
+}
+/* 画布尺寸变了:该换列数就重排,否则只重新适配(列数不变时重排是白费) */
+function onBoxResize() {
+  const n = (last && last.phases || []).length;
+  if (n && topoCols(n, Math.max(1, $("phase-topo").clientWidth || 1200)) !== board.C) { topoRender(); return; }
+  fitBoard();
+}
+/* 按实测宽度截断文字(超出加省略号)—— 画布标签不许靠字数猜宽度 */
+function fitText(ctx, text, maxW) {
+  if (!text) return "";
+  if (ctx.measureText(text).width <= maxW) return text;
+  let s = text;
+  while (s.length > 1 && ctx.measureText(s + "…").width > maxW) s = s.slice(0, -1);
+  return s + "…";
+}
 function requestBoardDraw() {
   if (RM.matches) { drawBoard(0); return; }
   if (!board.raf) board.raf = requestAnimationFrame(boardLoop);
@@ -623,7 +670,10 @@ function topoRender() {
   if (!N) { box.innerHTML = '<div class="empty">没有阶段,画不出依赖拓扑。</div>'; board.phases = []; stopBoardLoop(); return; }
   tipHide();
   /* 蛇形流水布局:连续层共占视觉行(每行 ≤C 个,S 形折行,同层不拆散) */
-  const C = Math.min(7, Math.max(4, Math.round(Math.sqrt(N) + 1)));
+  /* 窄画布少放几列 —— 位置随 fit 缩,标签字号有下限,列多了必叠字 */
+  const CW = Math.max(1, box.clientWidth || 1200);
+  const C = topoCols(N, CW);
+  board.C = C;
   const byLv = new Map();
   for (const p of phases) {
     const l = p.level || 0;
@@ -669,7 +719,7 @@ function topoRender() {
     box.appendChild(board.cv);
     board.ctx = board.cv.getContext("2d");
     bindBoardEvents(box);
-    if (window.ResizeObserver) new ResizeObserver(() => fitBoard()).observe(box);
+    if (window.ResizeObserver) new ResizeObserver(() => onBoxResize()).observe(box);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) requestBoardDraw(); });
   }
   fitBoard();
@@ -793,14 +843,18 @@ function drawBoard(t) {
     ctx.stroke();
     if (act) ctx.restore();
     ctx.fillStyle = "#F1F5F9";
-    ctx.font = (act ? "700 " : "") + Math.max(10, S(12)) + 'px ui-monospace, "Cascadia Code", Consolas, monospace';
+    ctx.font = (act ? "700 " : "") + Math.max(8, S(12)) + 'px ui-monospace, "Cascadia Code", Consolas, monospace';
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(p.phase, s.x, s.y + 1);
+    /* 标题按实测宽度截断(位置随 fit 缩、字号有下限 → 不截断必叠字);窄到读不了就不画 */
     const tt = String(p.title || "").split(/[（(]/)[0];
-    ctx.fillStyle = "rgba(120, 135, 159, .95)";
-    ctx.font = Math.max(9, S(10)) + 'px "Segoe UI", system-ui, sans-serif';
-    ctx.fillText(tt.length > 14 ? tt.slice(0, 13) + "…" : tt, s.x, s.y + R + 15);
+    const cellPx = 118 * board.fit;
+    if (cellPx >= 46) {
+      ctx.fillStyle = "rgba(120, 135, 159, .95)";
+      ctx.font = Math.max(9, S(10)) + 'px "Segoe UI", system-ui, sans-serif';
+      ctx.fillText(fitText(ctx, tt, cellPx - 8), s.x, s.y + R + 15);
+    }
     if (isHot && !isSel) {
       ctx.beginPath();
       ctx.arc(s.x, s.y, R + 3, 0, Math.PI * 2);
@@ -863,7 +917,7 @@ function bindBoardEvents(box) {
     requestBoardDraw();
     phaseDetail(p.phase);
   });
-  if (window.ResizeObserver) new ResizeObserver(() => fitBoard()).observe(box);
+  if (window.ResizeObserver) new ResizeObserver(() => onBoxResize()).observe(box);
   RM.addEventListener?.("change", () => requestBoardDraw());
   document.addEventListener("visibilitychange", () => { if (!document.hidden) requestBoardDraw(); });
 }
@@ -1046,6 +1100,7 @@ async function load() {
   $("nIss").textContent = debt.localIssues.length;
   $("kIss").className = "kpi tile s2" + (debt.localIssues.length ? " bad" : "");
   $("nRep").textContent = st.state ? st.state.repairsPending : 0;
+  const repCount = st.state ? st.state.repairsPending : 0;
 
   /* ── 欠账面板 ── */
   const stripId = (title, id) => String(title ?? "").replace(new RegExp("^" + String(id).replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*", "i"), "");
@@ -1129,6 +1184,15 @@ async function load() {
     : debt.localIssues.length + debt.openAnnotations.length + debt.deferred.length;
   $("nDebt").textContent = debtTotal;
   $("kDebt").className = "kpi tile s2" + (debtTotal ? " warn" : "");
+  /* 指标条摘要(折叠态那一行):数字与口径同源,零项淡、异常项染色 */
+  $("kpiSum").innerHTML = [
+    '<span class="kc ' + (claimable.length && claimed < claimable.length ? "warn" : "ok") + '">REQ <b>' + claimed + "/" + claimable.length + "</b></span>",
+    '<span class="kc ' + (donePh < st.phases.length ? "warn" : "ok") + '">phase <b>' + donePh + "/" + st.phases.length + "</b></span>",
+    '<span class="kc' + (openAnn ? " warn" : "") + '">批注 <b>' + openAnn + "</b></span>",
+    '<span class="kc' + (debt.localIssues.length ? " bad" : "") + '">本地账 <b>' + debt.localIssues.length + "</b></span>",
+    '<span class="kc' + (repCount ? " warn" : "") + '">R票 <b>' + repCount + "</b></span>",
+    '<span class="kc' + (debtTotal ? " warn" : "") + '">欠账 <b>' + debtTotal + "</b></span>",
+  ].join("");
 
   /* ── 工具遥测(口径只在服务端 telemetry-view.mjs 一处)── */
   const tel = st.telemetry || { series: [], byTool: {}, total: 0, empty: true };
@@ -1258,6 +1322,13 @@ document.addEventListener("click", (e) => {
 const goView = (v) => { if (routeFromHash() !== v) location.hash = "#" + v; else showView(v); };
 for (const [id, v] of [["kReq", "reqs"], ["kPh", "overview"], ["kAnn", "annotations"], ["kIss", "debt"], ["kRep", "overview"], ["kDebt", "debt"]])
   $(id).onclick = () => goView(v);
+/* 指标条:点一下展开/收起六张大卡(默认收起 —— 大卡太占视线) */
+$("kpiToggle").addEventListener("click", () => {
+  const grid = $("kpiGrid");
+  const open = grid.hidden;
+  grid.hidden = !open;
+  $("kpiToggle").setAttribute("aria-expanded", String(open));
+});
 /* 总览:行点击 → 披露浮层;筛选条变化 → 只重排总览表 */
 $("phOverview").addEventListener("click", (e) => {
   const tr = e.target.closest("tr[data-phase]");
