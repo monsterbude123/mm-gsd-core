@@ -176,6 +176,8 @@ function buildState(root) {
 
   const phases = new Map();
   const claimByReq = new Map(reqs.map((r) => [r.id, r]));
+  // 票级 depends_on 的唯一解析口径 —— 逐字照抄 gsd-state-check.mjs 的 depList(脚本不借,范式借)
+  const depList = (v) => String(v ?? "").replace(/[[\]"'\s]/g, "").split(/[,、]/).filter(Boolean);
   for (const pp of planPaths) {
     const txt = readFileSync(pp, "utf8");
     const f = fm(txt);
@@ -201,6 +203,7 @@ function buildState(root) {
       file: pp.split(/[\\/]/).pop(), plan: base, goal: f.goal ?? "",
       isRepair: /-R\d+$/.test(base), wave: f.wave ?? "",
       tickets, coversReq: covers.reqs, coversD: covers.decisions,
+      depends: depList(f.depends_on),
       check: (() => {
         const c = [...checkPaths].find((x) => x.split(/[\\/]/).pop().startsWith(base + "-") && x.endsWith("-PLAN-CHECK.md"));
         return c ? { file: c.split(/[\\/]/).pop(), status: fm(readFileSync(c, "utf8")).status ?? "?" } : null;
@@ -311,6 +314,47 @@ function buildState(root) {
     p.level = levelByPhase.get(p.phase) ?? 0;
   }
   const allPlans = [...phases.values()].flatMap((p) => p.plans);
+
+  // REQ 依赖网(28-06,D-02):边只从票级 depends_on 推导 —— 全号精确匹配,短号只在同一个 phase 内解析;
+  // phase 级 depends_on(STATE 行尾括号写法)一律不折边;指向不存在的票或 REQ 都不连边;不编边。
+  const planById = new Map(allPlans.map((p) => [p.plan, p]));
+  const edges = [];
+  for (const pb of allPlans) {
+    if (!pb.coversReq.length) continue;
+    for (const raw of pb.depends) {
+      let target = null;
+      if (planById.has(raw)) target = planById.get(raw);
+      else if (/^\d+$/.test(raw)) {
+        // 短号:只在同一个 phase 内解析(声明短号那票自己的 phase 前缀 + 短号);本 phase 没有就当没写
+        const shortId = pb.plan.slice(0, 2) + "-" + raw;
+        if (planById.has(shortId)) target = planById.get(shortId);
+      }
+      if (!target || !target.coversReq.length) continue;
+      for (const rb of pb.coversReq) {
+        for (const ra of target.coversReq) {
+          if (rb === ra) continue;
+          edges.push({ from: rb, to: ra, kind: "ticket-dep", via: [pb.plan, target.plan] });
+        }
+      }
+    }
+  }
+  const edgeIds = new Set();
+  for (const e of edges) { edgeIds.add(e.from); edgeIds.add(e.to); }
+  const reqPhase = new Map();
+  for (const p of allPlans) for (const rq of p.coversReq) {
+    if (!reqPhase.has(rq) || Number(p.plan.slice(0, 2)) < Number(reqPhase.get(rq).slice(0, 2))) reqPhase.set(rq, p.plan.slice(0, 2));
+  }
+  const reqGraphNodes = reqs.map((r) => {
+    const claimed = r.claimed.length > 0;
+    const phase = claimed ? (reqPhase.get(r.id) ?? null) : null;
+    return {
+      id: r.id, text: r.text, baseline: r.baseline, claimed: r.claimed,
+      phase, group: claimed ? phase : "unclaimed",
+      note: edgeIds.has(r.id) ? "" : (claimed ? "claimed-no-dep" : "unclaimed"),
+    };
+  });
+  const reqGraph = { nodes: reqGraphNodes, edges };
+
   return {
     generated: new Date().toISOString(),
     root: normPath(root),
@@ -332,6 +376,7 @@ function buildState(root) {
     productSurfaceWarn,
     debtWarn,
     telemetry: readTelemetry(root),
+    reqGraph,
   };
 }
 

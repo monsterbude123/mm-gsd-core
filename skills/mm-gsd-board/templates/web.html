@@ -353,6 +353,9 @@
     <button type="button" class="railbtn" data-view="reqs" title="需求">
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M3 2.5h10M3 2.5v11l5-2.4 5 2.4v-11"/><path d="M5.5 5.5h5"/></svg>
       <span>需求</span></button>
+    <button type="button" class="railbtn" data-view="reqdep" title="REQ 依赖">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="4" cy="4" r="2"/><circle cx="12" cy="4" r="2"/><circle cx="8" cy="12" r="2"/><path d="M5.5 5.5L7 10M10.5 5.5L9 10M6 4h4"/></svg>
+      <span>REQ 依赖</span></button>
     <button type="button" class="railbtn" data-view="debt" title="欠账">
       <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M8 1.5l6 2.7v3.3c0 3.4-2.4 5.9-6 7-3.6-1.1-6-3.6-6-7V4.2z"/><path d="M5.6 8l1.7 1.7L10.7 6"/></svg>
       <span>欠账</span></button>
@@ -468,6 +471,22 @@
     </table></div>
   </section>
 
+  <section id="view-reqdep" class="view" aria-label="REQ 依赖视图" hidden>
+    <h2>REQ 依赖 <small>边只来自票级 depends_on;图是只读的,数据由服务端推导</small></h2>
+    <div id="reqdep-empty" class="empty" hidden>还没人写票级依赖(这不是『这些需求彼此无关』)。</div>
+    <div id="reqdep-wrap" style="position:relative">
+      <div id="reqdep-cv" role="img" aria-label="REQ 依赖网状图:实线 = 票级依赖;同组 = 同一个 phase 的需求" style="min-height:420px"></div>
+      <div id="reqdep-hover" hidden style="position:absolute;pointer-events:none"></div>
+    </div>
+    <div class="hint">实线 = 票级依赖 · 同组 = 同一个 phase 的需求 · hover 看摘要,点开看全文,Esc 关闭</div>
+    <div id="reqdep-detail" hidden style="position:fixed;inset:0;background:var(--bg,#111);z-index:60">
+      <div style="position:absolute;top:8vh;left:10vw;right:10vw;bottom:8vh;overflow:auto">
+        <button type="button" class="ghost" id="reqdep-close">关闭(Esc)</button>
+        <div id="reqdep-detail-body"></div>
+      </div>
+    </div>
+  </section>
+
   <section id="view-annotations" class="view" aria-label="批注视图" hidden>
     <h2>批注 <small>用户审核 → agent 消化;验收不过会触发点修分流</small></h2>
     <div class="annbox">
@@ -536,7 +555,7 @@ const MONO_ID = (s) => '<span class="tk">' + esc(s) + "</span>";
 })();
 
 /* ── 视图路由(D-05):hash 路由,刷新保持视图 ── */
-const VIEWS = ["overview", "reqs", "debt", "telemetry", "annotations"];
+const VIEWS = ["overview", "reqs", "reqdep", "debt", "telemetry", "annotations"];
 function showView(v) {
   const cur = VIEWS.includes(v) ? v : "overview";
   for (const name of VIEWS) {
@@ -545,6 +564,7 @@ function showView(v) {
   }
   for (const b of document.querySelectorAll("#views button[data-view]"))
     b.classList.toggle("active", b.dataset.view === cur);
+  if (cur === "reqdep") reqdepStart();
 }
 const routeFromHash = () => (location.hash || "#overview").slice(1);
 window.addEventListener("hashchange", () => showView(routeFromHash()));
@@ -584,6 +604,29 @@ function oneClickPayload(kind, payload) {
 }
 function sameOpenKind(anns, target, action) {
   return (anns || []).find((a) => a.target === target && a.action === action && a.status === "open") || null;
+}
+
+function reqDepModel(graph) {
+  const nodesSrc = (graph || {}).nodes || [];
+  const edgesSrc = (graph || {}).edges || [];
+  const nodes = nodesSrc.map((n) => {
+    const isolated = !edgesSrc.some((e) => e.from === n.id || e.to === n.id);
+    let mark = "";
+    if (isolated) {
+      if (n.note === "unclaimed") mark = "无人认领";
+      else if ((n.claimed || []).length) mark = "已被认领(还没有票级依赖)";
+    }
+    return { id: n.id, label: n.id + " " + n.text, mark, phase: n.phase, group: n.group, isolated };
+  });
+  const edges = edgesSrc.map((e) => ({ from: e.from, to: e.to, label: "票级依赖" }));
+  const groups = [];
+  const seenGroup = {};
+  for (const n of nodes) {
+    if (n.group === "unclaimed" || n.group == null || seenGroup[n.group]) continue;
+    seenGroup[n.group] = true;
+    groups.push({ key: n.group, label: "同组 · phase " + n.group });
+  }
+  return { nodes, edges, groups, empty: edges.length === 0 };
 }
 const fmtTime = (iso) => { const d = new Date(iso); return isNaN(d) ? esc(iso) : d.toLocaleTimeString("zh-CN", { hour12: false }); };
 const relTime = (iso) => { const d = new Date(iso); if (isNaN(d)) return esc(iso);
@@ -1494,6 +1537,136 @@ $("pauseBtn").onclick = () => {
 };
 setInterval(() => { if (!paused && !document.hidden) load(); }, 15000);
 load();
+
+/* ── REQ 依赖视图(28-06):画布 + 诊断标注,数据只读 /api/state 的 reqGraph ── */
+const reqdep = { cv: null, ctx: null, raf: 0, dpr: 1, hover: null };
+}
+function reqdepModelView() {
+  const m = reqDepModel(last && last.reqGraph);
+  return m || { nodes: [], edges: [], groups: [], empty: true };
+}
+function reqdepNodePos(i, n, W, H) {
+  const cols = Math.max(2, Math.ceil(Math.sqrt(n)));
+  const row = Math.floor(i / cols), col = i % cols;
+  const cw = W / cols, chh = H / Math.ceil(n / cols);
+  return { x: col * cw + cw / 2, y: row * chh + chh / 2, w: cw, h: chh };
+}
+function reqdepHit(mx, my) {
+  const m = reqdepModelView();
+  const W = reqdep.cv.clientWidth || 800, H = 420;
+  const pos = m.nodes.map((n, i) => ({ n, p: reqdepNodePos(i, m.nodes.length, W, H) }));
+  return (pos.find((x) => Math.abs(x.p.x - mx) < 70 && Math.abs(x.p.y - my) < 26) || {}).n || null;
+}
+function reqdepHover() {
+  const hit = reqdepHit(reqdep.mouse ? reqdep.mouse.x : -999, reqdep.mouse ? reqdep.mouse.y : -999);
+  const el = $("reqdep-hover");
+  if (!hit) { el.hidden = true; return; }
+  const rel = reqdepModelView().edges.filter((e) => e.from === hit.id || e.to === hit.id).map((e) => e.from + " → " + e.to);
+  el.innerHTML = "<b>" + esc(hit.id) + "</b> " + esc(hit.text || "") + "<br><span class='mutd'>" + esc(rel.join("; ") || "无依赖边") + "</span>";
+  const rect = reqdep.cv.getBoundingClientRect();
+  el.style.left = Math.min(reqdep.mouse.x + 12, rect.width - 220) + "px";
+  el.style.top = (reqdep.mouse.y + 12) + "px";
+  el.hidden = false;
+}
+function reqdepDraw() {
+  const cv = reqdep.cv, ctx = reqdep.ctx;
+  if (!cv || !ctx) return;
+  const m = reqdepModelView();
+  const W = cv.clientWidth || 800, H = 420;
+  const dpr = reqdep.dpr;
+  cv.width = W * dpr; cv.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+  $("reqdep-empty").hidden = !m.empty;
+  $("reqdep-wrap").hidden = m.empty;
+  const style = getComputedStyle(document.body);
+  const fg = style.getPropertyValue("--fg") || "#ddd";
+  const dim = style.getPropertyValue("--fg-dim") || "#888";
+  const bg = style.getPropertyValue("--bg2") || "#1a1a1a";
+  for (const g of m.groups) {
+    const idxs = m.nodes.map((n, i) => ({ n, i })).filter((x) => String(x.n.group) === String(g.key));
+    if (!idxs.length) continue;
+    const x0 = Math.min(...idxs.map((x) => x.p.x)) - 80, y0 = Math.min(...idxs.map((x) => x.p.y)) - 30;
+    const x1 = Math.max(...idxs.map((x) => x.p.x)) + 80, y1 = Math.max(...idxs.map((x) => x.p.y)) + 30;
+    ctx.fillStyle = "rgba(120,140,255,0.08)";
+    ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+    ctx.fillStyle = dim;
+    ctx.font = "12px sans-serif";
+    ctx.fillText("同组 · phase " + g.key, x0 + 8, y0 + 16);
+  }
+  ctx.strokeStyle = fg;
+  ctx.fillStyle = fg;
+  for (const e of m.edges) {
+    const a = m.nodes.map((n, i) => ({ n, i })).filter((x) => x.n.id === e.from)[0];
+    const b = m.nodes.map((n, i) => ({ n, i })).filter((x) => x.n.id === e.to)[0];
+    if (!a || !b) continue;
+    const pa = reqdepNodePos(a.i, m.nodes.length, W, H), pb = reqdepNodePos(b.i, m.nodes.length, W, H);
+    ctx.beginPath();
+    ctx.moveTo(pa.x, pa.y);
+    ctx.lineTo(pb.x, pb.y);
+    ctx.stroke();
+    ctx.font = "11px sans-serif";
+    ctx.fillText("票级依赖", (pa.x + pb.x) / 2 + 6, (pa.y + pb.y) / 2 - 6);
+  }
+  ctx.textAlign = "center";
+  for (let i = 0; i < m.nodes.length; i++) {
+    const n = m.nodes[i], p = reqdepNodePos(i, m.nodes.length, W, H);
+    ctx.fillStyle = bg;
+    ctx.strokeStyle = n.mark === "无人认领" ? "#e55" : fg;
+    ctx.fillRect(p.x - 66, p.y - 18, 132, 36);
+    ctx.strokeRect(p.x - 66, p.y - 18, 132, 36);
+    ctx.fillStyle = fg;
+    ctx.font = "12px sans-serif";
+    ctx.fillText(fitTextCtx(ctx, n.id, 120), p.x, p.y - 2);
+    if (n.mark) {
+      ctx.fillStyle = n.mark === "无人认领" ? "#e55" : dim;
+      ctx.font = "11px sans-serif";
+      ctx.fillText(fitTextCtx(ctx, n.mark, 124), p.x, p.y + 12);
+    }
+  }
+  ctx.textAlign = "start";
+  ctx.fillStyle = dim;
+  ctx.font = "12px sans-serif";
+  ctx.fillText("实线 = 票级依赖 · 同组 = 同一个 phase 的需求", 12, H - 10);
+}
+function fitTextCtx(ctx, text, maxW) {
+  if (!text) return "";
+  if (ctx.measureText(text).width <= maxW) return text;
+  let s = text;
+  while (s.length > 1 && ctx.measureText(s + "…").width > maxW) s = s.slice(0, -1);
+  return s + "…";
+}
+function reqdepStart() {
+  const box = $("reqdep-cv");
+  if (!box) return;
+  if (reqdep.cv) { reqdepDraw(); return; }
+  const cv = document.createElement("canvas");
+  cv.style.width = "100%";
+  cv.style.height = "420px";
+  box.appendChild(cv);
+  reqdep.cv = cv;
+  reqdep.ctx = cv.getContext("2d");
+  reqdep.dpr = Math.min(2.5, window.devicePixelRatio || 1);
+  cv.addEventListener("mousemove", (e) => {
+    const rect = cv.getBoundingClientRect();
+    reqdep.mouse = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    reqdepHover();
+  });
+  cv.addEventListener("mouseleave", () => { reqdep.mouse = null; $("reqdep-hover").hidden = true; });
+  cv.addEventListener("click", (e) => {
+    const rect = cv.getBoundingClientRect();
+    const hit = reqdepHit(e.clientX - rect.left, e.clientY - rect.top);
+    if (!hit) return;
+    $("reqdep-detail-body").innerHTML =
+      "<b>" + esc(hit.label) + "</b><br>" + esc(hit.note || "有票级依赖边") +
+      "<br><span class='mutd'>认领票:" + esc((hit.claimed || []).join(", ") || "无") + "</span>" +
+      "<br><span class='mutd'>group:" + esc(String(hit.group)) + "</span>";
+    $("reqdep-detail").hidden = false;
+  });
+  document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") $("reqdep-detail").hidden = true; });
+  load().then(() => { reqdepDraw(); });
+}
+window.addEventListener("resize", () => reqdepDraw());
 </script>
 </body>
 </html>
