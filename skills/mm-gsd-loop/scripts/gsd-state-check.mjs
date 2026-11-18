@@ -359,7 +359,9 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
 
     for (const t of tasks) {
       for (const key of ["files", "read_first", "action", "verify", "done"]) {
-        if (!field(t, key)) e(`${name} ${t.id}: 缺 <${key}> —— 四件套不完整`, "按 templates/plan.md 补全;执行者照着它动手,缺项就得临场猜");
+        // 完整性与内容判据用同一个取值口(fieldBlock,GitHub #25):field() 只取同行,
+        // 多行 verify 的票会被同时判「缺 verify」+ 内容红 —— 两张嘴必然自相矛盾。
+        if (!fieldBlock(t, key)) e(`${name} ${t.id}: 缺 <${key}> —— 四件套不完整`, "按 skills/mm-gsd-plan/templates/plan.md 补全;执行者照着它动手,缺项就得临场猜");
       }
       const act = field(t, "action") ?? "";
       if (/```/.test(act)) e(`${name} ${t.id}: action 里含代码块`, "action 写做什么与避免什么,代码留给执行者写 —— 照抄会掩盖真实工作量");
@@ -448,7 +450,7 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
     // R 票不进批图(D-06):修复是原 phase 收尾后的串行补票,不是新的并行面 ——
     // 两张 R 票碰同一个被修文件是常态,卷进批图会误判「并行撞文件」。
     if (!isRepair)
-      batchPlans.push({ id: name.replace(/-PLAN\.md$/, ""), phase: phaseNo, files: parsed.files, depends: depList(fm.depends_on) });
+      batchPlans.push({ id: name.replace(/-PLAN\.md$/, ""), phase: phaseNo, files: parsed.files, depends: depList(fm.depends_on), wave: String(fm.wave ?? "").trim() === "" ? null : Number(fm.wave) });
   }
   {
     const wv = await import("../references/worktree-view.mjs");
@@ -456,6 +458,16 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
     for (const ph of [...new Set(batchPlans.map((b) => b.phase))]) {
       for (const p of wv.checkBatchGraph(batchPlans.filter((b) => b.phase === ph)))
         e(p, "同 phase 内互不依赖的票就是可并行的 —— 撞了文件就必须拆批或补依赖");
+    }
+    // 波次推导门(R-24,28-13):wave 是 DAG 推导的缓存不是真相源 —— 手写值与依赖推导不符,
+    // 执行端就按错序开工;要改顺序就改 depends_on,不是改 wave(用户裁定:次序不重要,DAG 对应就行)。
+    for (const ph of [...new Set(batchPlans.map((b) => b.phase))]) {
+      const set = batchPlans.filter((b) => b.phase === ph);
+      const derived = wv.deriveWaves(set);
+      for (const p of set) {
+        if (p.wave !== null && derived.get(p.id) !== p.wave)
+          e(`${p.id}: wave 手写 ${p.wave} ≠ DAG 推导 ${derived.get(p.id)} —— 次序从 depends_on 推导;要改顺序就改 depends_on,不是改 wave`);
+      }
     }
     // 需求覆盖门(phase 17 D-03,issue #21):checkReqClaims 的正方向 —— REQ 落盘了但无人认领。
     // 项目全量对账,整批一次;REQUIREMENTS.md 不存在 → 函数自己返回空,不猜。

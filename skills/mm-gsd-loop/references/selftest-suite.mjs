@@ -10,6 +10,7 @@ import { checkTicketPremises } from "./verification-gates.mjs";
 import { staleDecisions, coveredDecisions, phaseCovered, staleNote, planExists, runDecisionContracts, checkPlanCheckArtifacts } from "./ticket-alive.mjs";
 import { phaseHealth } from "./telemetry-aggregate.mjs";
 import { checkRoutes, routeSection, pointerCard, reviewerCard } from "./agent-routing.mjs";
+import { deriveWaves } from "./worktree-view.mjs";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, rmSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -35,6 +36,20 @@ export function mkAssert() {
     console.log(`  ${good ? "✓" : "✗"} ${why}: ${JSON.stringify(got)} → ${good ? "" : JSON.stringify(want)}`);
   };
   return { eq, eqN, eqArr, st };
+}
+
+/** 波次推导用例组(R-24,28-13):次序从 depends_on 推导,不从手写来 */
+export function runWaveFromDagCases({ eqN }) {
+  const chain = [{ id: "a", depends: [] }, { id: "b", depends: ["a"] }, { id: "c", depends: ["b"] }];
+  const w = deriveWaves(chain);
+  eqN(w.get("a"), 1, "wvd-1 无依赖推导 1");
+  eqN(`${w.get("a")}/${w.get("b")}/${w.get("c")}`, "1/2/3", "wvd-2 链式三票推导递增");
+  eqN(deriveWaves([{ id: "x", depends: ["外部-不在集合"] }]).get("x"), 1, "wvd-3 依赖不在集合内按 0 计");
+  const real06 = deriveWaves([
+    { id: "28-01", depends: [] }, { id: "28-02", depends: ["28-01"] }, { id: "28-03", depends: ["28-01", "28-02"] },
+    { id: "28-05", depends: ["28-02", "28-03"] }, { id: "28-06", depends: ["28-02", "28-05"] },
+  ]);
+  eqN(real06.get("28-06"), 5, "wvd-4 28-06 真实形态推导 5(手写 6 与之不符,门在 --plan 批图区判红)");
 }
 
 /**

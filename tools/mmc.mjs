@@ -20,6 +20,7 @@ import { collectFiles, countLines, collectScripts } from "./budget.mjs";
 import { fileURLToPath } from "node:url";
 import { makeInboxClose, clusterKey, readLocalIssues, findRecurrences, recurrenceRate } from "./gh-issues.mjs";
 import { makeReleaseFlow, checkTags } from "./release-flow.mjs";
+import { deriveWaves } from "../skills/mm-gsd-loop/references/worktree-view.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const R = (...s) => join(ROOT, ...s);
@@ -414,6 +415,42 @@ const CHECKS = {
   // 发版那一半:npm publish 默认落 latest —— 「发个版」会把正式通道一起带走,而 latest 的语义是「最稳那条」
   // (03-CONTEXT D-01)。2026-10-22 真发 0.4.1 时就是这么发生的:latest 从 0.4.0 跳到 0.4.1,收尾文案却写着「latest 未动」。
   // 断言的是命令本身(构造与调用是同一处),不是某句文案。
+  // R-24:票面 wave 是 DAG 推导的缓存不是真相源(28-13)。只判 active_phase 的活票(D-14:收口票退出全部门禁)。
+  "check-wave-from-dag"(report) {
+    let active = null;
+    try {
+      const m = readFileSync(R(".planning", "STATE.md"), "utf8").match(/^active_phase:\s*"?(\d+)"?/m);
+      if (m) active = m[1];
+    } catch { /* 无 STATE:判不了不猜 */ }
+    if (!active) { report.info("没有 active_phase —— wave 推导门不适用(冷启动前无票可判)"); return true; }
+    const dir = R(".planning");
+    const names = existsSync(dir) ? readdirSync(dir).filter((n) => new RegExp("^" + active + "-\\d+-PLAN\\.md$").test(n)) : [];
+    if (!names.length) { report.info("phase " + active + " 没有 PLAN —— wave 推导门不适用"); return true; }
+    const plans = [];
+    for (const n of names) {
+      const id = n.replace(/-PLAN\.md$/, "");
+      let covered = false;
+      try {
+        covered = /^status:\s*complete/m.test(readFileSync(R(".planning", id + "-SUMMARY.md"), "utf8"));
+      } catch { /* 无 SUMMARY = 未收口,照判 */ }
+      if (covered) continue;
+      const fm = readFileSync(R(".planning", n), "utf8").split(/^---$/m)[1] ?? "";
+      const waveM = fm.match(/^wave:\s*(\d+)\s*$/m);
+      const depM = fm.match(/^depends_on:\s*(.+)$/m);
+      plans.push({ id, wave: waveM ? Number(waveM[1]) : null, depends: depM ? (depM[1].match(/\d+-\d+/g) ?? []) : [] });
+    }
+    const derived = deriveWaves(plans);
+    let pass = true;
+    for (const p of plans) {
+      if (p.wave !== null && derived.get(p.id) !== p.wave) {
+        report.fail(p.id + ": wave 手写 " + p.wave + " ≠ DAG 推导 " + derived.get(p.id) + " —— 次序从 depends_on 推导;要改顺序就改 depends_on,不是改 wave");
+        pass = false;
+      }
+    }
+    if (pass) report.pass("wave 与 DAG 推导一致(" + plans.length + " 张活票)");
+    return pass;
+  },
+
   async "check-channel-safety"(report) {
     const { makeReleaseFlow, publishArgs } = await import("./release-flow.mjs");
     const calls = [];

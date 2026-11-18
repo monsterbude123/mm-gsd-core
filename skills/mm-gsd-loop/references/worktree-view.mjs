@@ -170,6 +170,33 @@ export function checkTicketBudget(tasks) {
   return problems;
 }
 
+/**
+ * 波次推导(R-24,28-13):wave = 1 + max(依赖的波次),依赖不在集合内按 0 计,无依赖 = 1。
+ * 次序从 depends_on 推导,不从手写来 —— 手写 wave 与推导值不符 = 次序焦虑落进工件,
+ * 执行端按错序开工(用户裁定:次序不重要,只要 DAG 对应上)。
+ * 环交给批图门(checkBatchGraph);本函数假设无环,带环输入按 0 断链防死递归。
+ *
+ * @param plans [{id, depends}] 同 phase 的票
+ * @returns Map(id → 推导波次)
+ */
+export function deriveWaves(plans) {
+  const byId = new Map(plans.map((p) => [p.id, p]));
+  const wave = new Map();
+  const derive = (id, seen) => {
+    if (wave.has(id)) return wave.get(id);
+    if (seen.has(id)) return 0;
+    seen.add(id);
+    const p = byId.get(id);
+    let w = 1;
+    if (p) for (const d of p.depends ?? []) w = Math.max(w, (byId.has(d) ? derive(d, seen) : 0) + 1);
+    seen.delete(id);
+    wave.set(id, w);
+    return w;
+  };
+  for (const p of plans) derive(p.id, new Set());
+  return wave;
+}
+
 /** 看起来是「跑测试」的命令 */
 const TEST_CMD = /\b(npm\s+(?:run\s+)?test|node\s+--test|pytest|jest|vitest|go\s+test|cargo\s+test|mvn\s+test|gradle\s+test|make\s+test)\b/;
 
