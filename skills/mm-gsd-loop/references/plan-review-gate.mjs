@@ -647,21 +647,20 @@ export function checkPlanQuality(planText, ctx = {}) {
   const { lines, tasks } = parsePlan(planText);
   ctx = { ...ctx, planText };
   const problems = [];
-  const trace = (n, fn) => { process.stderr.write("gate:" + n + "\n"); fn(); };
-  trace("F1", () => checkVerifyBlind(tasks, problems));
-  trace("F2F5", () => checkBaselineLiterals(tasks, ctx, problems));
-  trace("F3", () => checkCoversOrphan(tasks, ctx, problems));
-  trace("F4", () => checkAnchorDrift(planText, ctx, problems));
-  trace("F6", () => checkBudget(planText, tasks, problems, ctx));
-  trace("F8", () => checkPromiseOutOfScope(tasks, problems));
-  trace("F9", () => checkClaimUnverified(tasks, problems));
-  trace("F10", () => checkVerifyVsCitedSource(tasks, ctx, problems));
-  trace("F11", () => checkFixtureSelfcheck(tasks, problems));
-  trace("F12", () => checkCaseMismatch(tasks, ctx, problems));
-  trace("F13", () => checkApiShapeConflict(tasks, problems));
-  trace("F14", () => checkCitedNumber(tasks, ctx, problems));
-  trace("F15", () => checkDeadTrigger(tasks, ctx, problems));
-  trace("F16", () => checkExitCodeAdjacency(tasks, problems));
+  checkVerifyBlind(tasks, problems);
+  checkBaselineLiterals(tasks, ctx, problems);
+  checkCoversOrphan(tasks, ctx, problems);
+  checkAnchorDrift(planText, ctx, problems);
+  checkBudget(planText, tasks, problems, ctx);
+  checkPromiseOutOfScope(tasks, problems);
+  checkClaimUnverified(tasks, problems);
+  checkVerifyVsCitedSource(tasks, ctx, problems);
+  checkFixtureSelfcheck(tasks, problems);
+  checkCaseMismatch(tasks, ctx, problems);
+  checkApiShapeConflict(tasks, problems);
+  checkCitedNumber(tasks, ctx, problems);
+  checkDeadTrigger(tasks, ctx, problems);
+  checkExitCodeAdjacency(tasks, problems);
   return { problems, tasks: tasks.length };
 }
 

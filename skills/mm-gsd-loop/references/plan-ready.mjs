@@ -125,7 +125,7 @@ export function checkPlanReady({ planPath }, phaseCtx = {}) {
       if (effective === 0) {
         return { state: "passed", problems, classified, superseded: true, effective };
       }
-      problems.push({ msg: `${base}: 预审 status=blocked —— ${effective} 条判断题 BLOCKER 未清零(另有 ${machineLines.length} 条机器可判发现已下沉机器层)`, fix: "把判断题 findings 交回 mm-gsd-plan 修,复审一次(≤2 轮)再跑本命令" });
+      problems.push({ msg: `${base}: 预审 status=blocked —— ${effective} 条判断题 BLOCKER 未清零(另有 ${cls.machineLines.length} 条机器可判发现已下沉机器层)`, fix: "把判断题 findings 交回 mm-gsd-plan 修,复审一次(≤2 轮)再跑本命令" });
     } else {
       problems.push({ msg: `${base}: 预审 status=blocked —— 有 BLOCKER 没清零就不许开工`, fix: "把 findings 交回 mm-gsd-plan 修,复审一次(≤2 轮)再跑本命令" });
     }
