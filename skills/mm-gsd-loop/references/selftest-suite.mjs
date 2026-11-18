@@ -5,11 +5,12 @@
 
 import { classifyArtifact, parseAccounting, commitExists, checkArtifactLedger } from "./artifact-ledger.mjs";
 import { checkPlanReady, readPhaseConvergence, classifyArtifactBlockers, REVIEW_PROMPT } from "./plan-ready.mjs";
+import { discoverPacks, resolvePack, resolveEntry, makePackFixture } from "./packs.mjs";
 import { checkPhaseCoverage } from "./decision-gates.mjs";
 import { checkTicketPremises } from "./verification-gates.mjs";
 import { staleDecisions, coveredDecisions, phaseCovered, staleNote, planExists, runDecisionContracts, checkPlanCheckArtifacts } from "./ticket-alive.mjs";
 import { phaseHealth } from "./telemetry-aggregate.mjs";
-import { checkRoutes, routeSection, pointerCard, reviewerCard } from "./agent-routing.mjs";
+import { checkRoutes, routeSection, pointerCard, reviewerCard, buildRouteBrief } from "./agent-routing.mjs";
 import { deriveWaves } from "./worktree-view.mjs";
 import { checkPlanQuality, SIZE_EXEMPT } from "./plan-review-gate.mjs";
 import { execFileSync } from "node:child_process";
@@ -91,6 +92,24 @@ export function runConvergenceCases({ eqN }) {
   eqN(sup.state, "passed", "rcv-4 superseded 下全 machine 类降级不拦工");
   const legacy = checkPlanReady({ planPath: join(dir, ".planning", "99-01-PLAN" + MD) });
   eqN(legacy.state === "blocked" || legacy.state === "missing", true, "rcv-4b 祖父路径:无收敛工件时保持票级旧判");
+}
+
+/** 可选包机制用例组(28-01,D-03/D-07/REQ-58):判定只认 packs.mjs 公开 API,夹具唯一来自 makePackFixture */
+export function runPackCases({ eqN }) {
+  const fx = makePackFixture();
+  const packs = discoverPacks(fx.root);
+  const fake = packs.find((p) => p.name === fx.fake);
+  eqN(fake ? [fake.entry === fx.fakeEntry, fake.display === fx.display, (fake.aliases ?? []).join(",")].join(",") : "missing", "true,true,fk,version", "pack-1 声明 entry 的目录被认成包且 entry/display/aliases 读对");
+  eqN(packs.some((p) => p.name === fx.plain), false, "pack-2 没声明 entry 的目录不算包");
+  eqN(resolvePack(packs, "fake")?.name, fx.fake, "pack-3 resolvePack 按包名命中");
+  eqN([resolvePack(packs, "fk")?.name, resolvePack(packs, "nk")?.name].join(","), [fx.fake, fx.noopt].join(","), "pack-4 按 aliases 命中(无引号与带引号两种写法都认)");
+  eqN(resolvePack(packs, "nope") ?? null, null, "pack-5 不存在的命令返回空(不误命中)");
+  const ar = buildRouteBrief({ stage: null, skillsRoot: fx.root, projectRoot: ".", home: tmpdir(), activePhase: null });
+  eqN([ar.skills.some((s) => s.skill === fx.fake), ar.packs.some((p) => p.name === fx.fake), ar.skills.some((s) => s.skill === fx.noopt)].join(","), "false,true,true", "pack-6 optional 包不进环进 packs 栏;无 optional 的照旧在环里");
+  const en = resolveEntry(packs.find((p) => p.name === fx.broken));
+  eqN([String(en.missing), en.message.includes(fx.brokenEntry)].join(","), "true,true", "pack-7 入口缺失报 missing 并给带入口路径的人话");
+  rmSync(fx.root, { recursive: true, force: true });
+  rmSync(fx.plainRoot, { recursive: true, force: true });
 }
 
 /**

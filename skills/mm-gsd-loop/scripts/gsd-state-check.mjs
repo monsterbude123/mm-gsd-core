@@ -720,16 +720,22 @@ if (process.argv.includes("--routes")) {
 // 排版在这里,判定在 references/agent-routing.mjs:那里出数据,这里出文本。
 if (process.argv.includes("--route")) {
   const { buildRouteBrief } = await import("../references/agent-routing.mjs");
+  const { skillsRootOr } = await import("../references/packs.mjs");
   const at = process.argv.indexOf("--route"), arg = process.argv[at + 1];
   const b = buildRouteBrief({
     stage: arg && !arg.startsWith("--") ? arg : null,
-    skillsRoot: join(SKILL_DIR, ".."), projectRoot: root, home: homedir(),
+    skillsRoot: skillsRootOr(join(SKILL_DIR, ".."), process.env), projectRoot: root, home: homedir(),
     activePhase: unquote(frontmatter(P("STATE.md"))?.active_phase) ?? null,
   });
   const L = [];
   if (b.kind === "ring") {
     L.push("=== mm-gsd 路由:各阶段的出口(阶段名 = 技能名去掉 mm-gsd- 前缀)===");
     for (const s of b.skills) L.push(`  ${s.skill.replace("mm-gsd-", "")}  →  ${s.exits.length ? s.exits.join(", ") : "(没写出口)"}`);
+    if ((b.packs ?? []).length) {
+      // 可选包分栏(28-01,D-03):声明 entry 且 optional 的包不进环,另起一栏;没有可选包时不印(空态不占屏)
+      L.push("\n  可选包(点缀,不参与环):");
+      for (const p of b.packs) L.push("    " + p.display + "(" + p.name + ")");
+    }
     L.push("\n  要某一步的完整提示(该读什么 + 本项目门禁速查):--route <阶段>");
   } else if (b.kind === "unknown") {
     L.push("=== mm-gsd 路由 ===", "  " + b.message);
