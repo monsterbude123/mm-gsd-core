@@ -13,7 +13,7 @@ description: "极简 GSD 规划:goal-backward 目标倒推、tracer-first 垂直
 
 ## 用户批注消化(开头必做)
 
-拆票前读 `.planning/annotations.json`:**status=open 的批注按 type 消化**,消化后改 digested(不消化,检查器一直黄提醒)。需求遗漏 → 回 discuss 草拟 REQ 走确认门;方向不对 → 回 discuss 重开决策;备注 → 摘进相关票 action;验收不过 → 不在本批修,走 mm-gsd-loop「点修」分流(R 票)。
+拆票前读 `.planning/annotations.json`;`.planning/annotations.json` 不存在 = 没有待消化批注，直接继续。**status=open 的批注按 type 消化**,消化后改 digested(不消化,检查器一直黄提醒)。分流按 mm-gsd-discuss 的「批注分流表」执行;plan 阶段额外做两件事 —— action=requirement 补出来的 REQ 要在本 phase 拆票里认领,action=diagnose 的结论若落在本批范围内就并进本批票。需求遗漏 → 回 discuss 草拟 REQ 走确认门;方向不对 → 回 discuss 重开决策;备注 → 摘进相关票 action;验收不过 → 不在本批修,走 mm-gsd-loop「点修」分流(R 票)。
 
 ## codebase-map(入口级)
 

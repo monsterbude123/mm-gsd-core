@@ -557,9 +557,33 @@ const projQuery = () => {
   const p = new URLSearchParams(location.search).get("project");
   return p ? "?project=" + encodeURIComponent(p) : "";
 };
-async function post(target, type, text) {
-  const r = await fetch("/api/annotations" + projQuery(), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ target, type, text }) });
+async function post(target, type, text, action, note) {
+  const body = { target, type, text };
+  if (action) body.action = action;
+  if (note) body.note = note;
+  const r = await fetch("/api/annotations" + projQuery(), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   return r.json();
+}
+
+function reqPrompt(r) {
+  return "帮我核对 REQ " + r.id + " 的实现与验收:这条需求是「" + r.text + "」。请对照票面与证据,判断它是否真的达成,给结论与依据。";
+}
+function debtPrompt(d) {
+  const when = d.condition ? "当 " + d.condition + " 时" : "当这条债务的时机到了时";
+  const who = d.owner ? "(责任归属:" + d.owner + ")" : "";
+  return when + ",帮我 " + d.text + who + "。请给出落地方式与验收方式。";
+}
+function debtKey(d) {
+  return (String(d.source ?? "") + "#" + String(d.text ?? "")).replace(/\s+/g, " ");
+}
+function oneClickPayload(kind, payload) {
+  if (kind === "phase") return { target: "phase:" + payload.phase, type: "备注", text: payload.prompt, action: "diagnose" };
+  if (kind === "req") return { target: "REQ:" + payload.id, type: "备注", text: reqPrompt(payload), action: "diagnose" };
+  if (kind === "debt") return { target: "debt:" + debtKey(payload), type: "备注", text: debtPrompt(payload), action: "repair" };
+  return null;
+}
+function sameOpenKind(anns, target, action) {
+  return (anns || []).find((a) => a.target === target && a.action === action && a.status === "open") || null;
 }
 const fmtTime = (iso) => { const d = new Date(iso); return isNaN(d) ? esc(iso) : d.toLocaleTimeString("zh-CN", { hour12: false }); };
 const relTime = (iso) => { const d = new Date(iso); if (isNaN(d)) return esc(iso);
@@ -1095,7 +1119,9 @@ function detailHtml(p) {
     (relAnns.length ? relAnns.map((a) =>
       '<div class="ann ' + (a.status === "open" ? "open" : "digested") + '"><span class="who"><span class="pill ' +
       (a.status === "open" ? "warn" : "ship") + '">' + esc(a.type) + "</span><br><span style=\"color:var(--fg-dim)\">" + esc(a.target) + "</span></span>" +
+      (a.action ? '<span class="tk">' + esc(a.action) + "</span> " : "") +
       '<span class="txt">' + esc(a.text) + "</span>" +
+      (a.note ? '<span class="txt mutd">结论:' + esc(a.note) + "</span>" : "") +
       '<span class="when" title="' + esc(a.ts) + '">' + relTime(a.ts) + "</span></div>").join("")
       : '<div class="empty">无相关批注。</div>') +
     '<details><summary>用户原话 / CONTEXT</summary><div class="ctx">' +
@@ -1103,7 +1129,9 @@ function detailHtml(p) {
     '<div class="promptbox"><div class="ph-head"><span>排查提示词 · 点「复制」直接丢给 agent</span>' +
     '<button type="button" class="ghost copybtn" data-copy="1">复制</button></div>' +
     '<pre class="prompttext">' + esc(phasePrompt(p)) + "</pre></div>" +
-    '<div class="cardfoot"><button type="button" class="ghost" data-t="' + esc("phase:" + p.phase) + '">批注此 phase</button></div>';
+    '<div class="cardfoot"><button type="button" class="ghost" data-t="' + esc("phase:" + p.phase) + '">批注此 phase</button>' +
+    '<button type="button" class="ghost" data-oneclick="phase" data-key="' + esc(p.phase) + '">一键批注</button></div>';
+  PHASE_PAYLOADS[p.phase] = { phase: p.phase, prompt: phasePrompt(p) };
 }
 
 function phaseDetail(phase) {
@@ -1206,11 +1234,14 @@ async function load() {
     tr.insertCell().textContent = d.condition || "";
     tr.insertCell().textContent = d.owner || "";
     tr.insertCell().textContent = d.source || "";
+    const op = tr.insertCell();
+    DEBT_PAYLOADS[debtKey(d)] = d;
+    op.innerHTML = '<button type="button" class="ghost" data-oneclick="debt" data-key="' + esc(debtKey(d)) + '">一键批注</button>';
   }
   if (!ddf.rows.length) {
     const tr = ddf.insertRow();
     const td = tr.insertCell();
-    td.colSpan = 5;
+    td.colSpan = 6;
     td.className = "empty";
     td.textContent = "没有登记的未清偿挂账。";
   }
@@ -1294,7 +1325,9 @@ async function load() {
     tr.insertCell().innerHTML = r.claimed.length ? show.map(MONO_ID).join("") + (rest > 0 ? ' <span class="tk" title="' + esc(r.claimed.slice(6).join(", ")) + '">+' + rest + '</span>' : "")
       : r.baseline ? '<span style="color:var(--fg-dim)">baseline 已交付</span>' : '<strong style="color:var(--red)">无人认领</strong>';
     const c = tr.insertCell();
-    c.innerHTML = '<button type="button" class="ghost" data-t="' + esc("REQ:" + r.id) + '">批注</button>';
+    c.innerHTML = '<button type="button" class="ghost" data-t="' + esc("REQ:" + r.id) + '">批注</button>' +
+      '<button type="button" class="ghost" data-oneclick="req" data-key="' + esc(r.id) + '">一键批注</button>';
+    REQ_PAYLOADS[r.id] = { id: r.id, text: r.text };
   }
   $("qCount").textContent = q ? "命中 " + tb.rows.length + " / " + st.reqs.length + " 条" : "";
   if (!tb.rows.length) tb.innerHTML = '<tr><td colspan="4" class="empty">没有匹配的 REQ。</td></tr>';
@@ -1325,9 +1358,13 @@ async function load() {
   for (const a of st.annotations.slice().reverse()) {
     const div = document.createElement("div");
     div.className = "ann " + (a.status === "open" ? "open" : "digested");
+    const actLabel = a.action ? '<span class="tk">' + esc(ACTION_LABELS[a.action] || a.action) + "</span> " : '<span class="mutd">—</span> ';
+    const noteHtml = a.note ? '<span class="txt mutd">结论:' + esc(a.note) + "</span>" : "";
     div.innerHTML = '<span class="who"><span class="pill ' + (a.status === "open" ? "warn" : "ship") + '">' + esc(a.type) + "</span><br>" +
       '<span style="color:var(--fg-dim)">' + esc(a.target) + "</span></span>" +
+      actLabel +
       '<span class="txt">' + esc(a.text) + "</span>" +
+      noteHtml +
       '<span class="when" title="' + esc(a.ts) + '">' + relTime(a.ts) + (a.status === "open" ? " · 待消化" : " · 已消化") + "</span>";
     an.appendChild(div);
   }
@@ -1371,6 +1408,23 @@ $("annForm").addEventListener("submit", async (e) => {
     msg.className = "msg err";
     msg.textContent = "拒绝:" + (r.problems || []).join("; ");
   }
+});
+/* 一键批注(28-05):作业型批注直接落盘 —— 同 target 同 action 的 open 批注去重,不重复 POST */
+const PHASE_PAYLOADS = {}, REQ_PAYLOADS = {}, DEBT_PAYLOADS = {};
+const ACTION_LABELS = { diagnose: "诊断", repair: "点修", requirement: "补需求", note: "记参考" };
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("button[data-oneclick]");
+  if (!b) return;
+  const kind = b.dataset.oneclick, key = b.dataset.key || "";
+  const store = kind === "phase" ? PHASE_PAYLOADS : kind === "req" ? REQ_PAYLOADS : kind === "debt" ? DEBT_PAYLOADS : null;
+  const payload = store && store[key];
+  if (!payload) return;
+  const p = oneClickPayload(kind, payload);
+  const dup = sameOpenKind(last.annotations || [], p.target, p.action);
+  if (dup) { alert("已有同类批注(未消化):" + dup.id); return; }
+  const r = await post(p.target, p.type, p.text, p.action, p.note || "");
+  if (r.ok) { alert("已落盘(" + r.id + ")—— 在 agent 会话里说「有新批注」即可触发消化。"); load(); }
+  else alert("拒绝:" + (r.problems || []).join("; "));
 });
 /* 事件委托:表格/卡片里的「批注」按钮 → 预填目标、切到批注视图并聚焦 */
 document.addEventListener("click", (e) => {

@@ -390,10 +390,17 @@ const server = createServer(async (req, res) => {
     const target = String(body.target ?? "").trim();
     const type = String(body.type ?? "").trim();
     const text = String(body.text ?? "").trim();
+    // 作业语义(28-05,D-04):action 与 note 是可选新字段 —— 出现才校验/落盘,老批注读出来仍是老形状
+    const hasAction = body.action !== undefined && body.action !== null && String(body.action).trim() !== "";
+    const action = hasAction ? String(body.action).trim() : "";
+    const ACTIONS = ["diagnose", "repair", "requirement", "note"];
+    const hasNote = body.note !== undefined && body.note !== null && String(body.note).trim() !== "";
+    const note = hasNote ? String(body.note).trim() : "";
     const problems = [];
-    if (!target) problems.push("target 缺失(REQ-N / phase:NN / ticket:NN-MM)");
+    if (!target) problems.push("target 缺失(REQ-N / phase:NN / ticket:NN-MM / debt:<键>)");
     if (!TYPES.includes(type)) problems.push("type 必须是 " + TYPES.join("/"));
     if (!text) problems.push("text 缺失");
+    if (hasAction && !ACTIONS.includes(action)) problems.push("action 必须是 " + ACTIONS.join("/") + " 之一");
     if (problems.length) {
       res.writeHead(400, { "content-type": "application/json; charset=utf-8" });
       res.end(JSON.stringify({ ok: false, problems }));
@@ -402,6 +409,8 @@ const server = createServer(async (req, res) => {
     let list = [];
     try { list = JSON.parse(readFileSync(P(pr.root, "annotations.json"), "utf8")); } catch {}
     const ann = { id: "a-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 6), ts: new Date().toISOString(), target, type, text, status: "open" };
+    if (hasAction) ann.action = action;
+    if (hasNote) ann.note = note;
     list.push(ann);
     try {
       writeFileSync(P(pr.root, "annotations.json"), JSON.stringify(list, null, 2) + "\n");

@@ -51,12 +51,24 @@ description: "极简 GSD 讨论(决策捕获,灵魂环节):思考伙伴而非采
 
 ## 用户批注消化(开头必做)
 
-讨论开始前先读 `.planning/annotations.json`(用户落盘的审核意见):**status=open 的批注按 type 消化**,消化后把该条 status 改 digested —— 不消化,检查器默认模式会一直黄提醒「N 条用户批注待消化」。
+讨论开始前先读 `.planning/annotations.json`(用户落盘的审核意见);`.planning/annotations.json` 不存在 = 没有待消化批注，直接继续。**status=open 的批注按 type 消化**,消化后把该条 status 改 digested —— 不消化,检查器默认模式会一直黄提醒「N 条用户批注待消化」。
 
 - **需求遗漏** → 按批注内容草拟 REQ 追加进 REQUIREMENTS.md,走下面的确认门复述;
 - **方向不对** → 作为本次讨论的输入重开对应决策,推翻的 D-NN 在 CONTEXT 里改写并注明日期;
 - **备注** → 记录参考(进 CONTEXT 的 specifics),不改决策;
 - **验收不过** → 不在讨论期修,走 mm-gsd-loop 的「点修」分流(不新增 REQ + 不改 D-NN + ≤5 文件 → R 票)。
+
+## 批注分流表(diagnose / repair / requirement / note)
+
+一键批注(作业型)带 action 字段,消费端按 action 分流到四条去处:
+
+- **diagnose** → 诊断(未收口 phase 的排查;已交付 phase 的细节走 repair);
+- **repair** → 点修 R 票(照 mm-gsd-loop 的「点修」节);
+- **requirement** → 补 REQ(草拟后走确认门);
+- **note** → 记参考(进 CONTEXT 的 specifics)。
+
+没有 action 的老批注仍按 type 消化:需求遗漏→补 REQ / 方向不对→重开决策 / 验收不过→点修分流 / 备注→记参考。
+消化完把结论摘要回填到该批注的 note 字段,并把 status 改成 digested。
 
 ## 确认门
 
