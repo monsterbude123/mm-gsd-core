@@ -454,6 +454,85 @@ const CHECKS = {
     return pass;
   },
 
+  // R-25:预审只审判断题(28-11)——分类降级的接线必须活着,剥掉即红
+  "check-review-scope"(report) {
+    const src = readFileSync(R("skills", "mm-gsd-loop", "references", "plan-ready.mjs"), "utf8");
+    let pass = true;
+    for (const mark of ["MACHINE-CLASSIFIABLE", "MACHINE_SIGNS", "classifyArtifactBlockers"]) {
+      if (!src.includes(mark)) { report.fail("plan-ready.mjs 丢了 " + mark + " —— 预审工件里的机器可判发现会重新混进拦工(R-25 被掏空)"); pass = false; }
+    }
+    if (pass) report.pass("机器可判发现分类降级接线在位(plan-ready.mjs)");
+    return pass;
+  },
+
+  // R-26:收敛单位是 phase,计数不降即停转人(28-11)
+  "check-review-convergence"(report) {
+    const src = readFileSync(R("skills", "mm-gsd-loop", "references", "plan-ready.mjs"), "utf8");
+    let pass = true;
+    for (const mark of ["readPhaseConvergence", "REVIEW-CONVERGENCE-STALLED", "PHASE_CONVERGENCE_REQUIRED_FROM"]) {
+      if (!src.includes(mark)) { report.fail("plan-ready.mjs 丢了 " + mark + " —— phase 级收敛被掏空"); pass = false; }
+    }
+    if (pass) {
+      let active = null;
+      try {
+        const m = readFileSync(R(".planning", "STATE.md"), "utf8").match(/^active_phase:\s*"?(\d+)"?/m);
+        if (m) active = m[1];
+      } catch { /* 无 STATE:活检不适用 */ }
+      if (active && existsSync(R(".planning"))) {
+        const conv = [];
+        for (const n of readdirSync(R(".planning"))) {
+          if (!n.startsWith(active + "-REVIEW-CONVERGENCE") || !n.endsWith(".md")) continue;
+          const fm = readFileSync(R(".planning", n), "utf8").split(/^---$/m)[1] ?? "";
+          const rm = fm.match(/^round:\s*(\d+)\s*$/m), nm = fm.match(/^new_judgment:\s*(\d+)\s*$/m);
+          if (rm && nm) conv.push({ round: Number(rm[1]), nj: Number(nm[1]) });
+        }
+        conv.sort((a, b) => a.round - b.round);
+        for (let i = 1; i < conv.length; i++) {
+          if (conv[i].nj >= conv[i - 1].nj) {
+            report.fail("phase " + active + " 的预审收敛停滞(round " + conv[i].round + " 的 new_judgment 未低于上一轮)—— 升级到人拍板,不要再开一轮");
+            pass = false;
+          }
+        }
+      }
+    }
+    if (pass) report.pass("phase 级收敛接线在位,无停滞序列");
+    return pass;
+  },
+
+  // R-27:票据体量真门禁(28-10 落地口径,此处对活票活检)
+  async "check-ticket-size"(report) {
+    const { parsePlan, BUDGET, SIZE_EXEMPT } = await import("../skills/mm-gsd-loop/references/plan-review-gate.mjs");
+    let active = null;
+    try {
+      const m = readFileSync(R(".planning", "STATE.md"), "utf8").match(/^active_phase:\s*"?(\d+)"?/m);
+      if (m) active = m[1];
+    } catch { /* 无 STATE:活检不适用 */ }
+    if (!active) { report.info("没有 active_phase —— 体量门活检不适用"); return true; }
+    const dir = R(".planning");
+    let pass = true, checked = 0;
+    if (existsSync(dir)) {
+      for (const n of readdirSync(dir)) {
+        if (!n.startsWith(active + "-") || !n.endsWith("-PLAN.md")) continue;
+        const id = n.replace(/-PLAN\.md$/, "");
+        if (SIZE_EXEMPT.has(id)) continue;
+        let covered = false;
+        try { covered = /^status:\s*complete/m.test(readFileSync(R(".planning", id + "-SUMMARY.md"), "utf8")); } catch { /* 未收口照判 */ }
+        if (covered) continue;
+        const { tasks } = parsePlan(readFileSync(R(".planning", n), "utf8"));
+        for (const t of tasks) {
+          const bytes = Buffer.byteLength(String(t.labels.verify ?? ""), "utf8");
+          if (bytes > BUDGET.verifyBytes) {
+            report.fail(id + " " + t.id + ": verify " + bytes + " 字节 > " + BUDGET.verifyBytes + " —— 夹具落自测,verify 只跑它");
+            pass = false;
+          }
+        }
+        checked++;
+      }
+    }
+    if (pass) report.pass("活票 verify 体量全部在预算内(" + checked + " 张)");
+    return pass;
+  },
+
   async "check-channel-safety"(report) {
     const { makeReleaseFlow, publishArgs } = await import("./release-flow.mjs");
     const calls = [];

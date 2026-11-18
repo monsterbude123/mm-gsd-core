@@ -259,9 +259,28 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
     // 预审工件(只有 --plan-check 判):显式校验问的是「现在能不能开工」,不是「合不合规」。
     // 判定住在 references/plan-ready.mjs —— 主脚本只留接线。
     if (PLAN_CHECK) {
-      const { checkPlanReady } = await import("../references/plan-ready.mjs");
-      const rr = checkPlanReady({ planPath: path });
+      const pr = await import("../references/plan-ready.mjs");
+      // phaseNo 在本循环下游才声明(TDZ)——这里就地从文件名取 phase
+      const convPhase = (name.match(/^(\d+)/) || [])[1] ?? "";
+      const conv = pr.readPhaseConvergence(dirname(path), convPhase);
+      // 乘法只在多票时存在:同 phase 未收口票 ≥2 才要求 phase 级收敛(单票夹具/单票 phase 的票级预审即收敛)
+      let unclosedSamePhase = 0;
+      try {
+        for (const n of readdirSync(dirname(path))) {
+          if (!n.startsWith(convPhase + "-") || !n.endsWith("-PLAN.md")) continue;
+          try { if (!/^status:\s*complete/m.test(readFileSync(join(dirname(path), n.replace(/-PLAN\.md$/, "-SUMMARY.md")), "utf8"))) unclosedSamePhase++; } catch { unclosedSamePhase++; }
+        }
+      } catch { /* 目录读不到就按 1 计 */ }
+      const superseded = conv.present;
+      if (superseded) {
+        w(`[REVIEW-CONVERGENCE] phase ${convPhase} 预审收敛在位(round ${conv.latest.round},status ${conv.latest.status})—— 票级预审由 phase 收敛取代`);
+        if (conv.stalled) e(conv.stalledMsg + " 停滞,转人", "拿收敛清单拍板:Proceed(把判断项归 Deferred 带进施工)或 Manual review");
+      } else if (Number(convPhase) >= pr.PHASE_CONVERGENCE_REQUIRED_FROM && unclosedSamePhase >= 2) {
+        e(`[REVIEW-CONVERGENCE] phase ${convPhase} 缺 phase 级预审收敛工件(<${convPhase}-REVIEW-CONVERGENCE.md>)—— ${pr.PHASE_CONVERGENCE_REQUIRED_FROM} 起 ${unclosedSamePhase} 张未收口票按 phase 一次预审(一个预算一份清单)`, "预审结论落盘为 phase 级收敛工件(round/new_judgment/open_judgment)再跑本命令");
+      }
+      const rr = pr.checkPlanReady({ planPath: path }, { superseded, phaseDir: dirname(path), phase: convPhase });
       review.push({ name, state: rr.state });
+      for (const c of rr.classified ?? []) w(`(${name.replace(/-PLAN\.md$/, "")}) ${c}`, "机器可判发现已下沉机器层,不计入 blocker 拦工(R-25)");
       for (const p of rr.problems) reviewErrs.push({ message: p.msg, fix: p.fix });
     }
 

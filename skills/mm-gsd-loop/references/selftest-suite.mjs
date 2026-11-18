@@ -4,7 +4,7 @@
 // 三种断言:eq(正则)、eqN(单值)、eqArr(数组)。全部把失败计入 st.bad。
 
 import { classifyArtifact, parseAccounting, commitExists, checkArtifactLedger } from "./artifact-ledger.mjs";
-import { checkPlanReady, REVIEW_PROMPT } from "./plan-ready.mjs";
+import { checkPlanReady, readPhaseConvergence, classifyArtifactBlockers, REVIEW_PROMPT } from "./plan-ready.mjs";
 import { checkPhaseCoverage } from "./decision-gates.mjs";
 import { checkTicketPremises } from "./verification-gates.mjs";
 import { staleDecisions, coveredDecisions, phaseCovered, staleNote, planExists, runDecisionContracts, checkPlanCheckArtifacts } from "./ticket-alive.mjs";
@@ -70,6 +70,27 @@ export function runReviewGateCases({ eqN }) {
   eqN(SIZE_EXEMPT.has("28-09"), true, "rgv-3b 豁免名单含退清单票 28-09");
   const r4 = checkPlanQuality(mk('node -e "1"'), { baseline: new Map() });
   eqN(r4.problems.some((p) => p.family === "F1-verify-blind"), true, "rgv-4 verify 不碰交付文件判 F1 盲验");
+}
+
+/** phase 级收敛用例组(28-11):收敛取代票级、停滞升级、machine 分类降级、祖父路径 */
+export function runConvergenceCases({ eqN }) {
+  const dir = mkdtempSync(join(tmpdir(), "ar-conv-"));
+  mkdirSync(join(dir, ".planning"), { recursive: true });
+  const MD = String.fromCharCode(46) + "md";
+  const fm = (o) => ["---", ...Object.entries(o).map(([k, v]) => k + ": " + v), "---"].join("\n");
+  writeFileSync(join(dir, ".planning", "99-REVIEW-CONVERGENCE-r1" + MD), fm({ round: 1, new_judgment: 3, open_judgment: 1, status: "blocked" }));
+  const c1 = readPhaseConvergence(join(dir, ".planning"), "99");
+  eqN(c1.present && !c1.stalled, true, "rcv-1 单轮收敛工件在场且不判停");
+  writeFileSync(join(dir, ".planning", "99-REVIEW-CONVERGENCE-r2" + MD), fm({ round: 2, new_judgment: 3, open_judgment: 2, status: "blocked" }));
+  eqN(readPhaseConvergence(join(dir, ".planning"), "99").stalled, true, "rcv-2 相邻两轮 new_judgment 不降判停");
+  writeFileSync(join(dir, ".planning", "99-01-PLAN-CHECK" + MD), fm({ status: "blocked", plan: "99-01", blockers: 2, warnings: 0 }) + "\n- [BLOCKER] cargo test -- no_case 零匹配假绿(零数据输入会绿)\n- [BLOCKER] 断言计数把表头算进表体,数错(自证类)");
+  const cls = classifyArtifactBlockers(join(dir, ".planning", "99-01-PLAN-CHECK" + MD));
+  eqN(cls.judgmentCount, 0, "rcv-3 两条机器可判 BLOCKER 全部分类降级");
+  writeFileSync(join(dir, ".planning", "99-01-PLAN" + MD), ["---", "phase: \"99\"", "plan: \"01\"", "goal: 夹具", "files_modified:", "  - x.md", "depends_on: []", "cwd: .", "---", "", "## T1", "", "- **files**: x.md", "- **action**: 改 x.md", "- **verify**: node -e \"0\"", "- **done**: 夹具即本行"].join("\n"));
+  const sup = checkPlanReady({ planPath: join(dir, ".planning", "99-01-PLAN" + MD) }, { superseded: true });
+  eqN(sup.state, "passed", "rcv-4 superseded 下全 machine 类降级不拦工");
+  const legacy = checkPlanReady({ planPath: join(dir, ".planning", "99-01-PLAN" + MD) });
+  eqN(legacy.state === "blocked" || legacy.state === "missing", true, "rcv-4b 祖父路径:无收敛工件时保持票级旧判");
 }
 
 /**
