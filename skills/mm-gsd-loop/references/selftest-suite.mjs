@@ -8,7 +8,7 @@ import { checkPlanReady, readPhaseConvergence, classifyArtifactBlockers, REVIEW_
 import { discoverPacks, resolvePack, resolveEntry, makePackFixture } from "./packs.mjs";
 import { checkCoreBoundary } from "./core-boundary.mjs";
 import { checkRequirementMining, phaseReqs } from "./requirement-mining.mjs";
-import { checkPhaseCoverage } from "./decision-gates.mjs";
+import { checkPhaseCoverage, checkReversibility } from "./decision-gates.mjs";
 import { checkTicketPremises } from "./verification-gates.mjs";
 import { staleDecisions, coveredDecisions, phaseCovered, staleNote, planExists, runDecisionContracts, checkPlanCheckArtifacts } from "./ticket-alive.mjs";
 import { phaseHealth } from "./telemetry-aggregate.mjs";
@@ -193,6 +193,24 @@ export function runCoreBoundaryCases({ eqN }) {
   eqN(r6.length, 0, "core-6 可选包自己的文件豁免");
   const r7 = rules(tree({ [coreMd]: "核心文档点了命令调用形:mm-gsd fake\n", [packMd]: packSkill, [packEntry]: "export const x = 1;\n" }));
   eqN(r7.join(","), "2", "core-4 核心文件有命令调用形 → 规则二");
+}
+
+/** 决策声明口径用例组(28-08):只认带方括号的大写 ID,散文裸引用不算;三条契约同一把尺 */
+export function runDecisionScopeCases({ eqN }) {
+  const rev = (t) => {
+    const errs = [];
+    checkReversibility({ ctxName: "t", ctxText: t, e: (m) => errs.push(m) });
+    return errs;
+  };
+  const prose = "<decisions>\n### [D-01] reversible title\n</decisions>\n- D-04 要加 action 两个字段\n";
+  eqN(rev(prose).length, 0, "decscope-1 散文里的裸引用不算决策");
+  const missing = "<decisions>\n### [D-02] title\n</decisions>\n";
+  eqN(rev(missing).length > 0, true, "decscope-2 真决策缺可逆性标记仍判红");
+  const forms = ["### [D-01] title", "- [D-03] title", "**[D-04]** title", "[D-05] title"];
+  eqN(forms.filter((f) => rev("<decisions>\n" + f + "\n</decisions>\n").length > 0).length, 4, "decscope-3 四种前缀形态照旧被认");
+  const mixed = "<decisions>\n### [D-01] t1\n### [D-02] t2\n### [D-03] t3\n</decisions>\n- D-04 要加 action 两个字段\n";
+  const ids = [...mixed.matchAll(/\[(D-\d+)\]/g)].map((m) => m[1]);
+  eqN([new Set(ids).size, rev(mixed).length].join(","), "3,3", "decscope-4 三条契约同一口径(3 条决策各报一条缺标记,散文行不加第 4 条)");
 }
 
 /** 深挖需求门用例组(28-07,R-29):四问核对真调 checkRequirementMining,豁免两套口径各一条 */
