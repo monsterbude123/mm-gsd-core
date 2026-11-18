@@ -6,6 +6,7 @@
 import { classifyArtifact, parseAccounting, commitExists, checkArtifactLedger } from "./artifact-ledger.mjs";
 import { checkPlanReady, readPhaseConvergence, classifyArtifactBlockers, REVIEW_PROMPT } from "./plan-ready.mjs";
 import { discoverPacks, resolvePack, resolveEntry, makePackFixture } from "./packs.mjs";
+import { checkCoreBoundary } from "./core-boundary.mjs";
 import { checkPhaseCoverage } from "./decision-gates.mjs";
 import { checkTicketPremises } from "./verification-gates.mjs";
 import { staleDecisions, coveredDecisions, phaseCovered, staleNote, planExists, runDecisionContracts, checkPlanCheckArtifacts } from "./ticket-alive.mjs";
@@ -160,6 +161,37 @@ export function runTelemetryViewCases({ eqN, eqArr }) {
   rmSync(emptyDir, { recursive: true, force: true });
   eqN(res.status === 0 && res.stdout === marker && res.stderr === "" && left.length === 0, true, "遥测 import 无副作用");
   rmSync(fixtureDir, { recursive: true, force: true });
+}
+
+/** 核心边界门用例组(28-04,R-28):脏树/净树/无包树/包内豁免真调 checkCoreBoundary;夹具只用假包名 */
+export function runCoreBoundaryCases({ eqN }) {
+  const tree = (files) => {
+    const root = mkdtempSync(join(tmpdir(), "mm-gsd-coreb-"));
+    for (const k of Object.keys(files)) {
+      const p = join(root, k);
+      mkdirSync(dirname(p), { recursive: true });
+      writeFileSync(p, files[k]);
+    }
+    return root;
+  };
+  const packSkill = '---\nname: "mm-gsd-fake"\nentry: scripts/entry.mjs\noptional: true\ndisplay: 假包\n---\n\n包自己的正文(显示名 假包 与目录名 mm-gsd-fake 在这里合法)';
+  const coreMd = "skills/mm-gsd-loop/references/doc.md";
+  const coreMjs = "skills/mm-gsd-loop/references/code.mjs";
+  const packMd = "skills/mm-gsd-fake/SKILL.md";
+  const packEntry = "skills/mm-gsd-fake/scripts/entry.mjs";
+  const rules = (root) => checkCoreBoundary({ skillsRoot: join(root, "skills"), binPath: join(root, "bin") }).map((p) => p.rule);
+  const r1 = rules(tree({ [coreMd]: "核心文档点了显示名:假包\n", [packMd]: packSkill, [packEntry]: "export const x = 1;\n" }));
+  eqN(r1.join(","), "1", "core-1 核心 .md 有包显示名 → 规则一");
+  const r2 = rules(tree({ [coreMjs]: "核心代码点了包目录名:mm-gsd-fake\n", [packMd]: packSkill, [packEntry]: "export const x = 1;\n" }));
+  eqN(r2.join(","), "2", "core-3 核心 .mjs 有包目录名 → 规则二");
+  const r4 = rules(tree({ [coreMd]: "核心文档不提包\n", [coreMjs]: "核心代码不提包\n", [packMd]: packSkill, [packEntry]: "export const x = 1;\n" }));
+  eqN(r4.length, 0, "core-2 干净的树 → 0 条");
+  const r5 = rules(tree({ [coreMd]: "没有可选包的树\n" }));
+  eqN(r5.length, 0, "core-5 没有可选包 → 0 条");
+  const r6 = rules(tree({ [packMd]: packSkill + "\n包自己的文件里写显示名与目录名 mm-gsd-fake", [packEntry]: "export const x = 1;\n" }));
+  eqN(r6.length, 0, "core-6 可选包自己的文件豁免");
+  const r7 = rules(tree({ [coreMd]: "核心文档点了命令调用形:mm-gsd fake\n", [packMd]: packSkill, [packEntry]: "export const x = 1;\n" }));
+  eqN(r7.join(","), "2", "core-4 核心文件有命令调用形 → 规则二");
 }
 
 /**

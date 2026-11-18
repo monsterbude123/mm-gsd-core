@@ -533,6 +533,12 @@ const CHECKS = {
     return pass;
   },
 
+  // R-28:核心不许知道可选包(28-04,D-09/REQ-60)—— 判据权威在 references/core-boundary.mjs
+  async "check-core-boundary"(report) {
+    const { checkCoreBoundaryAll } = await import("../skills/mm-gsd-loop/references/core-boundary.mjs");
+    return checkCoreBoundaryAll({ root: ROOT, report });
+  },
+
   async "check-channel-safety"(report) {
     const { makeReleaseFlow, publishArgs } = await import("./release-flow.mjs");
     const calls = [];
