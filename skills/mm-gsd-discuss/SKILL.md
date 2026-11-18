@@ -25,7 +25,7 @@ description: "极简 GSD 讨论(决策捕获,灵魂环节):思考伙伴而非采
 
 ## 需求全量落盘
 
-- 用户本次提的**每一条需求(含隐含的)**都要落成 REQ-N 条目,**追加**进 `.planning/REQUIREMENTS.md`(不覆盖已有条目),格式:`- REQ-N: <需求一句话>`,一行一条。没有 REQUIREMENTS.md 时由 discuss 创建。
+- **每条诉求都要有归宿**:**落成 REQ-N 条目**(归宿是需求的)、**进候选纪律**(归宿是纪律的)、**记 deferred**(明确暂不做的)三者选一,不许无归宿。归宿是 REQ 的**追加**进 `.planning/REQUIREMENTS.md`(不覆盖已有条目),格式:`- REQ-N: <需求一句话>`,一行一条。没有 REQUIREMENTS.md 时由 discuss 创建。
 - 分工:**REQ = 要达成什么**(用户说的,REQUIREMENTS.md 承载);**D-NN = 怎么定**(拍板定的,CONTEXT 承载)。不要把 REQ 写进 CONTEXT,也不要把「要不要拍板」的事项写成 REQ —— 那是 D-NN 的活。
 - 漏落的代价:REQ 不在清单里,后面整条链路(票 covers 认领 → checkReqCoverage 覆盖门 → verify 预审)都对不上它。落盘时自检一遍:还有没有"用户提了、REQ 清单里没有"的口子。
 - REQ-N 落盘后进确认门复述清单(见下「确认门」)—— 复述以 REQUIREMENTS.md 落盘内容为准,不在会话里另存一份。

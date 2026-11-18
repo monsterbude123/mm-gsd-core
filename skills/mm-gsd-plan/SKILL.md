@@ -59,7 +59,7 @@ CONTEXT 每条 D-NN 必须被本 phase **至少一张票认领**并精确实现;
 
 ## 执行前预审与显式校验
 
-机械合规(`--plan` 退出码 0)不等于计划成立 —— 执行前编排层派**全新上下文只读子代理**预审(照 mm-gsd-verify「执行前预审」节;自己写自己审不算数;你多半是被派出来的,把票交回编排层派),产出 `<NN-MM>-PLAN-CHECK.md`;BLOCKER 不清零不许进执行,预审只报不处方。用户随时问「这份计划能开工吗」→ **直接调用 `mm-gsd-plan-check` 技能**(或跑 `node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --plan-check <PLAN>`);预审没做它会把提示词打印出来;blocked 就修,改了计划则上轮结论作废重审。
+机械合规(`--plan` 退出码 0)不等于计划成立 —— 执行前编排层派**全新上下文只读子代理**预审(照 mm-gsd-verify「执行前预审」节;自己写自己审不算数;你多半是被派出来的,把票交回编排层派),产出 `<NN-MM>-PLAN-CHECK.md`;BLOCKER 不清零不许进执行,预审只报不处方。改了 PLAN → **机器判据重跑 + 增量销号复核**(复核只读上一轮判断项的销号结论与新增项,计数不降即停,R-26);phase 收敛工件在场时票级预审被取代(28-11)。用户随时问「这份计划能开工吗」→ **直接调用 `mm-gsd-plan-check` 技能**(或跑 `node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --plan-check <PLAN>`);预审没做它会把提示词打印出来。
 
 ## 完成后
 
