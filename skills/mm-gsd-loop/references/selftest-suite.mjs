@@ -11,6 +11,7 @@ import { staleDecisions, coveredDecisions, phaseCovered, staleNote, planExists, 
 import { phaseHealth } from "./telemetry-aggregate.mjs";
 import { checkRoutes, routeSection, pointerCard, reviewerCard } from "./agent-routing.mjs";
 import { deriveWaves } from "./worktree-view.mjs";
+import { checkPlanQuality, SIZE_EXEMPT } from "./plan-review-gate.mjs";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, rmSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -50,6 +51,25 @@ export function runWaveFromDagCases({ eqN }) {
     { id: "28-05", depends: ["28-02", "28-03"] }, { id: "28-06", depends: ["28-02", "28-05"] },
   ]);
   eqN(real06.get("28-06"), 5, "wvd-4 28-06 真实形态推导 5(手写 6 与之不符,门在 --plan 批图区判红)");
+}
+
+/** 14 族机器门用例组(28-10):真调 checkPlanQuality,判据掏空时这些锚点一起红 */
+export function runReviewGateCases({ eqN }) {
+  const mk = (verify) => [
+    "---", "phase: \"41\"", "plan: \"01\"", "goal: 夹具票", "files_modified:", "  - bin/x.mjs",
+    "depends_on: []", "cwd: .", "---", "", "## T1 夹具", "", "- **files**: bin/x.mjs",
+    "- **action**: 改 bin/x.mjs", "- **verify**: " + verify,
+  ].join("\n");
+  const r1 = checkPlanQuality(mk("f(){ false; local code; code=$?; }"), { baseline: new Map() });
+  eqN(r1.problems.some((p) => p.family === "F16-exit-code-capture-adjacency"), true, "rgv-1 F16 捕获邻接(local 后才捕 $? 必红)");
+  const big = "echo x;".repeat(600);
+  const r2 = checkPlanQuality(mk(big), { baseline: new Map() });
+  eqN(r2.problems.some((p) => p.family === "F6-budget" && p.msg.includes("[TICKET-SIZE]")), true, "rgv-2 单行巨串 verify 被 [TICKET-SIZE] 字节门判红");
+  const r3 = checkPlanQuality(mk(big), { baseline: new Map(), planId: "28-06" });
+  eqN(r3.problems.some((p) => p.family === "F6-budget"), false, "rgv-3 SIZE_EXEMPT 内票号豁免 F6(决定 #1)");
+  eqN(SIZE_EXEMPT.has("28-09"), true, "rgv-3b 豁免名单含退清单票 28-09");
+  const r4 = checkPlanQuality(mk('node -e "1"'), { baseline: new Map() });
+  eqN(r4.problems.some((p) => p.family === "F1-verify-blind"), true, "rgv-4 verify 不碰交付文件判 F1 盲验");
 }
 
 /**

@@ -446,11 +446,37 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
     for (const p of vg.checkTicketPremises(tickets, root)) e(p, "把路径改成真实存在的;这张票要产出的新文件写进 <files>,别在 read_first 里凭空引一个");
     for (const p of vg.checkTicketLoad(tickets)) e(p, "砍掉真理来源文件或拆票 —— read_first 是执行前要全部读完的清单");
     for (const p of vg.checkReqClaims(tickets, root)) e(p, "covers 只写真有的 REQ;要新需求就回 discuss 补进 REQUIREMENTS.md");
+    // 14 族机器门(28-10):人报 BLOCKER 里机器可判的发现在规划期当场判红,预审只看机器判不了的。
+    // 判据权威在 references/plan-review-gate.mjs(本段只注入 ctx 与转发);基线按 §2.4 解析,
+    // 锚点缺失 ⇒ 空 Map ⇒ 基线族跳过(判不了不猜),绝不回落 HEAD。F6 对 SIZE_EXEMPT 票豁免(决定 #1)。
+    {
+      const { checkPlanQuality } = await import("../references/plan-review-gate.mjs");
+      const { resolveReviewBaseline } = await import("../references/worktree-view.mjs");
+      const planId = name.replace(/-PLAN\.md$/, "");
+      let contextText = "";
+      try { contextText = readFileSync(join(dirname(path), phaseNo + "-CONTEXT.md"), "utf8"); } catch { /* 双布局另一种落点 */ }
+      if (!contextText) { try { contextText = readFileSync(join(root, ".planning", phaseNo + "-CONTEXT.md"), "utf8"); } catch { /* 无 CONTEXT:F3 判不了不猜 */ } }
+      let reqText = "";
+      try { reqText = readFileSync(join(root, ".planning", "REQUIREMENTS.md"), "utf8"); } catch { /* 无 REQ 清单:F3 判不了 */ }
+      const baseline = resolveReviewBaseline(planId, root);
+      // 兄弟票文本(F15 生产者证据):同 phase 的其他 PLAN 全文,接线时现读
+      const siblings = [];
+      try {
+        for (const n of readdirSync(dirname(path))) {
+          if (n !== name && n.startsWith(phaseNo + "-") && n.endsWith("-PLAN.md")) siblings.push(readFileSync(join(dirname(path), n), "utf8"));
+        }
+      } catch { /* 目录读不到就没有兄弟证据 */ }
+      const gr = checkPlanQuality(txt, { contextText, reqText, baseline, planId, siblings });
+      for (const p of gr.problems)
+        p.severity === "advisory"
+          ? w("[" + p.family + "] (" + planId + ") " + p.msg, "advisory 不拦 —— 人判断题留给预审(F3 按设计)")
+          : e("[" + p.family + "] (" + planId + ") " + p.msg, "按族修票面;判据权威与口径见 references/plan-review-gate.mjs(28-REMEDIATION §2.4/§2.5)");
+    }
     // 批图(phase 08 D-02):同 phase 内可并行的票不许撞文件、依赖不许成环。
     // R 票不进批图(D-06):修复是原 phase 收尾后的串行补票,不是新的并行面 ——
     // 两张 R 票碰同一个被修文件是常态,卷进批图会误判「并行撞文件」。
     if (!isRepair)
-      batchPlans.push({ id: name.replace(/-PLAN\.md$/, ""), phase: phaseNo, files: parsed.files, depends: depList(fm.depends_on), wave: String(fm.wave ?? "").trim() === "" ? null : Number(fm.wave) });
+      batchPlans.push({ id: name.replace(/-PLAN\.md$/, ""), phase: phaseNo, files: parsed.files, depends: depList(fm.depends_on), wave: String(fm.wave ?? "").trim() === "" ? null : Number(fm.wave), dir: dirname(path) });
   }
   {
     const wv = await import("../references/worktree-view.mjs");
@@ -461,12 +487,28 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
     }
     // 波次推导门(R-24,28-13):wave 是 DAG 推导的缓存不是真相源 —— 手写值与依赖推导不符,
     // 执行端就按错序开工;要改顺序就改 depends_on,不是改 wave(用户裁定:次序不重要,DAG 对应就行)。
+    // 推导宇宙 = 本 phase 全部票面的 frontmatter:显式传入的可能只是子集(单票 --plan),
+    // 按批内集合推导会让依赖全按 0 计、链上票的波次塌缩成 1(28-08 单票误红即此因)。
     for (const ph of [...new Set(batchPlans.map((b) => b.phase))]) {
-      const set = batchPlans.filter((b) => b.phase === ph);
-      const derived = wv.deriveWaves(set);
-      for (const p of set) {
-        if (p.wave !== null && derived.get(p.id) !== p.wave)
-          e(`${p.id}: wave 手写 ${p.wave} ≠ DAG 推导 ${derived.get(p.id)} —— 次序从 depends_on 推导;要改顺序就改 depends_on,不是改 wave`);
+      const universe = new Map();
+      for (const b of batchPlans.filter((x) => x.phase === ph)) {
+        if (!universe.has(b.id)) universe.set(b.id, { id: b.id, wave: b.wave, depends: b.depends });
+        try {
+          for (const n of readdirSync(b.dir)) {
+            if (n === b.id + "-PLAN.md" || !n.endsWith("-PLAN.md") || !n.startsWith(ph + "-")) continue;
+            const oid = n.replace(/-PLAN\.md$/, "");
+            if (universe.has(oid)) continue;
+            const fm2 = readFileSync(join(b.dir, n), "utf8").split(/^---$/m)[1] ?? "";
+            const wm = fm2.match(/^wave:\s*(\d+)\s*$/m);
+            const dm = fm2.match(/^depends_on:\s*(.+)$/m);
+            universe.set(oid, { id: oid, wave: wm ? Number(wm[1]) : null, depends: dm ? (dm[1].match(/\d+-\d+/g) ?? []) : [] });
+          }
+        } catch { /* 目录读不到就按批内集合推导 */ }
+      }
+      const derived = wv.deriveWaves([...universe.values()]);
+      for (const b of batchPlans.filter((x) => x.phase === ph)) {
+        if (b.wave !== null && derived.get(b.id) !== b.wave)
+          e(`${b.id}: wave 手写 ${b.wave} ≠ DAG 推导 ${derived.get(b.id)} —— 次序从 depends_on 推导;要改顺序就改 depends_on,不是改 wave`);
       }
     }
     // 需求覆盖门(phase 17 D-03,issue #21):checkReqClaims 的正方向 —— REQ 落盘了但无人认领。

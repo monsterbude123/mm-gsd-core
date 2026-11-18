@@ -427,13 +427,15 @@ const CHECKS = {
     const names = existsSync(dir) ? readdirSync(dir).filter((n) => new RegExp("^" + active + "-\\d+-PLAN\\.md$").test(n)) : [];
     if (!names.length) { report.info("phase " + active + " 没有 PLAN —— wave 推导门不适用"); return true; }
     const plans = [];
+    const coveredIds = new Set();
     for (const n of names) {
       const id = n.replace(/-PLAN\.md$/, "");
       let covered = false;
       try {
         covered = /^status:\s*complete/m.test(readFileSync(R(".planning", id + "-SUMMARY.md"), "utf8"));
       } catch { /* 无 SUMMARY = 未收口,照判 */ }
-      if (covered) continue;
+      // 收口票进推导宇宙(它是别人依赖的图锚),只豁免判红(D-14:门只对活票判)
+      if (covered) coveredIds.add(id);
       const fm = readFileSync(R(".planning", n), "utf8").split(/^---$/m)[1] ?? "";
       const waveM = fm.match(/^wave:\s*(\d+)\s*$/m);
       const depM = fm.match(/^depends_on:\s*(.+)$/m);
@@ -442,12 +444,13 @@ const CHECKS = {
     const derived = deriveWaves(plans);
     let pass = true;
     for (const p of plans) {
+      if (coveredIds.has(p.id)) continue;
       if (p.wave !== null && derived.get(p.id) !== p.wave) {
         report.fail(p.id + ": wave 手写 " + p.wave + " ≠ DAG 推导 " + derived.get(p.id) + " —— 次序从 depends_on 推导;要改顺序就改 depends_on,不是改 wave");
         pass = false;
       }
     }
-    if (pass) report.pass("wave 与 DAG 推导一致(" + plans.length + " 张活票)");
+    if (pass) report.pass("wave 与 DAG 推导一致(" + (plans.length - coveredIds.size) + " 张活票)");
     return pass;
   },
 

@@ -1,0 +1,632 @@
+// 验收结论对账 —— 从 template-gates.mjs 里拆出来的第二个契约模块。
+//
+// 为什么拆:template-gates.mjs 的头注释写着「模板契约规则会越长越多」,而它是 200 行硬闸。
+// 模板契约(结构/枚举/占位)和验收语义(正文判定 vs frontmatter status)是两回事:
+//   template-gates  —— 工件长什么样
+//   verification-gates —— 工件说的话可不可信
+// 混在一起第一个就会顶破上限,所以拆。
+//
+// 为什么必须有:模板把「人工项非空时禁止 passed」写成了散文纪律,而机器只查 status 合法性。
+// 实测过的假绿灯:正文 6 条 truth 里 4 条 ✗ FAILED、1 条 ? UNCERTAIN、人工区非空,
+// frontmatter 写 status: passed / score: 6/6 —— gsd-state-check.mjs EXIT=0,phase 判完成。
+//
+// 本模块第一版有个更隐蔽的洞(2026-10-20 修):判定词表是封闭的,**认不出的写法整行丢弃**,
+// 而 T-08 兜底只在「一行都没解析出来」时生效 —— 于是「一行能解析、其余全部漏掉」
+// 反而静默放行。实测 ❌ FAILED / ✖ FAILED / 裸 FAILED 全部漏过。更糟的是人工区小节正则
+// 要求裸标题,而模板写的是 `## Human Verification Required(机器验不了,恒发不省略)` ——
+// **模板与闸互不兼容,这条纪律在任何照模板写的报告上都不生效。**
+// 教训:验证闸的输入必须来自闸作者自己的模板之外。用自己产出的文档验证自己写的解析器,
+// 等于没验证 —— 模板和闸会一起错,谁也发现不了。
+
+// 符号集放宽到 emoji —— agent 输出里 emoji 判定极其常见,模板不该是唯一合法写法。
+const VERDICT_RE = [
+  ["VERIFIED", /^[✓✔✅]\s*VERIFIED/i],
+  ["FAILED", /^[✗✘❌❎]\s*FAILED/i],
+  ["UNVERIFIED", /^⚠️?\s*PRESENT_BEHAVIOR_UNVERIFIED/i],
+  ["UNCERTAIN", /^[?？❓❔]\s*UNCERTAIN/i],
+];
+// 指纹:这一格在谈「验证 / 失败」这件事,却没被精确 token 认下 → 写法跑偏,算 UNKNOWN。
+// 比精确 token 松、比任意散文紧:Artifacts 表第 3 格的 `✓` 或 `212 行` 不含这些词,不会误伤。
+const VERDICT_FINGERPRINT = /\b(VERIFIED|FAILED|UNCERTAIN|UNVERIFIED)\b/i;
+
+/** 统计 Observable Truths 表的判定列。取第 3 格而非全行正则 —— 证据列里可能合法出现 FAILED 字样 */
+function truthVerdicts(text) {
+  const c = { VERIFIED: 0, FAILED: 0, UNVERIFIED: 0, UNCERTAIN: 0, UNKNOWN: 0 };
+  for (const line of text.split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t.startsWith("|")) continue;
+    const cell = t.split("|").slice(1, -1).map((s) => s.trim())[2] ?? "";
+    if (/^(状态|status|verdict)$/i.test(cell) || /^:?-{2,}:?$/.test(cell)) continue;
+    let hit = false;
+    for (const [k, re] of VERDICT_RE) if (re.test(cell)) { c[k]++; hit = true; break; }
+    if (!hit && VERDICT_FINGERPRINT.test(cell)) c.UNKNOWN++;
+  }
+  return c;
+}
+
+/**
+ * 人工验证小节里有几条真实条目(剔掉 <> 占位后仍有实质内容)。
+ * 标题正则必须容得下模板自己写的括号后缀,否则这条纪律等于不存在。
+ *
+ * `(?!\*\*)` 是为了把**粗体段落**排除在清单之外:`*` 既是列表标记也是粗体标记,
+ * 于是 `**结论**:……` 会被当成一条人工项 —— 而任何以粗体结论收尾的 passed 报告
+ * 都会被误判成「有人工项」,被迫降级成 human_needed。只排除 `**` 开头的那种,
+ * `* 条目` / `- [ ] 条目` 照旧认(松手就会把真人工项漏成假绿,T-03)。
+ */
+function humanItems(text) {
+  const m = text.match(/^#{2,4}\s*[^\n]*\b(Human\s+Verification|人工验证|人工确认)\b[^\n]*$/im);
+  if (!m) return 0;
+  const rest = text.slice(m.index + m[0].length);
+  const next = rest.search(/\n#{2,4}\s/);
+  return (next < 0 ? rest : rest.slice(0, next))
+    .split(/\r?\n/)
+    .filter((l) => /^\s*(?!\*\*)[-*]\s*(?:\[[ xX]?\])?\s*\S/.test(l) && l.replace(/<[^>]*>/g, "").replace(/[\s:：—。，,]/g, "").length >= 4)
+    .length;
+}
+
+const scoreOf = (text) => {
+  const m = text.match(/^score:\s*(\d+)\s*\/\s*(\d+)/m);
+  return m ? { n: +m[1], d: +m[2] } : null;
+};
+
+/**
+ * 验收结论一致性闸。只在 status 是 passed 时逐条对账 —— gaps_found / human_needed
+ * 本来就承认有没验过的部分,拿它们去要求「全绿」是逼人把缺口藏起来。
+ * 返回 [{message, fix, level}] —— level 为 "warn" 的不拦人。
+ */
+export function validateVerification(text, status) {
+  const out = [];
+  const add = (m, fix, level = "err") => out.push({ message: m, fix, level });
+  const c = truthVerdicts(text);
+  const parsed = c.VERIFIED + c.FAILED + c.UNVERIFIED + c.UNCERTAIN;
+  const total = parsed + c.UNKNOWN;
+
+  if (status !== "passed") {
+    if (status === "gaps_found" && !c.FAILED)
+      add("声明 gaps_found 但正文找不到 ✗ FAILED 条目", "缺口要落到具体 truth;缺口只在工件层就在 Artifacts 表里标出来", "warn");
+    return out;
+  }
+  // 一条判定都读不出来 = 格式跑偏或解析器失效。T-08:门禁读不到输入却放行,比误红危险得多。
+  if (!total)
+    return [{ message: "status=passed 但一条 truth 判定都解析不出", fix: "按模板写 Observable Truths 表,判定列用 ✓ VERIFIED / ✗ FAILED / ⚠ PRESENT_BEHAVIOR_UNVERIFIED / ? UNCERTAIN", level: "err" }];
+  // 有行却认不出写法 —— 上一版把这种行整行丢弃,导致「一行能解析、其余全漏」反而静默放行。
+  // 写法跑偏等于这条 truth 根本没被验过,不能算进 VERIFIED,更不能被 passed 盖过去。
+  if (c.UNKNOWN)
+    add(`判定列有 ${c.UNKNOWN} 行写法不认,却写 status: passed`, "判定列只用 ✓/✗/⚠/? 四种写法(emoji 变体也认);认不出的写法等于这条 truth 没被验过");
+  if (c.FAILED)
+    add(`正文有 ${c.FAILED} 条 ✗ FAILED,却写 status: passed`, "有 FAILED 就是 gaps_found —— passed 要求每条 truth 都有行为证据");
+  if (c.UNVERIFIED)
+    add(`正文有 ${c.UNVERIFIED} 条 ⚠ PRESENT_BEHAVIOR_UNVERIFIED,却写 status: passed`, "这类没被任何测试真的触发过状态转移/清理/顺序,不算 verified 分数,只能 human_needed");
+  if (c.UNCERTAIN)
+    add(`正文有 ${c.UNCERTAIN} 条 ? UNCERTAIN,却写 status: passed`, "拿不到证据就如实 human_needed,别用 passed 盖过去");
+  if (humanItems(text))
+    add("Human Verification Required 里有真实条目,却写 status: passed", "人工项非空时只能 human_needed;确实没有人工项就写 None 并说明全部由程序验证");
+  const s = scoreOf(text);
+  if (s && c.VERIFIED < s.n)
+    add(`score 写 ${s.n}/${s.d},正文只有 ${c.VERIFIED} 条 ✓ VERIFIED`, "score 是 VERIFIED 条数 / 总数,按正文实测写,不手填", "warn");
+  // 分母对账:真通过报告的 score 分母应等于正文判定行数。不对账等于「少写几条 truth」零成本。
+  if (s && total && s.d !== total)
+    add(`score 分母写 ${s.d},正文只有 ${total} 行判定`, "score 是 VERIFIED 数 / 总数,总数就是正文的判定行数 —— 少写几条 truth 不会让验收更真", "warn");
+  return out;
+}
+
+/* ================= 计划的可信度:票站在什么前提上(phase 09 D-07) =================
+ *
+ * 为什么放这里:本模块管「工件说的话可不可信」—— 验收结论件说「做到了」,要问可不可信;
+ * 计划说「要改这个文件、这条验证跑得起来」,同样要问可不可信。票站在假前提上,
+ * 执行端要么卡住反复找,要么自己编 —— 那就是「任务有幻觉,agent 在空转」。
+ *
+ * 只取工件事实(路径在不在、条数多少、REQ 认不认得),不猜作者是不是故意的。
+ * 判不出就判不出:REQUIREMENTS.md 不存在 → 需求反核销跳过,不猜。
+ */
+
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { splitCommands, isFullSuite } from "./worktree-view.mjs";
+import { parseReqLedger, reqState, successorExists } from "./req-ledger.mjs";
+
+/**
+ * 前提存在性:票里引用的路径,要么真实存在,要么是这张票自己要产出的。
+ *
+ * 例外(原版 `verify-command-path-resolvability.md:38` 的 pending_creation):票的 `files`
+ * 里列着的路径是**它自己会产出的**,不判 —— 判了就等于逼人先造文件再写票。
+ */
+export function checkTicketPremises(tickets, root) {
+  const problems = [];
+  const PATHY = /[\w./\-]+\.(?:mjs|cjs|js|ts|mts|cts|jsx|tsx|json|md|ya?ml|py|sh|html|css)\b/g;
+  for (const t of tickets) {
+    const own = new Set((t.files ?? []).map((f) => String(f).replace(/^\.\//, "")));
+    const seen = new Set();
+    // #12:判红要能定位 —— 来源(read_first 第 N 条 / verify 第 M 条命令)+ 记号上下文 + 豁免判定人话。
+    // 三层豁免(own/seen/existsSync)与 PATHY 不改,只加信息。
+    const missing = (p, src) => {
+      const rel = String(p).replace(/^\.\//, "");
+      if (own.has(rel) || seen.has(rel)) return;      // 这票自己产出 / 重复引用
+      seen.add(rel);
+      if (!existsSync(join(root, rel))) {
+        const at = src.raw.indexOf(String(p));
+        const ctx = at >= 0 ? src.raw.slice(Math.max(0, at - 20), at + String(p).length + 20).replace(/\s+/g, " ") : "";
+        problems.push(`${t.id}: ${src.label} 引用的 "${rel}" 不存在(…${ctx}…) —— 票站在一个假前提上,执行者会照着编或反复找;豁免判定:不在本票 <files>,磁盘上也没有它`);
+      }
+    };
+    (t.readFirst ?? []).forEach((p, i) => missing(p, { label: `read_first 第 ${i + 1} 条`, raw: String(p) }));
+    splitCommands(String(t.verify ?? "")).forEach((c, i) => {
+      for (const m of c.matchAll(PATHY)) missing(m[0], { label: `verify 第 ${i + 1} 条命令`, raw: c });
+    });
+  }
+  return problems;
+}
+
+/**
+ * 载量:一张票的 `read_first` 不得超过 8 条。
+ *
+ * `read_first` 是执行前**要全部读完**的文件(exec 的纪律:任务列出的文件全部读完再写第一行)。
+ * 8 个已经是全读完的量;再多,执行者要么读不完就动手(后面全靠猜),要么上下文被吃光。
+ * 原版的对应阈值是「单任务 >10 文件 → 阻断」(`gsd-plan-checker.md:326-330`);
+ * mm-gsd 这里按 read_first 单独计,因为它是执行端的**必读**清单。
+ */
+export function checkTicketLoad(tickets) {
+  const problems = [];
+  for (const t of tickets) {
+    const n = (t.readFirst ?? []).length;
+    if (n > 8) problems.push(`${t.id}: read_first 有 ${n} 条(>8) —— 一个子代理读不完这一张票;砍掉真理来源文件或拆票`);
+  }
+  return problems;
+}
+
+/**
+ * 需求反核销:票 `covers` 里认领的 REQ 必须在 REQUIREMENTS.md 里真实存在。
+ *
+ * 只判**反**方向(凭空认领)。正方向(每条需求都要有票)要先给 REQUIREMENTS.md 定格式
+ * —— 它现在没有模板也没有格式约定,那是另一件事。文件不存在 → 判不了,不猜。
+ */
+export function checkReqClaims(tickets, root) {
+  const reqFile = join(root, ".planning", "REQUIREMENTS.md");
+  if (!existsSync(reqFile)) return [];
+  const known = new Set([...readFileSync(reqFile, "utf8").matchAll(/REQ-\d+/gi)].map((m) => m[0].toUpperCase()));
+  const problems = [];
+  for (const t of tickets) {
+    for (const r of t.covers ?? []) {
+      if (!/^REQ-/i.test(r)) continue;
+      if (!known.has(r.toUpperCase())) problems.push(`${t.id}: covers 认领了 "${r}",但 REQUIREMENTS.md 里没有这条需求 —— 凭空认领`);
+    }
+  }
+  return problems;
+}
+
+/**
+ * 需求覆盖(phase 17 D-03,issue #21):REQUIREMENTS.md 里的 REQ 有没有人认领 —— checkReqClaims 的**正**方向。
+ *
+ * checkReqClaims 只判「票认领的 REQ 真实存在」(凭空认领);反过来「REQ 落盘了但全部计划无人承接」
+ * (讨论期漏项的下游可见形态)此前零命中。读 plansDir 下全部 PLAN 的 covers 字段 REQ-N 并集
+ * (项目全量,非本批 —— 只对账本批会把相邻计划已认领的 REQ 误判成遗漏),差集逐条判红。
+ * 格式约定 `- REQ-N: <需求一句话>`(D-01),抽取 regex 与 checkReqClaims 同源。
+ * REQUIREMENTS.md 不存在 → 判不了,不猜(与 checkReqClaims 同口径)。
+ */
+export function checkReqCoverage({ root, plansDir }) {
+  const reqFile = join(root, ".planning", "REQUIREMENTS.md");
+  if (!existsSync(reqFile)) return [];
+  const reqText = readFileSync(reqFile, "utf8");
+  // baseline 跳过(phase 19 D-11):REQUIREMENTS.md 晚于部分能力诞生,标 `(baseline` 的行
+  // (实测形状 `(baseline,0.4.x)`)由已发布版本兑现,不进覆盖集;未标 baseline 的 REQ 照判红。
+  // 逐行判 —— 标记跟着 REQ 行走,不能全文一判(会把别的行的说明文字也卷进来)。
+  const known = reqText.split(/\r?\n/)
+    .filter((line) => !/\(baseline/i.test(line))
+    .flatMap((line) => [...line.matchAll(/REQ-\d+/gi)].map((m) => m[0].toUpperCase()));
+  const claimed = new Set();
+  const scan = (dir) => {
+    let entries;
+    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const d of entries) {
+      const p = join(dir, d.name);
+      if (d.isDirectory()) scan(p);
+      else if (d.name.endsWith("-PLAN.md"))
+        for (const m of readFileSync(p, "utf8").matchAll(/^[ \t]*[-*][ \t]+\*{0,2}covers\*{0,2}[ \t]*:[ \t]*(.*)$/gim))
+          for (const r of String(m[1]).matchAll(/REQ-\d+/gi)) claimed.add(r[0].toUpperCase());
+    }
+  };
+  scan(plansDir);
+  // REQ 处置台账(23-CONTEXT D-01/D-02):有处置行的按处置跳过或判红。
+  // 闸四(零台账不废门):台账文件不存在或无行时,下面三个闸一个都不触发,
+  // 判红集合与旧口径完全一致(d4/d5 夹具走「文件不存在」分支,照红)。
+  const ledgerPath = join(root, ".planning", "req-ledger.md");
+  const rows = existsSync(ledgerPath) ? parseReqLedger(readFileSync(ledgerPath, "utf8")) : [];
+  // 闸一:delivered/superseded/obsolete 的 REQ 不再因无人认领判红(处置行即免,台账无行/active 照红)
+  const settled = new Set(rows.filter((r) => reqState(rows, r.req) !== "active").map((r) => r.req));
+  const problems = known.filter((r) => !claimed.has(r) && !settled.has(r))
+    .map((r) => `${r} 无人认领 —— REQUIREMENTS.md 里有这条需求,但全部计划的 covers 都没认领它(需求遗漏,issue #21)`);
+  // 闸二:superseded 行继任 REQ-M 在 REQUIREMENTS.md 里不存在 → 判红(跳过但不查继任者存在性 = 销红逃生门)
+  for (const req of successorExists(rows, reqText)) {
+    const row = rows.find((x) => x.req === req);
+    const m = String(row?.successor ?? "").match(/REQ-[\w.-]+/i);
+    const target = (m ? m[0] : "").toUpperCase().replace(/[.-]+$/, "");
+    problems.push(target
+      ? `${target} 取代者不存在 —— 记账不算数(假销账)(${req} 声称由它承接)`
+      : `${req} superseded 未写取代者 —— 记账不算数(假销账)`);
+  }
+  // 闸三:obsolete 行证据列(说明)为空 → 判红(obsolete 必须挂 D-NN 或批注 id 作证据,D-01)
+  for (const row of rows) {
+    if (reqState(rows, row.req) !== "obsolete") continue;
+    if (!String(row.evidence ?? "").trim())
+      problems.push(`${row.req} obsolete 无证据 —— 必须挂 D-NN 或批注 id(D-01)`);
+  }
+  return problems;
+}
+
+/**
+ * 本地账三选一门(phase 19 D-11,RC2 解药,#21 建议 5 机制化):
+ * .planning/issues/ 下每个 I-*.md 诊断后必须闭环 ——
+ *   ① status 是 closed/fixed(「## 状态」节的裸词;`fixed (待 distill)` 是合法第三态,fixed 待 distill 算闭环);
+ *   ② 或全文挂 REQ-\d+ 引用(诊断升级成了需求,有票承接);
+ *   ③ 或全文挂机器门名 check-[a-z-]+(有门盯着,复发自动红);
+ *   ④ 或 .planning/issues/LEDGER.md 有该件一行(豁免台账先例,同 artifact-ledger:原件是审计痕迹,登记不销毁它)。
+ * 四条全不沾 → 判红(诊断≠矫正的机制解:诊断过的坑不许裸放着)。
+ * issues 目录不存在 → 跳过(没有诊断就没有未闭环);不要求 closed 带 commit。
+ */
+export function checkIssueLedger({ root }) {
+  const issuesDir = join(root, ".planning", "issues");
+  let files;
+  try { files = readdirSync(issuesDir).filter((f) => /^I-\d+\.md$/.test(f)); } catch { return []; }
+  const ledgerPath = join(issuesDir, "LEDGER.md");
+  const ledger = existsSync(ledgerPath) ? readFileSync(ledgerPath, "utf8") : "";
+  const problems = [];
+  for (const f of files) {
+    const text = readFileSync(join(issuesDir, f), "utf8");
+    // 「## 状态」节取到下一个标题为止,裸词 = 节内第一串 ASCII 词(`fixed (待 distill)` → fixed)。
+    // 逐行扫,不用正则切节 —— 多行模式下 $ 在每个行尾都成立,切节正则会静默截断。
+    const lines = text.split(/\r?\n/);
+    const si = lines.findIndex((l) => /^##[ \t]*状态/.test(l));
+    let statusWord = "";
+    if (si >= 0)
+      for (let j = si + 1; j < lines.length && !/^##[ \t]/.test(lines[j]); j++) {
+        statusWord = (lines[j].match(/[A-Za-z-]+/)?.[0] ?? "").toLowerCase();
+        if (statusWord) break;
+      }
+    if (statusWord === "closed" || statusWord === "fixed") continue;
+    if (/REQ-\d+/i.test(text) || /check-[a-z-]+/i.test(text)) continue;
+    if (ledger.includes(f)) continue;
+    problems.push(`${f}: 本地账 I-NNN 诊断后未闭环 —— 三选一:closed/挂 REQ-NN/挂机器门名,或 .planning/issues/LEDGER.md 登记`);
+  }
+  return problems;
+}
+
+/**
+ * 判别力 lint(phase 13 D-03,issue #10):只认「退出码被吞」的高置信形状,命中走 WARNING(w 通道),
+ * 不进 errs —— warn 先行,不拦人。裸 `grep -c`(零匹配即 exit 1)是家常正确形状,不判(预审 F5)。
+ */
+export function checkDiscriminatingLints(tickets) {
+  const problems = [];
+  for (const t of tickets) {
+    const raw = String(t.verify ?? "");
+    // grep -c 的吞法(|| true / $() 捕获)跨 shell 分隔符 —— 在原始串上判,不经 splitCommands
+    // (splitCommands 会把 || 当分隔符,吞法在切分后就不存在了)
+    const guarded = /-eq\s*0|-gt\s*0|-ge\s*\d/.test(raw);
+    if (!guarded && /\$\([^)]*grep\s+-c[^)]*\)/i.test(raw))
+      problems.push(`${t.id}: verify:grep -c 被捕获进 $() 且无数值防护 —— 零匹配被吞成 0,判据对空输入是绿的(issue #10 证据 3)`);
+    if (!guarded && /grep\s+-c[^|;&]*(?:\|\|\s*true|2>\/dev\/null|\|\|\s*echo)/i.test(raw))
+      problems.push(`${t.id}: verify:grep -c 的退出码被 || true/2>/dev/null 吞掉 —— 零匹配与命中不可分,判据对空输入是绿的(issue #10 证据 3)`);
+  }
+  return problems;
+}
+
+/**
+ * 剥掉行尾注释(POSIX 语义 + 引号感知)。
+ *
+ * 为什么必须剥:注释里的字面量不是断言来源。`cargo test -- my_case  # 期望 3 passed`
+ * 里那个「3 passed」是**人写的期望**,不是命令的输出 —— 拿它当断言依据,门禁就被人
+ * 的注释牵着走:写注释的人自己就绕过了门禁(phase 26 D-04,验收报告 G-26-1 的 FX-95/FX-97
+ * 就是这个形状)。
+ *
+ * 规则:
+ * - 引号内(`'` `"` `` ` ``)的 `#` 一律保留 —— `grep -q "#22"` 不是注释;
+ * - 引号外的 `#` 只有「在行首」或「前一个字符是空白」才是注释起点(POSIX:`foo#bar` 不是注释);
+ * - 引号状态按行重置(引号不跨行)。
+ */
+function stripTrailingComment(line) {
+  let quote = null;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (quote) { if (c === quote) quote = null; continue; }
+    if (c === "'" || c === '"' || c === "`") { quote = c; continue; }
+    if (c === "#" && (i === 0 || /\s/.test(line[i - 1]))) return line.slice(0, i);
+  }
+  return line;
+}
+
+/**
+ * 段 → stage:按单管道切分,引号感知。
+ *
+ * 为什么判定单位要下沉到 stage(phase 26 D-09,G-26-6):段级分类是**整段布尔判定**,
+ * 同段里既有触发命令又有 `grep -v` / `echo` 时,整段被作废 —— 触发命令随段一起消失。
+ * `splitCommands` 只切 `;`/`\n`/`&&`/`||`,**单 `|` 不切** → 管道里的 `grep -v`
+ * 与触发命令必然落在同一段,所以必须再切一层。
+ * 引号里的 `|` 不是管道(`grep -q "a|b"` 是一个 stage)—— 引号感知是必须的,
+ * 切碎引号里的 `|` 会把否定签名切到另一个 stage,门禁就认不出它(误报)。
+ */
+function splitPipes(seg) {
+  const out = [];
+  let cur = "", q = null;
+  for (let i = 0; i < seg.length; i++) {
+    const c = seg[i];
+    if (q) { cur += c; if (c === q && seg[i - 1] !== "\\") q = null; continue; }
+    if (c === '"' || c === "'" || c === "`") { q = c; cur += c; continue; }
+    if (c === "|") { out.push(cur); cur = ""; continue; }
+    cur += c;
+  }
+  out.push(cur);
+  return out.map((s) => s.trim()).filter(Boolean);
+}
+
+/**
+ * 引号遮罩:引号内(含被 `\` 转义的引号)整段换成空格,**长度不变**。
+ *
+ * 26-07 D-13 三面口径的「分类面」:把引号内容抹掉,剩下的就是命令骨架 ——
+ * `grep -q "cargo test -- my_case" notes.md` 的骨架是 `grep -q  notes.md`,
+ * 引号里的字面量不是命令(G-26-9 的根因:以前触发面读原文,把它当成了命令)。
+ * 长度不变是硬要求:切出来的 token 位置要能对回原文,才能判断「`-c` 之后那个引号段」。
+ */
+function maskQuoted(s) {
+  let out = "";
+  let quote = null;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (quote) {
+      if (c === "\\" && i + 1 < s.length) { out += "  "; i++; continue; }
+      if (c === quote) { quote = null; out += " "; continue; }
+      out += " ";
+      continue;
+    }
+    if (c === "'" || c === '"' || c === "`") { quote = c; out += " "; continue; }
+    out += c;
+  }
+  return out;
+}
+
+/** 剥掉引号内容:分类只看命令骨架,引号里的字面量不是命令的一部分 */
+const stripQuoted = (s) => maskQuoted(s);
+
+/**
+ * 扫描式取每个引号段(引号类型、内容已去转义、起止偏移)。
+ * wrapper 载荷定位要用它 —— 载荷是「`-c` 之后那个引号段」,不是全文第一个引号段
+ * (`FOO="x" bash -c "..."` 的第一个引号段是 x)。
+ */
+function quotedSegments(text) {
+  const segs = [];
+  let quote = null, start = -1, buf = "";
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quote) {
+      if (c === "\\" && i + 1 < text.length) { buf += text[i + 1]; i++; continue; }
+      if (c === quote) { segs.push({ quote, content: buf, start, end: i }); quote = null; buf = ""; start = -1; continue; }
+      buf += c;
+      continue;
+    }
+    if (c === "'" || c === '"' || c === "`") { quote = c; start = i; buf = ""; continue; }
+  }
+  return segs;
+}
+
+const SHELL_NAMES = new Set(["bash", "sh", "zsh", "dash", "ksh"]);
+// wrapper 前缀词按 **basename** 认(与 shell 名判定同口径):/usr/bin/env 也是 env(D-17②)。
+const WRAPPER_WORDS = new Set(["env", "sudo", "nohup", "command", "time", "nice", "setsid", "xargs"]);
+/** wrapper 载荷最多展开几层(嵌套 bash -c "bash -c ..." 三层够用,再深不追;D-17③) */
+const MAX_WRAPPER_DEPTH = 3;
+
+/**
+ * wrapper 识别 + 载荷提取 —— **一次判定**(26-07 D-15③)。
+ *
+ * 以前是两条独立口径(「骨架像不像 shell」+「尾部有没有 -c」),于是
+ * `bash -c "<cmd>" 2>&1 | tee out.txt` 这种最常见的 CI 形态被整段丢掉(G-26-8)。
+ * 现在只有一条路:找到命令词并取到载荷才算 wrapper,取不到就不是。
+ *
+ * 命令词位置的算法(写死,不许自创):跳过前导的 `NAME=VALUE` 赋值 token、
+ * 包装词 token(env/sudo/nohup/command/time/nice/setsid/xargs,按 basename 认)、`-` 开头的选项 token 之后的**第一个** token,
+ * 且它的 basename 必须是 shell —— 不是 shell 就返回 null(不是 wrapper)。
+ * 这样 `echo bash -c "..."`、`npm run bash -c "..."`、`grep -c "..."` 都不会被误当成 wrapper。
+ */
+function wrapperPayload(text) {
+  const skel = maskQuoted(text);
+  const toks = [];
+  const re = /\S+/g;
+  let m;
+  while ((m = re.exec(skel)) !== null) toks.push({ t: m[0], s: m.index });
+  let i = 0;
+  while (i < toks.length) {
+    const t = toks[i].t;
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(t)) { i++; continue; }
+    if (WRAPPER_WORDS.has(t.split("/").pop())) { i++; continue; }
+    if (t.startsWith("-")) { i++; continue; }
+    break;
+  }
+  if (i >= toks.length) return null;
+  if (!SHELL_NAMES.has(toks[i].t.split("/").pop())) return null;
+  for (let j = i + 1; j < toks.length; j++) {
+    if (!/^-[A-Za-z]*c$/.test(toks[j].t)) continue;
+    const seg = quotedSegments(text).find((s) => s.start > toks[j].s);
+    return seg ? seg.content : null;
+  }
+  return null;
+}
+
+/**
+ * stage 分类:哪个 stage 能当断言来源,哪个只提供否定签名。
+ *
+ * 判据与段级一致(phase 26 D-06② + D-08),判定单位下沉到 stage(D-09):
+ * - `grep -v "3 passed"` —— 退出码在「零匹配输出」与「真跑过输出」上都是 0,没有判别力。
+ *   它既不提供正面标记,也不提供否定签名。
+ * - `! grep -q "no tests to run"` —— 显式否定,是「断言零匹配没发生」的唯一合法写法,
+ *   只提供否定签名,自己不是正面标记。`! grep -v X` 是双重否定(语义是「断言输出里**有** X」),
+ *   跟否定式签名相反,不当签名来源。
+ * - `echo "3 passed"` —— 自己造的标记不是命令的输出(G-26-2),既不提供标记也不触发零匹配门。
+ * 剩下的 stage(含正向 grep / test / awk / diff / rg)才是正向 stage:断言标记与触发扫描都只看它们。
+ *
+ * 分类只看**命令骨架**(先把引号内容剥掉):`grep -q "test -v flag" o.txt` 不是 `grep -v`;
+ * 但断言标记仍取自 stage **原文** —— 引号里的断言词要算数。
+ */
+const isNegGrepStage = (s) => /\bgrep\b[^|]*\s-v(\s|$|[A-Za-z])/.test(stripQuoted(s));
+const isNegationStage = (s) => /(^|[\s|])!\s*grep\b/.test(stripQuoted(s)) && !isNegGrepStage(s);
+const isLiteralPrintStage = (s) => /^\s*(echo|printf)\b/.test(s);
+const isPositiveStage = (s) =>
+  !isNegGrepStage(s) && !isNegationStage(s) && !isLiteralPrintStage(s)
+  && /\b(grep|test|awk|diff|rg)\b/.test(stripQuoted(s));
+
+/**
+ * 零匹配假绿阻断(phase 26 D-01 + D-04,issue #22):`go test -run <pattern>` 与 `cargo test -- <name>`
+ * 在零匹配时都 exit 0 —— 过滤器指名的用例不存在 = 一个测试都没跑,门禁却判绿。
+ *
+ * 与 checkDiscriminatingLints 分家:那边是 WARNING(w 通道,warn 先行,不拦人),
+ * 这里是 ERROR(e 通道,阻断执行)—— 假绿不是「提示不够」,是「验证根本没发生」。
+ * 归到 error 通道才兑现 issue #22 的诉求(阻断,不是提醒)。
+ *
+ * 断言必须是**判别性**的(phase 26 D-04 + D-06):只认「证明真有用例跑过」的痕迹 ——
+ * go: `--- PASS` / `--- FAIL`,或对零匹配签名的否定式(`! grep "no tests to run"`);
+ * cargo: 实际计数(`3 passed` / `test result: ok. 3 passed` / `running 1 test`,N>=1)/`test result: FAILED`,
+ * 或否定式(`! grep "running 0 tests"` / `! grep -qE "test result: ok\. 0 passed"`)。
+ * 零匹配的输出签名(`no tests to run` / `no test files` / `test result: ok` / `running 0 tests`)
+ * **不算断言** —— 它们恰是零匹配时出现的东西,拿它们当通行证等于把假绿写成通行条件。
+ *
+ * 断言取自**正向段**的文本(正向段 = 非 `grep -v` / 非 `! grep` / 非 `echo`|`printf` 的段),
+ * 否定签名取自**显式否定段**(`! grep`),触发扫描与标记来源同口径 —— 注释里或自己 echo
+ * 出来的字面量不是命令的输出,不能既当通行证又当触发器(phase 26 D-06② + D-08)。
+ *
+ * 段列表按「先按行剥注释、再按 shell 语义切命令」生成:
+ * 顺序反了会把注释里的 `;` `&&` 尾巴漏成独立命令(既误伤合法票,又留了假绿通道)。
+ */
+export function checkZeroMatchErrors(tickets) {
+  const problems = [];
+  for (const t of tickets) {
+    const raw = String(t.verify ?? "");
+    const segs = [];
+    for (const line of raw.split(/\r?\n/)) {
+      const s = stripTrailingComment(line).trim();
+      if (!s) continue;
+      for (const seg of splitCommands(s)) segs.push(seg);
+    }
+    // 判定单位下沉到管道级(stage,phase 26 D-09):每个 stage 记着它所属的段号 ——
+    // 报错里的「第 N 条命令」按**段号**报(用户看到的是 verify 文本里的第几条命令),
+    // 但判定按 stage 做 —— 同段里的 `grep -v` / `echo` 不得把同段的触发命令一起作废(G-26-6)。
+    // 再叠一层 wrapper 载荷展开(phase 26 D-13/D-15):`bash -c "<cmd>"` 里那条命令真的会跑,
+    // 门禁必须看得见(G-26-8);载荷里的引号字面量仍不是命令(G-26-9)。
+    const stages = [];
+    const push = (text, segIdx, depth) => {
+      for (const st of splitPipes(text)) {
+        stages.push({ text: st, seg: segIdx });
+        if (depth >= MAX_WRAPPER_DEPTH) continue;
+        const payload = wrapperPayload(st);
+        if (!payload) continue;
+        for (const sub of splitCommands(payload)) push(sub, segIdx, depth + 1);
+      }
+    };
+    segs.forEach((seg, si) => push(seg, si, 0));
+    const posStages = stages.filter((s) => isPositiveStage(s.text));
+    const assertText = posStages.map((s) => s.text).join("\n");
+    const negStages = stages.filter((s) => isNegationStage(s.text));
+    // 触发面看**骨架**:引号里的字面量不是命令(G-26-9),wrapper 载荷是命令(G-26-8)。
+    const hasGoRun = stages.some((s) => /go\s+test\b.*-run\b/i.test(stripQuoted(s.text)));
+    const goAsserted = /---\s+(?:PASS|FAIL)/.test(assertText)
+      || (hasGoRun && negStages.some((s) => /no tests to run/.test(s.text)));
+    const cargoAsserted = /\b[1-9]\d*\s+passed\b/.test(assertText)
+      || /\[1-9\](?![?*+])[^\s]{0,12}\s+passed\b/.test(assertText)
+      || /\brunning\s+[1-9]\d*\s+tests?\b/.test(assertText)
+      || /\btest\s+result:\s*FAILED\b/.test(assertText)
+      || negStages.some((s) => /running\s+0\s+tests/.test(s.text) || /test result: ok\\?\. 0 passed/.test(s.text));
+    for (const s of stages) {
+      const c = s.text;
+      if (!isPositiveStage(c)) continue;
+      // D-18②:一条命令只给一条整改建议 —— isFullSuite 判为全量的命令由**票预算门**
+      // 单独判红(唯一建议 = 搬到 batch_verify),零匹配门对它闭嘴。
+      // 判定单位是 stage(与触发扫描同一单位),不是整段。
+      if (isFullSuite(c)) continue;
+      // 触发面读骨架:引号里的字面量(`grep -q "cargo test -- x" notes.md`)不是命令
+      const sk = stripQuoted(c);
+      if (/go\s+test\b.*-run\b/i.test(sk) && !goAsserted)
+        problems.push(`${t.id}: verify 第 ${s.seg + 1} 条命令:go test -run <pattern> 的断言不判别 —— 零匹配时 go 打印 "no tests to run" 且 exit 0;须断言 "--- PASS"/"--- FAIL"(需 -v)或 ! grep "no tests to run"(issue #22)`);
+      if (/cargo\s+(?:\+\S+\s+)?test\b/i.test(sk) && /\s--\s/.test(sk) && !cargoAsserted)
+        problems.push(`${t.id}: verify 第 ${s.seg + 1} 条命令:cargo test 带过滤器的断言不判别 —— 零匹配时 cargo 打印 "test result: ok. 0 passed" 且 exit 0;须断言实际计数("3 passed"/"test result: ok. 3 passed"/"running 1 test",N>=1 写实际数字)或 "test result: FAILED"(issue #10)`);
+    }
+  }
+  return problems;
+}
+
+/**
+ * 自测源码清单:verify 引用的用例名必须在这些文件里找得到(phase 26 D-19 / REQ-46)。
+ *
+ * 按**模块自身位置**定位(references/ 与 ../scripts/ 两个目录),装到 ~/.agents/skills/ 后同样准。
+ */
+export function readSelftestSources() {
+  const here = dirname(fileURLToPath(import.meta.url));
+  const dirs = [here, join(here, "..", "scripts")];
+  const out = [];
+  for (const d of dirs) {
+    let files = [];
+    try { files = readdirSync(d); } catch { continue; }
+    for (const f of files) {
+      if (!f.endsWith(".mjs")) continue;
+      try { out.push({ file: f, text: readFileSync(join(d, f), "utf8") }); } catch { /* 读不到就当没有 */ }
+    }
+  }
+  return out;
+}
+
+/**
+ * 票面 verify 引用的自测用例名必须真实存在(phase 26 D-19 / REQ-46,G-26-10)。
+ *
+ * 背景:票面 verify 常写成「跑 --selfcheck 并检查用例名 X 出现在 ✓ 行上」。
+ * 用例名写错 → 这张票的 verify 永远 exit 1 —— 而本仓**没有任何机器门执行票面 verify**
+ * (G-26-10),于是这张票永远判红也永远没人知道。
+ * 这道门只校验**名字在源码里找得到**,不执行 verify(执行任意命令不是门禁该干的事)。
+ *
+ * 只对**已收口**的票判(调用方负责筛):施工中的票引用还没建的用例名是正常的,判它是假红。
+ */
+export function checkSelftestCaseNames(tickets, sources) {
+  const problems = [];
+  const src = sources.map((s) => s.text).join("\n");
+  for (const t of tickets) {
+    const verify = String(t.verify ?? "");
+    if (!/--selfcheck\b/.test(verify)) continue;
+    const names = [];
+    // 多个 need 数组都要抽(matchAll):只取第一个 = 静默漏判
+    for (const m of verify.matchAll(/need\s*=\s*\[([^\]]*)\]/g)) {
+      for (const q of m[1].matchAll(/["']([^"']+)["']/g)) names.push(q[1]);
+    }
+    for (const n of names) {
+      if (!src.includes(n))
+        problems.push(`${t.id}: verify 引用的自测用例名不存在 —— 改名后这张票的 verify 会永远红(issue #22): "${n}"`);
+    }
+  }
+  return problems;
+}
+
+/* ================= 批闸形状 lint(phase 14 D-03,issue #17) =================
+ *
+ * 使用方实测:批闸扫 1825 个测试文件,42 红里归因本 phase 0 件 —— 无界目录让存量红淹没本批信号。
+ * 返回 WARNING 串数组(调用方走 w 通道),不拦红 —— warn 先行,照判别力 lint 的先例。
+ * 只判「裸无界目录参数」这一个高置信形状:`-- tests/`、`-- src/`、行尾 bare `tests/` 类;
+ * 深度 < 2 即无界(`tests/unit/` 算有界)。预审 I7 补形:无尾斜杠裸目录(`-- tests`)也算;
+ * `./` 前缀归一后判;flag 值形态(`--out build/`)不判 —— 那是输出路径,不是覆盖范围。
+ * 判不了的不猜:runner 专属 flag 的取值(`node --test tests/` 里的 tests/ 是 flag 的值)照 flag 值豁免
+ * —— lint 漏报比误报便宜。cd 的目标归 cwd 契约管(#16),不归覆盖范围 lint。
+ */
+const BATCH_DIRLIKE = (t) =>
+  !/[*?[\]]/.test(t)                                     // glob 不是目录参数
+  && !/\.[A-Za-z0-9]+$/.test(t.split(/[\\/]/).pop())     // 末段带扩展名 = 具名文件,有界
+  && /^(?:[\\/])?(?:\.{1,2}[\\/])?[\w.-]+(?:[\\/][\w.-]+)*[\\/]?$/.test(t);
+
+export function checkBatchVerifyLints(batchVerify) {
+  const problems = [];
+  for (const seg of splitCommands(String(batchVerify ?? ""))) {
+    let dd = false, prevFlag = false, prev = "";
+    for (const t of seg.replace(/[`'"]/g, " ").split(/\s+/).filter(Boolean)) {
+      if (t === "--") { dd = true; prevFlag = false; prev = t; continue; }
+      if (/^--?[A-Za-z][\w-]*/.test(t)) { prevFlag = true; prev = t; continue; }
+      // `--` 之后裸词也判(-- tests);之外只判带斜杠的(npm run build 的 build 不判)
+      const judged = !prevFlag && prev !== "cd" && BATCH_DIRLIKE(t) && (dd || /[\\/]/.test(t));
+      if (judged && t.replace(/^\.{1,2}[\\/]/, "").replace(/[\\/]+$/, "").split(/[\\/]/).filter(Boolean).length < 2)
+        problems.push(`batch_verify 覆盖无界目录 "${t}" —— 存量红会淹没本批信号(#17:42 红归因 0 件);改成具名文件或子目录树,全量归 push 阶段`);
+      prevFlag = false;   // 位置参数之后的 token 不再是 flag 值
+      prev = t;
+    }
+  }
+  return problems;
+}
