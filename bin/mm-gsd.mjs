@@ -343,7 +343,6 @@ if (cmd === "update") process.exit(await update());
     process.exit(spawnSync(process.execPath, [en.entryPath, ...argv.slice(1)], { stdio: "inherit" }).status ?? 0);
   }
 }
-if (cmd === "web") process.exit(spawnSync(process.execPath, [join(PKG_ROOT, "skills", "mm-gsd-loop", "scripts", "mm-gsd-web.mjs"), ...argv.slice(1)], { stdio: "inherit" }).status ?? 0);
 if (cmd === "check") process.exit(check());
 if (["stage", "summary", "commit", "wave-check"].includes(cmd)) {
   // 执行期工具转发(skills/mm-gsd-exec/scripts/,R-13:使用方手上只有 skills/)。

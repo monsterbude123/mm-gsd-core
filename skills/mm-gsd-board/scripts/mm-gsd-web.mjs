@@ -22,13 +22,13 @@ import { homedir } from "node:os";
 import { join, dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { buildDebt } from "../references/debt-panel.mjs";
-import { parseReqLedger, reqState } from "../references/req-ledger.mjs";
-import { readRows } from "../references/telemetry-aggregate.mjs";
-import { aggregateByDay } from "../references/telemetry-view.mjs";
+import { buildDebt } from "../../mm-gsd-loop/references/debt-panel.mjs";
+import { parseReqLedger, reqState } from "../../mm-gsd-loop/references/req-ledger.mjs";
+import { readRows } from "../../mm-gsd-loop/references/telemetry-aggregate.mjs";
+import { aggregateByDay } from "../../mm-gsd-loop/references/telemetry-view.mjs";
 // 拓扑口径(24-01 T1a,D-01):depends_on 解析逐字照抄 checker 基线、分层/剪环/幽灵边防御都在
 // references/phase-topo.mjs 一处 —— 同一份 STATE 行,--phases 与看板必须同答案(预审 W1/W2)。
-import { topoLevels, parseDepends } from "../references/phase-topo.mjs";
+import { topoLevels, parseDepends } from "../../mm-gsd-loop/references/phase-topo.mjs";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_PATH = join(SCRIPT_DIR, "..", "templates", "web.html");

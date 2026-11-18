@@ -13,11 +13,12 @@ import { phaseHealth } from "./telemetry-aggregate.mjs";
 import { checkRoutes, routeSection, pointerCard, reviewerCard, buildRouteBrief } from "./agent-routing.mjs";
 import { deriveWaves } from "./worktree-view.mjs";
 import { checkPlanQuality, SIZE_EXEMPT } from "./plan-review-gate.mjs";
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, rmSync, existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { join } from "node:path";
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, rmSync, existsSync, readdirSync } from "node:fs";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
+import { aggregateByDay } from "./telemetry-view.mjs";
 
 /** 造一组断言。返回的 st.bad 是失败条数 —— 调用方自己决定怎么汇报 */
 export function mkAssert() {
@@ -110,6 +111,55 @@ export function runPackCases({ eqN }) {
   eqN([String(en.missing), en.message.includes(fx.brokenEntry)].join(","), "true,true", "pack-7 入口缺失报 missing 并给带入口路径的人话");
   rmSync(fx.root, { recursive: true, force: true });
   rmSync(fx.plainRoot, { recursive: true, force: true });
+}
+
+/** 工具遥测视图纯函数用例组(28-02 T2 自核心 selftests 搬入):按本地日切桶/异 cwd 过滤/空态/import 无副作用。
+ *  服务层与模板断言在 skills/mm-gsd-board/selftests/board-probe.selftest.mjs(看板可选包,28-02 D-03)。 */
+export function runTelemetryViewCases({ eqN, eqArr }) {
+  const MODULE_PATH = fileURLToPath(new URL("./telemetry-view.mjs", import.meta.url));
+  const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+  const localDay = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  const pathVariant = (p) => {
+    const seg = p.split(/[\\/]/);
+    seg[seg.length - 1] = seg[seg.length - 1].toUpperCase();
+    return seg.join("\\") + "\\";
+  };
+  // 夹具 instant:本地凌晨 02:00 与次日 02:00 —— 东八区宿主上落前一个 UTC 日,「本地日切桶」与「UTC 日切桶」可判别
+  const now = new Date();
+  const instantA = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 2, 0, 0);
+  const instantB = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 2, 0, 0);
+  const tsA = instantA.toISOString(), tsB = instantB.toISOString();
+  const dayA = localDay(new Date(tsA)), dayB = localDay(new Date(tsB));
+  const variant = pathVariant(PROJECT_ROOT);
+  const otherDir = PROJECT_ROOT + "-other";
+  const fixtureDir = mkdtempSync(join(tmpdir(), "mm-gsd-tel-fixture-"));
+  const fixtureFile = join(fixtureDir, "tools.jsonl");
+  const fixtureRows = [
+    { ts: tsA, cwd: variant, tool: "Bash" },
+    { ts: tsA, cwd: PROJECT_ROOT, tool: "Bash" },
+    { ts: tsB, cwd: PROJECT_ROOT, tool: "Read" },
+    { ts: tsB, cwd: otherDir, tool: "Write" },
+  ];
+  writeFileSync(fixtureFile, fixtureRows.map((r) => JSON.stringify(r)).join("\n") + "\n", "utf8");
+  const rows = readFileSync(fixtureFile, "utf8").split(/\r?\n/).filter(Boolean).map((l) => JSON.parse(l));
+  const tel = aggregateByDay(rows, PROJECT_ROOT);
+  eqN(dayA !== dayB, true, "遥测夹具自证:两个 instant 落在两个本地日(判别力前提)");
+  eqArr([...new Set(tel.series.map((s) => s.date))].sort(), [dayA, dayB].sort(), "遥测日切桶按本地日期");
+  eqN(tel.byTool.Write === undefined && tel.total === 3, true, "遥测异 cwd 不计入");
+  eqArr({ Bash: tel.byTool.Bash, Read: tel.byTool.Read, keys: Object.keys(tel.byTool).sort() }, { Bash: 2, Read: 1, keys: ["Bash", "Read"] }, "遥测硬编码期望:Bash 2 / Read 1");
+  eqN(tel.series.length, 2, "遥测序列长度 2");
+  const emptyTel = aggregateByDay([], PROJECT_ROOT);
+  eqN(emptyTel.series.length === 0 && emptyTel.empty === true, true, "遥测空夹具走空态");
+  // import 副作用探针(R-16 真导入 references/:顶层 exit 会让整场 health 假绿)
+  const marker = "TELEMETRY_VIEW_IMPORT_OK";
+  const emptyDir = mkdtempSync(join(tmpdir(), "telemetry-view-empty-"));
+  const url = pathToFileURL(MODULE_PATH).href;
+  const code = `await import(${JSON.stringify(url)});\nprocess.stdout.write(${JSON.stringify(marker)});`;
+  const res = spawnSync(process.execPath, ["--input-type=module", "-e", code], { cwd: emptyDir, encoding: "utf8" });
+  const left = readdirSync(emptyDir);
+  rmSync(emptyDir, { recursive: true, force: true });
+  eqN(res.status === 0 && res.stdout === marker && res.stderr === "" && left.length === 0, true, "遥测 import 无副作用");
+  rmSync(fixtureDir, { recursive: true, force: true });
 }
 
 /**

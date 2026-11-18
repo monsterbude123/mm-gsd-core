@@ -1,6 +1,6 @@
 // 债面板解析模块 —— 本地账 open 问题 + 未消化批注 + deferred 条目,三源归一。
 //
-// 为什么单独成文件:看板(mm-gsd-web.mjs)与自测(selftests/debt-panel.selftest.mjs)要用同一套口径。
+// 为什么单独成文件:看板与自测(debt-panel.selftest.mjs)要用同一套口径。
 // 口径写在两处必然漂 —— 一处按台账、一处按原件状态,同一个「open 问题数」在屏上互相打架,
 // 读的人只会挑一个信,另一个就是欠账(22-CONTEXT D-02)。
 //

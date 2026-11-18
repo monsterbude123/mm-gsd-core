@@ -9,7 +9,7 @@
 //
 // 纯函数、顶层零 I/O:本模块在 references/ 下,会被 R-16 真导入(tools/module-registry.mjs:57-68),
 // 顶层有副作用会把整场 health 搞假绿(顶层 exit → 后面所有门禁都没跑却显示全绿)。
-// 读文件在调用方做(看板 scripts/mm-gsd-web.mjs 现读现算,不缓存、不外发)。
+// 读文件在调用方做(看板现读现算,不缓存、不外发)。
 //
 // 导出名避开 check/validate 前缀:那两个前缀在 references/ 里意味着「这是 mmc 门禁模块」,
 // 要在 tools/gate-cases.json 的 _modules 登记 —— 本模块不是门禁。
