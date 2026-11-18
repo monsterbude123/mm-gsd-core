@@ -21,8 +21,10 @@
   "check-review-convergence": "把 plan-ready.mjs 里的 readPhaseConvergence / REVIEW-CONVERGENCE-STALLED / PHASE_CONVERGENCE_REQUIRED_FROM 任一剥掉 → 判红;active phase 的收敛工件 new_judgment 不降序列 → 活检判红「升级到人」",
   "check-core-boundary": "核心 .md 出现可选包的显示名、核心任何文件出现可选包的目录名或命令调用形(带 mm-gsd 前缀,裸词别名不查)→ 活检判红并指名文件;可选包自己的文件豁免;没有可选包的树判 0 条",
   "check-ticket-size": "active phase 未收口且不在 SIZE_EXEMPT 的票,verify 字节超 4000 → 活检判红;把 BUDGET.verifyBytes 删掉 → 结构断言红;豁免名单内的票不判",
+  "check-requirement-mining": "CONTEXT 的 <mining> 节缺一问、缺整块、问了但答案为空 → 活检判红并点名 REQ 号与缺的那一问;没有 <mining> 节的老 CONTEXT 豁免;REQUIREMENTS 标 (baseline 的 REQ 与 req-ledger 已处置的 REQ 不判",
   "_modules": {
     "core-boundary.mjs": "核心边界门(28-04,R-28):由 mmc 的 check-core-boundary 驱动(活检核心 .md 显示名与目录名/命令调用形),判定内核由 R-15 的 --selfcheck 覆盖 —— runCoreBoundaryCases 造脏树/净树/无包树/包内豁免四场景真调 checkCoreBoundary",
+    "requirement-mining.mjs": "深挖需求门(28-07,R-29):由 mmc 的 check-requirement-mining 驱动(活检有 <mining> 节的 CONTEXT 四问齐全),判定内核由 R-15 的 --selfcheck 覆盖 —— runMiningCases 造全量/缺一问/缺块/空答/豁免五场景真调 checkRequirementMining",
     "plan-review-gate.mjs": "14 族机器门的判据权威(28-10):--plan 接线驱动(未收口票逐张过门,blocker 红 advisory 黄),判定内核由 R-15 的 --selfcheck 覆盖 —— runReviewGateCases 真调 checkPlanQuality(F16 捕获邻接/[TICKET-SIZE] 字节门/豁免名单/F1 盲验四条),外加门自带 --selfcheck 的 28 份 dirty/clean 孪生(脏 14/14、clean 0/14 假红);把任一 detector 掏空,孪生与锚点用例一起红",
     "plan-ready.mjs": "开工判定(显式校验 --plan-check 的内核):把 checkPlanReady 掏空成永远返回 passed → 判红(缺预审/状态非法/blocked/票号对不上,四种都要判红;WARNING 不再判红 —— 归 Deferred 带进施工);把判定搬出检查器接线 → 端到端用例判红(自测里跑真命令:缺预审时退出码 1、提示词必须打印出来、检查器不许自己写工件 —— 指 --plan-check 判定路径;--init 冷启动本来就要写 STATE,不算、预审 passed 时退出码 0)。28-11 增:phase 级收敛三导出(readPhaseConvergence/classifyArtifactBlockers/MACHINE_SIGNS)由 runConvergenceCases 覆盖(单轮不判停/不降判停/全 machine 降级不拦工/祖父路径保持)",
     "decision-gates.mjs": "由 R-15 的 --selfcheck 覆盖(它会真的执行断言,不是登记):核销、可逆性、漂移三条契约各有用例。**漂移门此前零覆盖而本行声称有 —— 2026-10-20 复核发现该登记是假的并补上**(把 mtime 判定的那段删掉 → --selfcheck 立刻报红)",

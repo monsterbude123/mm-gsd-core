@@ -536,6 +536,19 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
       e(p, "给这条需求拆票并在 covers 认领 REQ-N;确认不做就回 discuss 从 REQUIREMENTS.md 移除或改写");
   }
   {
+    // 深挖门(28-07,D-13/REQ-63):discuss 落 REQ 前必须答四问,答案进 <mining> 节 —— 机器核对本 phase 票覆盖的每条 REQ。
+    // 判据权威在 references/requirement-mining.mjs(本段只注入 root/phase 与转发);豁免:无 <mining> 节的老 CONTEXT 不判。
+    const rm = await import("../references/requirement-mining.mjs");
+    for (const ph of [...new Set(batchPlans.map((b) => b.phase))]) {
+      const ctxText = existsSync(P(ph + "-CONTEXT.md")) ? readFileSync(P(ph + "-CONTEXT.md"), "utf8") : "";
+      if (!ctxText.includes("<mining>")) continue;
+      const reqs = rm.phaseReqs(root, ph);
+      for (const p of rm.checkRequirementMining({ ctxText, reqs: reqs.map((id) => ({ id })) }))
+        e(p.message, p.fix);
+    }
+    if (!batchPlans.length) { /* 单票 --plan 时批图为空也照跑票级门;深挖门是 phase 级,按存在与否判 */ }
+  }
+  {
     // 点修配额(D-08):同 phase R 票 ≥3 → 强制升级(防疤叠疤;#21 历史教训:诊断 3 次未矫正 = RC2 复发)
     const { readAnnotations } = await import("../references/repair-gates.mjs");
     const byPhase = new Map();

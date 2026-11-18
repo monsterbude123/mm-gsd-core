@@ -7,6 +7,7 @@ import { classifyArtifact, parseAccounting, commitExists, checkArtifactLedger } 
 import { checkPlanReady, readPhaseConvergence, classifyArtifactBlockers, REVIEW_PROMPT } from "./plan-ready.mjs";
 import { discoverPacks, resolvePack, resolveEntry, makePackFixture } from "./packs.mjs";
 import { checkCoreBoundary } from "./core-boundary.mjs";
+import { checkRequirementMining, phaseReqs } from "./requirement-mining.mjs";
 import { checkPhaseCoverage } from "./decision-gates.mjs";
 import { checkTicketPremises } from "./verification-gates.mjs";
 import { staleDecisions, coveredDecisions, phaseCovered, staleNote, planExists, runDecisionContracts, checkPlanCheckArtifacts } from "./ticket-alive.mjs";
@@ -192,6 +193,32 @@ export function runCoreBoundaryCases({ eqN }) {
   eqN(r6.length, 0, "core-6 可选包自己的文件豁免");
   const r7 = rules(tree({ [coreMd]: "核心文档点了命令调用形:mm-gsd fake\n", [packMd]: packSkill, [packEntry]: "export const x = 1;\n" }));
   eqN(r7.join(","), "2", "core-4 核心文件有命令调用形 → 规则二");
+}
+
+/** 深挖需求门用例组(28-07,R-29):四问核对真调 checkRequirementMining,豁免两套口径各一条 */
+export function runRequirementMiningCases({ eqN }) {
+  const ctx = (rows) => ["<mining>", "### REQ-51 夹具"].concat(rows).concat(["</mining>"]).join("\n");
+  const full = ["- **真实需求**: 有人在动作", "- **谁消费**: 人看", "- **什么时候会废**: 没人用", "- **做完长什么样**: 看得到"];
+  const p1 = checkRequirementMining({ ctxText: ctx(full), reqs: [{ id: "REQ-51" }] });
+  eqN(p1.length, 0, "mining-1 四问齐全 → 0 条问题");
+  const p2 = checkRequirementMining({ ctxText: ctx(["- **真实需求**: 有人在动作", "- **什么时候会废**: 没人用", "- **做完长什么样**: 看得到"]), reqs: [{ id: "REQ-51" }] });
+  eqN(p2.length >= 1 && p2[0].message.includes("谁消费"), true, "mining-2 缺谁消费 → 判红且点名");
+  const p3 = checkRequirementMining({ ctxText: ctx(["- **真实需求**: 有人在动作"]), reqs: [{ id: "REQ-51" }, { id: "REQ-52" }] });
+  eqN(p3.some((p) => p.message.includes("REQ-52") && p.message.includes("没有深挖块")), true, "mining-3 缺整块 → 判红点名 REQ-52");
+  const p4 = checkRequirementMining({ ctxText: ctx(["- **真实需求**: ", "- **谁消费**: 人看", "- **什么时候会废**: 没人用", "- **做完长什么样**: 看得到"]), reqs: [{ id: "REQ-51" }] });
+  eqN(p4.some((p) => p.message.includes("真实需求")), true, "mining-4 答案为空 → 判红");
+  const p5 = checkRequirementMining({ ctxText: "没有 <mining> 节的旧 CONTEXT", reqs: [{ id: "REQ-51" }] });
+  eqN(p5.length, 0, "mining-5 无 <mining> 节 → 豁免");
+  const root = mkdtempSync(join(tmpdir(), "mm-gsd-mining-"));
+  mkdirSync(join(root, ".planning"), { recursive: true });
+  writeFileSync(join(root, ".planning", "REQUIREMENTS.md"), "- REQ-51: 活需求\n- REQ-52: baseline 已交付(baseline 0.7.0)\n");
+  writeFileSync(join(root, ".planning", "28-01-PLAN.md"), "### T1\n- **covers**: REQ-51");
+  writeFileSync(join(root, ".planning", "28-02-PLAN.md"), "### T1\n- **covers**: REQ-52");
+  writeFileSync(join(root, ".planning", "req-ledger.md"), "| REQ | 处置 | 指向 | 说明 |\n|---|---|---|---|\n");
+  eqN(phaseReqs(root, "28").join(","), "REQ-51", "mining-6 phaseReqs 剔 baseline 行的 REQ");
+  writeFileSync(join(root, ".planning", "req-ledger.md"), "| REQ | 处置 | 指向 | 说明 |\n|---|---|---|---|\n| REQ-51 | delivered | 0.7.5 | 已交付 |\n");
+  eqN(phaseReqs(root, "28").join(","), "", "mining-7 phaseReqs 剔 req-ledger 已处置的 REQ");
+  rmSync(root, { recursive: true, force: true });
 }
 
 /**

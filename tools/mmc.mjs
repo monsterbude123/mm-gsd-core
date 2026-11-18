@@ -539,6 +539,12 @@ const CHECKS = {
     return checkCoreBoundaryAll({ root: ROOT, report });
   },
 
+  // R-29:discuss 落 REQ 前必须深挖(28-07,D-13/REQ-63)—— 判据权威在 references/requirement-mining.mjs
+  async "check-requirement-mining"(report) {
+    const { checkRequirementMiningAll } = await import("../skills/mm-gsd-loop/references/requirement-mining.mjs");
+    return checkRequirementMiningAll({ root: ROOT, report });
+  },
+
   async "check-channel-safety"(report) {
     const { makeReleaseFlow, publishArgs } = await import("./release-flow.mjs");
     const calls = [];

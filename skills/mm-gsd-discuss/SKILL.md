@@ -30,6 +30,10 @@ description: "极简 GSD 讨论(决策捕获,灵魂环节):思考伙伴而非采
 - 漏落的代价:REQ 不在清单里,后面整条链路(票 covers 认领 → checkReqCoverage 覆盖门 → verify 预审)都对不上它。落盘时自检一遍:还有没有"用户提了、REQ 清单里没有"的口子。
 - REQ-N 落盘后进确认门复述清单(见下「确认门」)—— 复述以 REQUIREMENTS.md 落盘内容为准,不在会话里另存一份。
 
+## 深挖需求(落 REQ 前必做,28-07/D-13)
+
+每条用户诉求写成 REQ 之前先答**四问** —— ①真实需求:背后那个用户动作是什么;②谁消费:谁在什么时候看它或用它;③什么时候会废:什么情况下这东西没人用;④做完长什么样:可观察的结果。答案写进 `.planning/<NN>-CONTEXT.md` 的 `<mining>` 节,每条 REQ 一块,四个标签行:`- **真实需求**: ` / `- **谁消费**: ` / `- **什么时候会废**: ` / `- **做完长什么样**: `,逐条非空。机器门 `checkRequirementMining` 在 `--plan` 时核对,缺一问判红;豁免:没有 `<mining>` 节的老项目照旧(baseline 与 req-ledger 已处置的 REQ 不判)。
+
 ## 产出 `.planning/<NN>-CONTEXT.md`(模板见 mm-gsd-plan/templates/context.md;本地不入库)
 
 **文件名必须带 phase 前缀**,不能叫 `CONTEXT.md`。检查器两处都只认 `-CONTEXT.md` 后缀
@@ -72,7 +76,7 @@ description: "极简 GSD 讨论(决策捕获,灵魂环节):思考伙伴而非采
 
 ## 确认门
 
-- REQUIREMENTS.md(REQ 清单)与 `<NN>-CONTEXT.md`(D-NN)两份工件**都落盘后**,把 **REQ 清单(每条一行)+ 每条决策一句话**复述给用户;**用户确认后才准调用 mm-gsd-plan**(D-06)。不复述全文 —— REQ 一行 + 决策一句话,长文用户不读。
+- REQUIREMENTS.md(REQ 清单)与 `<NN>-CONTEXT.md`(D-NN)两份工件**都落盘后**,把 **REQ 清单(每条一行)+ 每条决策一句话**复述给用户;**用户确认后才准调用 mm-gsd-plan**(D-06)。复述时要把**深挖结论一起复述**(四问答案跟着 REQ 走),只复述需求原话不算过。不复述全文 —— REQ 一行 + 决策一句话,长文用户不读。
 - 用户纠正 → 修订工件后再确认;确认没过,收尾不算完成。
 - fast 通道(不建 REQ/CONTEXT)免确认 —— 没有工件就没有要确认的账。
 

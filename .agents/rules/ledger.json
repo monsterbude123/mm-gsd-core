@@ -237,6 +237,15 @@
       "check": "check-core-boundary",
       "_note": "2026-11-19 phase 28-04 落地(用户拍板决定 #1 的机器化:做成点缀包,不要和核心流程强耦合)。判据口径三条:规则一只扫核心 .md 的显示名(readme-lf 的禁则词表是合法 .mjs 内容);规则二扫核心任何文件的目录名与命令调用形;规则三无包判 0 条。判定走 28-01 的 discoverPacks(包自声明),核心零硬编码。编号:28-04 票面原写 R-24(当时未占用),按台账顺次纪律落为 R-28(28-13 已占 R-24)。冻结基准快照与孪生(plan-review-fixtures/)是数据非活文案,扫描排除。",
       "_候选顾虑回应": "与 R-16(模块登记)、R-21(研究消费)不重叠:那两条管登记与引用,这条管核心与可选包的边界;与 R-27(体量)不重叠。"
+    },
+    {
+      "id": "R-29",
+      "status": "active",
+      "since": "0.7.5",
+      "statement": "discuss 落 REQ 前必须先深挖:每条用户诉求先答出四问(真实需求/谁消费/什么时候会废/做完长什么样),答案写进 CONTEXT 的 <mining> 节,确认门连深挖结论一起复述;机器门 checkRequirementMining 在 --plan 时核对本 phase 票覆盖的每条 REQ 都有四问,缺一条判红。豁免:只有写了 <mining> 节的 CONTEXT 才判(老项目豁免);REQUIREMENTS.md 标 (baseline 的 REQ 与 req-ledger 已处置的 REQ 不判。",
+      "check": "check-requirement-mining",
+      "_note": "2026-11-19 phase 28-07 落地。用户当场指出「我没看见你深挖需求这个动作」—— 缺的是纪律这一步,不是执行者偷懒;phase 26 教训:纪律写了但没机器门等于没写。豁免两套口径照 verification-gates checkReqCoverage(baseline 行/req-ledger 已处置)。编号:28-07 票面原写 R-25(已被 28-11 的 check-review-scope 占用),按台账顺次落 R-29。",
+      "_候选顾虑回应": "与 R-21(研究消费)、R-25(预审分类)不重叠:那条管研究产物被引用,这条管需求深挖四问进 CONTEXT。"
     }
   ],
   "candidates": [
