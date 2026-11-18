@@ -120,7 +120,7 @@ mm-gsd 是从更大项目蒸馏的,丢掉的部分往往是「为什么这么设
 
 ## 点修(已交付 phase 的快速修复)
 
-已交付 phase 的细节缺陷(看板批注 type=验收不过、verify 新 gap)→ **不开新 phase、不贴疤**,走点修。分流判据三条全满足才点修,任一超出 → 升级新 phase(升级不是失败,是范围扩张的正确通道):不新增 REQ;不改 CONTEXT 的 D-NN;修复面 ≤5 文件。
+已交付 phase 的细节缺陷(批注 type=验收不过、verify 新 gap)→ **不开新 phase、不贴疤**,走点修。分流判据三条全满足才点修,任一超出 → 升级新 phase(升级不是失败,是范围扩张的正确通道):不新增 REQ;不改 CONTEXT 的 D-NN;修复面 ≤5 文件。
 
 R 票形态(命名钉死,checker 推导依赖):`.planning/<NN>-Rk-PLAN.md` 挂原 phase,四件套照填,verify 重验没达标的那条 truth;`<NN>-Rk-SUMMARY.md` 收口;VERIFICATION 的「## 重验记录」逐票追加;关联批注标 digested;预审走点修轻量三查(mm-gsd-plan-check)。STATE 翻转:开出时 reopened,重验 passed 改回 shipped —— STATE 不许说谎。**上限**:同一 truth/根因 R 票 ≤2 张;phase 累计 ≥3 → 强制升级。与 fast 通道分清:fast 不建工件;点修挂原 phase,全链可追溯。
 

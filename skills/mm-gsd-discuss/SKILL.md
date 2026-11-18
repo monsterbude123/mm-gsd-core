@@ -51,7 +51,7 @@ description: "极简 GSD 讨论(决策捕获,灵魂环节):思考伙伴而非采
 
 ## 用户批注消化(开头必做)
 
-讨论开始前先读 `.planning/annotations.json`(Web 看板落盘的用户审核):**status=open 的批注按 type 消化**,消化后把该条 status 改 digested —— 不消化,检查器默认模式会一直黄提醒「N 条用户批注待消化」。
+讨论开始前先读 `.planning/annotations.json`(用户落盘的审核意见):**status=open 的批注按 type 消化**,消化后把该条 status 改 digested —— 不消化,检查器默认模式会一直黄提醒「N 条用户批注待消化」。
 
 - **需求遗漏** → 按批注内容草拟 REQ 追加进 REQUIREMENTS.md,走下面的确认门复述;
 - **方向不对** → 作为本次讨论的输入重开对应决策,推翻的 D-NN 在 CONTEXT 里改写并注明日期;

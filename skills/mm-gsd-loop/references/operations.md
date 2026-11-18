@@ -112,4 +112,4 @@ chmod +x .githooks/pre-commit && git config core.hooksPath .githooks
 
 ## deferred 卫生(自包含)
 
-写 deferred 条目必须带三列——分类(可做/挂条件/关闭)+ 触发条件或关闭理由 + 归属;未分类条目是没回答过「什么时候做、谁做」的欠账,看板会计数并黄条提醒(未分类超阈)。存量归位走 .planning/deferred-LEDGER.md 处置台账(原件零改动,同键追加行即修正);dismissed 必须引证据(实现它的 phase / 推翻它的决策),无证据销账是假销账。
+写 deferred 条目必须带三列——分类(可做/挂条件/关闭)+ 触发条件或关闭理由 + 归属;未分类条目是没回答过「什么时候做、谁做」的欠账,会计数并黄条提醒(未分类超阈)。存量归位走 .planning/deferred-LEDGER.md 处置台账(原件零改动,同键追加行即修正);dismissed 必须引证据(实现它的 phase / 推翻它的决策),无证据销账是假销账。

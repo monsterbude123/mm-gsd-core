@@ -851,7 +851,7 @@ if (process.argv.includes("--init")) {
 {
   const { readAnnotations } = await import("../references/repair-gates.mjs");
   const openAnn = readAnnotations(root).filter((a) => a?.status === "open");
-  if (openAnn.length) warn(`${openAnn.length} 条用户批注待消化 —— mm-gsd web 查看,discuss/plan 开头消化`);
+  if (openAnn.length) warn(`${openAnn.length} 条用户批注待消化 —— 用批注工具查看,discuss/plan 开头消化`);
 }
 
 // ---- STATE ----

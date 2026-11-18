@@ -114,7 +114,7 @@ export function runPackCases({ eqN }) {
 }
 
 /** 工具遥测视图纯函数用例组(28-02 T2 自核心 selftests 搬入):按本地日切桶/异 cwd 过滤/空态/import 无副作用。
- *  服务层与模板断言在 skills/mm-gsd-board/selftests/board-probe.selftest.mjs(看板可选包,28-02 D-03)。 */
+ *  服务层与模板断言在 包自测 board-probe(28-02 D-03)。 */
 export function runTelemetryViewCases({ eqN, eqArr }) {
   const MODULE_PATH = fileURLToPath(new URL("./telemetry-view.mjs", import.meta.url));
   const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
