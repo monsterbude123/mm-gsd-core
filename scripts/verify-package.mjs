@@ -106,6 +106,16 @@ try {
     const leaked = files.filter((n) => n === rel || n.startsWith(rel + "/"));
     if (leaked.length) bad(`files 里排除了 "${rel}",但 ${leaked.length} 个文件还是进了包:${leaked.slice(0, 3).join("、")}`);
   }
+  // 包内技能清单 ↔ 仓库技能目录必须一致(I-006):少了 = 用户少装一个技能,
+  // 多了 = 已删的技能还在包里(装进用户的 ~/.agents/skills/)。
+  // 之前这里只数 skillNames(仓库侧),包侧没人对账 —— 两边不一致没有任何一处会红。
+  const packedSkills = [...new Set(files.filter((n) => n.startsWith("skills/")).map((n) => n.split("/")[1]).filter(Boolean))];
+  for (const s of skillNames) {
+    if (!packedSkills.includes(s)) bad(`包内缺技能目录 skills/${s}/ —— 仓库里有、包里没有(用户会少装一个技能)`);
+  }
+  for (const s of packedSkills) {
+    if (!skillNames.includes(s)) bad(`包内多出技能目录 skills/${s}/ —— 仓库里已经没有这个技能,包里还在`);
+  }
   ok("打包清单符合预期");
 } catch (e) {
   bad("npm pack --dry-run 失败:" + String(e.stderr || e.message).split("\n")[0]);

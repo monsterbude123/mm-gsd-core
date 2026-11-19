@@ -35,7 +35,11 @@ process.stdin.on("end", () => {
     { re: /\bgit\s+clean\b[^|;&]*\s-[a-z]*f/i, why: "会删除未跟踪文件——在共享 worktree 里可能删掉别人的东西(绝不要在 worktree 内用)。" },
     { re: /\bgit\s+stash\b/i, why: "refs/stash 跨 worktree 共享,stash 全族(push/pop/apply/drop/clear)都可能搅乱兄弟会话的 WIP。要存 WIP 用分支,不要用 stash。" },
     { re: /\bgit\s+push\b[^|;&]*(--force\b(?!-with-lease)|-f\b)/i, why: "强推会覆盖远端他人提交;除非明确知道在做什么,否则用 --force-with-lease 或先 pull。" },
-    { re: /\bgit\s+(branch\s+-D|update-ref\s+-d)\b/i, why: "会不可逆删除分支/引用。确认该分支已合并或已备份再删。" },
+    // `git branch -D`(强删)不可逆;`git branch -d`(安全删)不是 —— git 自己会拒绝删未合并的分支。
+    // 两个都拦等于把「删已合并的旧分支」也变成要人放行的事(2026-11-19 实测:清 5 条已合并的
+    // 旧分支被这条挡住,而它的文案写的是「确认该分支已合并或已备份再删」—— 那正是 `-d` 的语义)。
+    { re: /\bgit\s+branch\s+-D\b/, why: "强删分支会丢掉未合并的提交(不可逆)。要删已合并的分支用 `git branch -d`(git 会自己拒绝未合并的)。" },
+    { re: /\bgit\s+update-ref\s+-d\b/i, why: "会不可逆删除引用。确认该引用已合并或已备份再删。" },
     { re: /\bgit\s+(checkout|restore)\b[^|;&]*\s\.\s*($|[|;&])/i, why: "全量重置工作区,会丢掉所有未提交改动。逐文件恢复,或先 stash。" },
     { re: /\bgit\s+checkout\s+(-f|--force)\b/i, why: "强检出会丢掉工作区未提交改动。逐文件恢复,或先备份再切。" },
     { re: /\bgit\s+switch\b[^|;&]*--discard-changes/i, why: "--discard-changes 会丢未提交改动。先备份再切。" },
