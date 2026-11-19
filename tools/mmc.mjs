@@ -105,6 +105,10 @@ const CHECKS = {
       if (!r.check) { report.fail(`${r.id}: active 但没挂 check —— 挂不上门禁的规则只能进 candidates,不能 active`); pass = false; }
       else if (!known.has(r.check)) { report.fail(`${r.id}: check "${r.check}" 在 mmc.mjs 里不存在 —— 台账指向了不存在的门禁`); pass = false; }
       if (!r.since) { report.fail(`${r.id}: 缺 since(生效日期)`); pass = false; }
+      // 摩擦档(phase 30 T1):每条 active 规则必须声明摩擦档位与依据 —— 体积只报不拦(T-16),
+      // 但「哪个门在收过路费、收了多少」要有账可查,审计(降级/退役)才有依据。
+      if (!["high", "mid", "low"].includes(r.friction)) { report.fail(`${r.id}: 缺 friction 摩擦档(high|mid|low)—— 摩擦审计要求每条 active 规则声明档位(phase 30 T1)`); pass = false; }
+      else if (!r.friction_note) { report.fail(`${r.id}: 有 friction 但缺 friction_note —— 档位没有依据等于没审`); pass = false; }
     }
     const cand = (led.candidates ?? []).filter((c) => c.status !== "candidate");
     if (cand.length) { report.fail(`candidates 区有 ${cand.length} 条不是 candidate 状态 —— 候选区只放未生效的`); pass = false; }

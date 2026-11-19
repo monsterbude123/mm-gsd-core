@@ -11,7 +11,9 @@
       "statement": "任何进 main 的行为改变,都必须能追溯到一个 issue。issue 必须带证据(遥测行、复现命令或真实报错原文)。",
       "check": "check-issue-evidence",
       "status": "active",
-      "since": "2026-10-19"
+      "since": "2026-10-19",
+      "friction": "low",
+      "friction_note": "本会话 0 次拦截;建 issue 时顺手满足,无感"
     },
     {
       "id": "R-02",
@@ -19,7 +21,9 @@
       "check": "check-ledger-integrity",
       "status": "active",
       "since": "2026-10-19",
-      "_note": "本条自身由 check-ledger-integrity 执行。它是台账的元规则。"
+      "_note": "本条自身由 check-ledger-integrity 执行。它是台账的元规则。",
+      "friction": "low",
+      "friction_note": "台账元规则,结构性约束,从不红在真实工作上"
     },
     {
       "id": "R-03",
@@ -35,7 +39,9 @@
       "check": "check-syntax-and-modes",
       "status": "active",
       "since": "2026-10-19",
-      "_note": "node --check 查不出缺失 import 这类运行时错误,必须真跑一次。"
+      "_note": "node --check 查不出缺失 import 这类运行时错误,必须真跑一次。",
+      "friction": "low",
+      "friction_note": "每次 health 都跑,本会话 0 次误红;成本低"
     },
     {
       "id": "R-05",
@@ -43,7 +49,9 @@
       "check": "check-templates-self-validate",
       "status": "active",
       "since": "2026-10-19",
-      "_note": "这条来自真实事故:SUMMARY 模板写了非法 status、PLAN 模板用 ... 占位、SHIP 模板 delivered 是占位符,三个模板都过不了自己的检查器。照抄即报错 = 模板没写。"
+      "_note": "这条来自真实事故:SUMMARY 模板写了非法 status、PLAN 模板用 ... 占位、SHIP 模板 delivered 是占位符,三个模板都过不了自己的检查器。照抄即报错 = 模板没写。",
+      "friction": "low",
+      "friction_note": "模板门 0 次触发;改模板时才相关"
     },
     {
       "id": "R-06",
@@ -51,7 +59,9 @@
       "check": "check-zero-dep",
       "status": "active",
       "since": "2026-10-19",
-      "_note": "跨 ZCode/Claude Code/Codex 安装,任何依赖都是安装摩擦。"
+      "_note": "跨 ZCode/Claude Code/Codex 安装,任何依赖都是安装摩擦。",
+      "friction_note": "0 次触发;但看板构建管线落地时它是真实的护栏(devDeps 不混入运行时)",
+      "friction": "low"
     },
     {
       "id": "R-07",
@@ -59,7 +69,9 @@
       "check": "check-mode-ordering",
       "status": "active",
       "since": "2026-10-19",
-      "_note": "这条来自真实事故:--worktrees 和 --stats 都排在 STATE 早退之后,未初始化项目里永远跑不到。"
+      "_note": "这条来自真实事故:--worktrees 和 --stats 都排在 STATE 早退之后,未初始化项目里永远跑不到。",
+      "friction": "low",
+      "friction_note": "0 次触发;结构性"
     },
     {
       "id": "R-08",
@@ -67,7 +79,9 @@
       "check": "check-no-silent-noop",
       "status": "active",
       "since": "2026-10-19",
-      "_note": "来自真实事故:正则用了 Python 的 \\Z,在 JS 里匹配字面量 Z,导致波次段抓空却看不出错。"
+      "_note": "来自真实事故:正则用了 Python 的 \\Z,在 JS 里匹配字面量 Z,导致波次段抓空却看不出错。",
+      "friction": "low",
+      "friction_note": "0 次触发;静默失效的看门人,本会话两次改门禁都靠它兜扫描面"
     },
     {
       "id": "R-09",
@@ -75,7 +89,9 @@
       "check": "check-budget",
       "status": "active",
       "since": "2026-10-19",
-      "_note": "这条来自真实事故,而且是本仓库最险的一次:glob 匹配器坏掉时不抛异常,只是永远不匹配,于是单文件上限检查一路显示绿色对勾、静默空过。比没有门禁更坏 —— 没有门禁你知道没检查,假绿门禁你以为有。判据:任何门禁上线时,都必须先造一个违规输入证明它真的会红。"
+      "_note": "这条来自真实事故,而且是本仓库最险的一次:glob 匹配器坏掉时不抛异常,只是永远不匹配,于是单文件上限检查一路显示绿色对勾、静默空过。比没有门禁更坏 —— 没有门禁你知道没检查,假绿门禁你以为有。判据:任何门禁上线时,都必须先造一个违规输入证明它真的会红。",
+      "friction": "mid",
+      "friction_note": "匹配器自测机制是真实维护重量;本仓最险事故(glob 静默空过)由它兜住,值这个价"
     },
     {
       "id": "R-10",
@@ -83,7 +99,9 @@
       "check": "check-templates-self-validate",
       "status": "active",
       "since": "2026-10-19",
-      "_note": "这条落地时当场抓出两个活着的缺陷:state.md 与 verification.md 的 status 都写成了多值 \"a | b\" 形式,照抄必被判非法 —— 与之前 SUMMARY 模板的 bug 同一类,只是没人检查就一直坏着。"
+      "_note": "这条落地时当场抓出两个活着的缺陷:state.md 与 verification.md 的 status 都写成了多值 \"a | b\" 形式,照抄必被判非法 —— 与之前 SUMMARY 模板的 bug 同一类,只是没人检查就一直坏着。",
+      "friction": "low",
+      "friction_note": "模板结构门 0 次误红"
     },
     {
       "id": "R-11",
@@ -91,7 +109,9 @@
       "check": "check-package-verifiable",
       "status": "active",
       "since": "2026-10-19",
-      "_note": "打包漏文件是 npm 包最难查的故障 —— 用户 npx 装完才发现某脚本不在,报错还指向包内路径。所以检查必须模拟一次真实安装,而不是只看 files 字段。"
+      "_note": "打包漏文件是 npm 包最难查的故障 —— 用户 npx 装完才发现某脚本不在,报错还指向包内路径。所以检查必须模拟一次真实安装,而不是只看 files 字段。",
+      "friction": "mid",
+      "friction_note": "只在发版时跑;本会话两次抓到真问题(构建目录进包、排除项假红)——发布期成本,值"
     },
     {
       "id": "R-12",
@@ -99,7 +119,9 @@
       "check": "check-install-traceable",
       "status": "active",
       "since": "2026-10-19",
-      "_note": "手工 cp 装的东西没有版本清单,doctor 只能报「未装」或「已装」,说不出是哪一版 —— 出了问题无从追溯。清单记版本、来源、时间与每个技能的指纹。"
+      "_note": "手工 cp 装的东西没有版本清单,doctor 只能报「未装」或「已装」,说不出是哪一版 —— 出了问题无从追溯。清单记版本、来源、时间与每个技能的指纹。",
+      "friction": "low",
+      "friction_note": "0 次触发;清单机制自动生效"
     },
     {
       "id": "R-13",
@@ -107,7 +129,9 @@
       "statement": "报修入口必须随包可达:bin 认识 report,转发目标在 package.json files 覆盖的目录里,且不反向依赖仓库专属文件。",
       "check": "check-report-reachable",
       "since": "0.2.0",
-      "_note": "使用方手上只有 npx 装出来的 skills/,没有仓库。把 report 放 tools/ 会让闭环从第一步就断,而断得很安静。"
+      "_note": "使用方手上只有 npx 装出来的 skills/,没有仓库。把 report 放 tools/ 会让闭环从第一步就断,而断得很安静。",
+      "friction": "low",
+      "friction_note": "0 次触发"
     },
     {
       "id": "R-14",
@@ -115,7 +139,9 @@
       "statement": "报修失败必须非零退出:无标题、无证据、证据文件不存在,三种情况都不许 exit 0。",
       "check": "check-report-fails-loud",
       "since": "0.2.0",
-      "_note": "退出 0 等于对 agent 谎称「已经报上去了」,而维护方永远看不到这条。见 T-03。"
+      "_note": "退出 0 等于对 agent 谎称「已经报上去了」,而维护方永远看不到这条。见 T-03。",
+      "friction": "low",
+      "friction_note": "0 次触发"
     },
     {
       "id": "R-15",
@@ -123,7 +149,9 @@
       "statement": "检查器里判对错的正则必须有自测用例,且自测必须进 health —— 改完先证明门禁会红,再谈合进 main。",
       "check": "check-gate-selftest",
       "since": "0.3.1",
-      "_note": "GitHub #6/#7/#8:admin 路径被判模糊、全角括号依赖解析为空、held 的 SHIP 被推成 shipped。三条都不崩溃,只是安静地给错答案 —— 比崩溃难发现得多。"
+      "_note": "GitHub #6/#7/#8:admin 路径被判模糊、全角括号依赖解析为空、held 的 SHIP 被推成 shipped。三条都不崩溃,只是安静地给错答案 —— 比崩溃难发现得多。",
+      "friction": "mid",
+      "friction_note": "自测 400+ 断言,health 里最重的一段;本会话它两次抓到「验收命令恒绿」(预审 r1 的要害)——重但值"
     },
     {
       "id": "R-16",
@@ -132,7 +160,9 @@
       "check": "check-gate-cases",
       "since": "0.4.1",
       "_note": "收窄 R-15 的适用假设:R-15 只证明「检查器里的正则有自测」,不覆盖「mmc 自己的门禁坏了」—— 而 GitHub #6/#7/#8 恰恰是后者。不替代 R-02:R-02 是「规则→门禁」这一向,R-16 是「门禁→会红用例」与「实现→台账」反查,方向不同,缺任一向都会静默腐化。",
-      "_候选顾虑回应": "candidates 里那条「新增规则必须说明替代了哪条旧规则」针对的是新增知识冒充替代;本条是新增,但收窄了 R-15 的覆盖假设(见 _note),不冒充替代。"
+      "_候选顾虑回应": "candidates 里那条「新增规则必须说明替代了哪条旧规则」针对的是新增知识冒充替代;本条是新增,但收窄了 R-15 的覆盖假设(见 _note),不冒充替代。",
+      "friction": "mid",
+      "friction_note": "本会话加每条新门都要写会红用例(三次);摩擦是设计意图,但确实是每次改门禁的固定成本"
     },
     {
       "id": "R-17",
@@ -141,7 +171,9 @@
       "statement": "参考系对照表(skills/mm-gsd-loop/references/reference-map.md)里引用的每个 GSD Core 路径都必须真实存在 —— 引用失效的对照表比没有表更坏:读的人会以为已经查过上游而直接照着编造。",
       "check": "check-reference-map",
       "_note": "GSD Core 不在本机时判「没核对」而不判红(参考系是可选外部依赖),但必须显式说出来 —— 否则「表核过了」的绿灯是假的。",
-      "_候选顾虑回应": "不替代任何现有规则:R-16 管「门禁要有会红用例」,R-02 管「规则要有门禁」,本条管「外部参考表不能烂掉」,三个方向不同。"
+      "_候选顾虑回应": "不替代任何现有规则:R-16 管「门禁要有会红用例」,R-02 管「规则要有门禁」,本条管「外部参考表不能烂掉」,三个方向不同。",
+      "friction": "low",
+      "friction_note": "0 次触发;27 条路径引用全绿"
     },
     {
       "id": "R-18",
@@ -150,7 +182,9 @@
       "statement": "工件记账必须完整:SUMMARY 声称 complete 却 commits 为 0 —— 必须有一条指向真实 commit 的记账声明,否则判红。「这张票认领了哪条决策」不归本条:核销由 phase 级 union 门判(D-03),一个判定只能有一个 owner。",
       "check": "check-artifact-ledger",
       "_note": "第三种历史工件状态(做完了但没记账)在旧流程里无处安放,被误判成「过时」或「未完成」,而「重做一遍」是对已完成工作最大的浪费。处置路径是原件不动 + 新件说清关系(D-01 的补充):记账行必须指向一个 git 里真实存在的 commit,否则记账不算数 —— 一句「已知悉」就能糊弄过去的记账等于没有记账。2026-10-22 收窄:本条原来还判「PLAN 零 D-NN 引用」那半条。D-03 把核销判据换成 phase 级 union(只认 covers 字段),而这半条还在扫全文 D-NN —— 同一个判定有了两个 owner,判据还更糙:实测一张合法的纯实现票(covers: 无,phase union 已覆盖)仍被它判红。退役这半条,本条只判 commits。",
-      "_候选顾虑回应": "不替代 R-05/R-10:R-05/R-10 管「工件字段合不合规」,本条管「工件之间的记账关系全不全」;不替代 R-02:本条是台账里的一条规则,不是元规则。"
+      "_候选顾虑回应": "不替代 R-05/R-10:R-05/R-10 管「工件字段合不合规」,本条管「工件之间的记账关系全不全」;不替代 R-02:本条是台账里的一条规则,不是元规则。",
+      "friction": "mid",
+      "friction_note": "本会话多次触发(零 commit 记账、台账行缺失),每次都要补记账;抓的是真问题但频次高"
     },
     {
       "id": "R-19",
@@ -159,7 +193,9 @@
       "statement": "预发布通道的 next 不得比正式通道的 latest 旧 —— 通道自己腐烂时门禁要当场判红,并说清两个版本号各是多少。",
       "check": "check-release-tags",
       "_note": "阶段 03 的 D-01 附了一条硬要求:通道建起来就得配一条门禁,否则它会自己腐烂(标签靠人维护,忘了就静默指向历史版本)。判据只取两个可机器判定的事实:next 与 latest 的版本号比较 —— 不用「感觉该更新了」这种不可判的说法。查不到 npm 上的标签时判「没核对」而不是判红(照 R-17 的先例:外部依赖不在时不能判红),通道还没建时也只警告 —— 第一次 release 之前整仓恒红,那是墙不是门(T-13)。",
-      "_候选顾虑回应": "不替代 R-11/R-12:R-11 管「包里该有的文件一个不少」、R-12 管「安装可追溯」,本条管「发布通道的标签有没有在腐烂」;不替代 R-02:本条是台账里的一条规则,不是元规则。"
+      "_候选顾虑回应": "不替代 R-11/R-12:R-11 管「包里该有的文件一个不少」、R-12 管「安装可追溯」,本条管「发布通道的标签有没有在腐烂」;不替代 R-02:本条是台账里的一条规则,不是元规则。",
+      "friction": "low",
+      "friction_note": "0 次触发;通道自动钉 next 后基本不红"
     },
     {
       "id": "R-20",
@@ -168,7 +204,9 @@
       "statement": "改外部发布通道必须显式:promote 默认只演练(要 --execute 才动 registry),发版(release)只落 next 通道 —— latest 只能由 promote 显式动。",
       "check": "check-channel-safety",
       "_note": "phase 03 验证时用隔离环境(假 npm registry)抓到:promote 的实现是「带 --dry-run 才演练」,于是默认路径直接改公开的 npm 标签。这与三处承诺冲突 —— 03-01-PLAN 的 Auto Decisions(「promote 默认带 --dry-run 语义」)、release-flow.mjs 自己的注释、03-CONTEXT D-04(「批 promote」是人保留的动作)。人保留的动作如果工具默认就按下扳机,那条保留就是假的。判据是行为不是源码:注入会记账的假 exec,断言默认路径一次 registry 都没碰,带 --execute 才发出 dist-tag add。2026-10-22 真发 0.4.1 时又抓到同一族的另一半:npm publish 默认落 latest,于是「发个版」把正式通道一起带走了(latest 0.4.0 → 0.4.1),而 03-CONTEXT D-01 写明 latest 必须指向最稳那条、release 只该落 next。判据是命令本身(publishArgs 必须带 --tag next),不是某句文案 —— 当时收尾文案还写着「latest 未动」,代码在照做、文案在撒谎。",
-      "_候选顾虑回应": "不替代 R-19:R-19 管「通道有没有在腐烂」(标签新旧),本条管「谁有权按下改标签的扳机」;不替代 R-11:R-11 管包里该有的文件,本条管发布动作的副作用。"
+      "_候选顾虑回应": "不替代 R-19:R-19 管「通道有没有在腐烂」(标签新旧),本条管「谁有权按下改标签的扳机」;不替代 R-11:R-11 管包里该有的文件,本条管发布动作的副作用。",
+      "friction": "low",
+      "friction_note": "0 次触发;promote 默认演练的护栏"
     },
     {
       "id": "R-21",
@@ -177,7 +215,9 @@
       "statement": "执行端只照施工图施工:已调研的结论不重查,审批与验收不归执行端 —— 执行端只判「我落的与图纸对不对得上」。",
       "check": "check-research-consumed",
       "_note": "2026-10-23 用户反馈:「mm-gsd 的 exec 很慢的原因是它不相信 plan 给的内容,它要自己再去从零开始走一遍理解路径,还有 research 导致大量时间实在重复的理解」。审计定位到三处可判事实:① `RESEARCH` 一词在 mm-gsd-exec/SKILL.md 里出现 0 次 —— 研究产物落盘了却没有任何角色被要求读它,执行端不知道「哪些结论已经查过」,只能自己重查一遍;② exec 的判疑标准写着「技术细节拿不准就去查项目事实(代码/文档/既有模式)」,在执行期等于再做一次研究;③ 同一批真理来源文件被 plan/research 读一遍、exec 又通读一遍。对照原版 GSD:它**也没有**一条「执行者不得重新理解」的明文纪律 —— 忠实性靠架构涌现(计划即 prompt、planner 预抽 interfaces、executor 无 Agent 工具、checker 只读);但它有一条 mm-gsd 没有的 `<interfaces>` 条款:「do NOT re-read the source files to discover types. The planner already extracted what you need.」—— 施工图要有料。本条判的是**可机判的另一半**:phase 有研究产物 + 活票没引用它 = 没人读它 = 执行端会重查一遍。只对活票判(存量工件恒红就是墙,T-13)。 —— 补记(2026-10-24):本条原写 since 0.4.5,而 0.4.5 从未存在过(npm 上 latest/next 都是 0.4.1,仓库 package.json 也是 0.4.1);since 字段说谎没人会发现,已改成下一个真会发出去的版本 0.4.2。",
-      "_候选顾虑回应": "不替代 R-15/R-16(那两条管自测与门禁登记);不替代 R-02(那条管「规则要挂门禁」,本条是挂在门禁上的具体纪律);不替代 R-09(那条管「门禁要先证明自己会红」,本条提供会红用例的判据)。它与 R-16 不重叠:R-16 判「每个门禁都登记了会红用例」,本条判「研究产物有没有被下游消费」。"
+      "_候选顾虑回应": "不替代 R-15/R-16(那两条管自测与门禁登记);不替代 R-02(那条管「规则要挂门禁」,本条是挂在门禁上的具体纪律);不替代 R-09(那条管「门禁要先证明自己会红」,本条提供会红用例的判据)。它与 R-16 不重叠:R-16 判「每个门禁都登记了会红用例」,本条判「研究产物有没有被下游消费」。",
+      "friction": "high",
+      "friction_note": "本会话两次规划都拦(29/30 都要补研究引用),每次都改票面;抓的缺口是真的(研究落盘没人读),但它是规划期最高频的拦路门"
     },
     {
       "id": "R-22",
@@ -186,7 +226,9 @@
       "statement": "角色卡的描述只许写正文里真有的机制 —— 卡面在宣传一个不存在的机制,等于让子代理按错的规则开工。",
       "check": "check-card-claims",
       "_note": "2026-10-24 phase 07 收尾实测(实派 mm-gsd-exec 子代理之后核对卡面):exec 的 description 写着「SUMMARY 原子块(写后即提交)」和「auth-as-gate」。前者与正文第 93 行「SUMMARY 写进 .planning/ 不 commit、不 push」正好相反;后者 grep 全仓 0 命中 —— 本仓根本没有这个机制。卡面是路由器与子代理读到的第一手描述:它错了,子代理照错的开工,而正文是对的,所以没有门禁会红(T-08 的老形状,只是长在散文里)。判据取结构事实:描述里每个带连字符的拉丁专名都必须在该技能正文里出现过(整词在,或连字符切开的每一段都在 —— R1-R4 在正文里是两行 R1…R4);只查带连字符的拉丁专名,是因为中文措辞与正文不同是正常的,逐词对齐会天天误报。门禁自带自证(诚实的假卡判 0 条、撒谎的假卡判 1 条),否则恒绿实现同样能把 health 骗绿。",
-      "_候选顾虑回应": "与 R-16(门禁登记)、R-21(研究消费)不重叠:那两条判门禁与工件,本条判卡面与正文的一致性。它替代不了人工审校散文矛盾 —— 「写后即提交 vs 不 commit」是人工比对发现的,本条能抓的是「正文压根没有那个机制」这一族(机械可判);散文层面的语义矛盾仍靠每轮 verify 复核。"
+      "_候选顾虑回应": "与 R-16(门禁登记)、R-21(研究消费)不重叠:那两条判门禁与工件,本条判卡面与正文的一致性。它替代不了人工审校散文矛盾 —— 「写后即提交 vs 不 commit」是人工比对发现的,本条能抓的是「正文压根没有那个机制」这一族(机械可判);散文层面的语义矛盾仍靠每轮 verify 复核。",
+      "friction": "low",
+      "friction_note": "0 次触发"
     },
     {
       "id": "R-23",
@@ -195,7 +237,9 @@
       "statement": "指针卡必须跟着技能走 —— 技能改了而卡没改,卡就在撒谎;但用户自己写的同名卡一个字都不许动。",
       "check": "check-card-refresh",
       "_note": "2026-10-24 phase 07 收尾实测:安装器对已存在的卡一律跳过(「不接管用户的卡」),而 mm-gsd 自己发的卡也在跳过之列 —— exec 的 SKILL.md 修好了,~/.zcode/agents/mm-gsd-exec.md 还写着「写后即提交」(与正文相反)和一个本仓根本没有的机制「auth-as-gate」。卡是路由器与子代理读到的第一手描述:卡错了派发就错,而正文是对的,所以没有门禁会红。修法分两半:①安装器认出「自己的卡」(卡里有「别在本卡里找规则」+ frontmatter 同名),自己的卡刷新、用户自己的卡不动;②`mm-gsd-install.mjs --check` 体检时报过期并以退出码 1 报红。门禁跑真沙盒证明:装完卡在宿主目录里、改技能后卡跟着改、用户自己的卡一个字不动。",
-      "_候选顾虑回应": "与 R-22 不重叠:R-22 判仓内「卡面描述 ↔ 技能正文」是否一致(卡面不许宣传正文没有的机制);R-23 判机内「已装指针卡 ↔ 技能」是否同步(卡不许比技能旧)。一个管说的对不对,一个管说的新不新。"
+      "_候选顾虑回应": "与 R-22 不重叠:R-22 判仓内「卡面描述 ↔ 技能正文」是否一致(卡面不许宣传正文没有的机制);R-23 判机内「已装指针卡 ↔ 技能」是否同步(卡不许比技能旧)。一个管说的对不对,一个管说的新不新。",
+      "friction": "low",
+      "friction_note": "0 次触发;update 时自动刷新"
     },
     {
       "id": "R-24",
@@ -203,7 +247,9 @@
       "since": "0.7.5",
       "statement": "票面 wave 是 DAG 推导的缓存不是真相源:手写值与依赖推导不符 = 次序焦虑落进工件,执行端按错序开工。",
       "check": "check-wave-from-dag",
-      "_note": "2026-11-18 phase 28-13 落地。用户裁定「次序不重要,只要 DAG 对应上」——agent 排计划时过度关注手写次序,错排一步就引发后续计划反复改写反复预审(三次复发:#13/#22/phase 28)。判据:wave = 1 + max(依赖的 wave),推导内核 worktree-view.mjs 的 deriveWaves;--plan 批图区与 mmc health 双端判红,报错给推导值。活违规输入:28-06 手写 wave=6、推导=5(其余八票全一致),28-13 顺手修正为 5 —— 门上线即有真牙。编号规范:研究文档原提案 R-27/28/29(只审判断题/phase 收敛/体量门)按台账顺次落为 R-25/26/27。"
+      "_note": "2026-11-18 phase 28-13 落地。用户裁定「次序不重要,只要 DAG 对应上」——agent 排计划时过度关注手写次序,错排一步就引发后续计划反复改写反复预审(三次复发:#13/#22/phase 28)。判据:wave = 1 + max(依赖的 wave),推导内核 worktree-view.mjs 的 deriveWaves;--plan 批图区与 mmc health 双端判红,报错给推导值。活违规输入:28-06 手写 wave=6、推导=5(其余八票全一致),28-13 顺手修正为 5 —— 门上线即有真牙。编号规范:研究文档原提案 R-27/28/29(只审判断题/phase 收敛/体量门)按台账顺次落为 R-25/26/27。",
+      "friction": "high",
+      "friction_note": "本会话最高误红率:列表形 depends_on 不可见导致推导错,30-02 排票时真撞上(28-08 有前科);抓出过解析缺口,但对合法票面的误红率是全台账最高"
     },
     {
       "id": "R-25",
@@ -211,7 +257,9 @@
       "since": "0.7.5",
       "statement": "预审只审判断题:预审工件里的机器可判发现由机器门判,分类降级不计入 blocker 拦工。",
       "check": "check-review-scope",
-      "_note": "2026-11-19 phase 28-11 落地。33 条人报 BLOCKER 里 19 条(57.6%)机器可判(研究台 taxonomy)——把它们混进预审拦工,就是预审循环失控的第一台发动机(#13/#22/phase 28 三次复发)。机制:plan-ready.mjs 的 classifyArtifactBlockers 按 MACHINE_SIGNS 把预审工件里的机器可判 BLOCKER 行分类降级,拦工只数判断题;机器侧由 28-10 的 14 族门(--plan)当场判。运行期自证:runConvergenceCases 的 rcv-3(rcv 锚点)。"
+      "_note": "2026-11-19 phase 28-11 落地。33 条人报 BLOCKER 里 19 条(57.6%)机器可判(研究台 taxonomy)——把它们混进预审拦工,就是预审循环失控的第一台发动机(#13/#22/phase 28 三次复发)。机制:plan-ready.mjs 的 classifyArtifactBlockers 按 MACHINE_SIGNS 把预审工件里的机器可判 BLOCKER 行分类降级,拦工只数判断题;机器侧由 28-10 的 14 族门(--plan)当场判。运行期自证:runConvergenceCases 的 rcv-3(rcv 锚点)。",
+      "friction": "low",
+      "friction_note": "0 次触发;分类降级静默生效"
     },
     {
       "id": "R-26",
@@ -219,7 +267,9 @@
       "since": "0.7.5",
       "statement": "收敛单位是 phase:收敛工件在场票级预审被取代,新增判断项计数不降即判停转人。",
       "check": "check-review-convergence",
-      "_note": "2026-11-19 phase 28-11 落地。预审循环失控的第二台发动机是「轮次×票数」乘法(#13/#22/#25 实测:11 票 46 轮、工件行数是产品代码 5 倍)。机制:plan-ready.mjs 的 readPhaseConvergence 读 <NN>-REVIEW-CONVERGENCE*.md(round/new_judgment/open_judgment),相邻两轮 new_judgment 不降 ⇒ REVIEW-CONVERGENCE-STALLED 判停转人;收敛工件在场时票级预审被取代。在制 phase 祖父路径:PHASE_CONVERGENCE_REQUIRED_FROM=29,29 起新规划才强制 phase 工件(决定 #3:存量施工不判死)。运行期自证:rcv-1/2/4 锚点 + health 活检停滞序列。 2026-11-19 phase 29-01 补齐实现:statement 早就写着「收敛工件在场票级预审被取代」,但只有 plan-ready.mjs 的 checkPlanReady 兑现了(superseded),逐票工件契约门(ticket-alive.mjs 的 checkPlanCheckArtifacts,phase 09 D-08)照样判「已经开工却没有预审结论」—— 于是 29 起的新规制每张票恒红(恒红的门不是严,是废)。修法:逐票工件门按**票自己的 phase 号**认取代(不用 STATE 的 active_phase:那条为空或跨 phase 时两路会得出相反结论);形状不合(缺 round/new_judgment)的收敛工件不算在场;取代只免「缺」,不免「坏」(在场的票级工件 status 非法照样判红)。活违规输入:同一夹具两端实跑 —— 有收敛工件时检查器不再报缺票级工件,无收敛工件时照样判红(--selfcheck 的 rcv-9a/9b 端到端覆盖接线);散文层同步(mm-gsd-exec 与 mm-gsd-plan-check 写清收敛工件落在哪个目录与半截工件不算数),否则执行端按旧散文会等一张不该存在的票级工件。"
+      "_note": "2026-11-19 phase 28-11 落地。预审循环失控的第二台发动机是「轮次×票数」乘法(#13/#22/#25 实测:11 票 46 轮、工件行数是产品代码 5 倍)。机制:plan-ready.mjs 的 readPhaseConvergence 读 <NN>-REVIEW-CONVERGENCE*.md(round/new_judgment/open_judgment),相邻两轮 new_judgment 不降 ⇒ REVIEW-CONVERGENCE-STALLED 判停转人;收敛工件在场时票级预审被取代。在制 phase 祖父路径:PHASE_CONVERGENCE_REQUIRED_FROM=29,29 起新规划才强制 phase 工件(决定 #3:存量施工不判死)。运行期自证:rcv-1/2/4 锚点 + health 活检停滞序列。 2026-11-19 phase 29-01 补齐实现:statement 早就写着「收敛工件在场票级预审被取代」,但只有 plan-ready.mjs 的 checkPlanReady 兑现了(superseded),逐票工件契约门(ticket-alive.mjs 的 checkPlanCheckArtifacts,phase 09 D-08)照样判「已经开工却没有预审结论」—— 于是 29 起的新规制每张票恒红(恒红的门不是严,是废)。修法:逐票工件门按**票自己的 phase 号**认取代(不用 STATE 的 active_phase:那条为空或跨 phase 时两路会得出相反结论);形状不合(缺 round/new_judgment)的收敛工件不算在场;取代只免「缺」,不免「坏」(在场的票级工件 status 非法照样判红)。活违规输入:同一夹具两端实跑 —— 有收敛工件时检查器不再报缺票级工件,无收敛工件时照样判红(--selfcheck 的 rcv-9a/9b 端到端覆盖接线);散文层同步(mm-gsd-exec 与 mm-gsd-plan-check 写清收敛工件落在哪个目录与半截工件不算数),否则执行端按旧散文会等一张不该存在的票级工件。",
+      "friction": "low",
+      "friction_note": "phase 29/30 实测按设计工作(收敛工件在场取代票级预审 ✓);0 误红"
     },
     {
       "id": "R-27",
@@ -227,7 +277,9 @@
       "since": "0.7.5",
       "statement": "票据体量真门禁:正文 120 行、verify 30 行与 4000 字节;阈值只紧不松,要改必须造违规输入自证 + 记台账。",
       "check": "check-ticket-size",
-      "_note": "2026-11-19 phase 28-10/28-11 落地(用户拍板决定 #1)。研究台时代 F6 只判行数——28-06..09 五张真实票的 verify 全是单行 4-29KB 巨串,行数门全部失明(§9.1)。机制:plan-review-gate.mjs 的 checkBudget 三口径(正文行数/verify 行数/verify 字节)判红行带 [TICKET-SIZE] 标记;SIZE_EXEMPT 票级名单豁免写于门落地前的存量票(28-01..09 + 28-10),不放宽阈值。health 活检:active phase 未收口未豁免票的 verify 字节超预算 → 判红。运行期自证:rgv-2/rgv-3 锚点。"
+      "_note": "2026-11-19 phase 28-10/28-11 落地(用户拍板决定 #1)。研究台时代 F6 只判行数——28-06..09 五张真实票的 verify 全是单行 4-29KB 巨串,行数门全部失明(§9.1)。机制:plan-review-gate.mjs 的 checkBudget 三口径(正文行数/verify 行数/verify 字节)判红行带 [TICKET-SIZE] 标记;SIZE_EXEMPT 票级名单豁免写于门落地前的存量票(28-01..09 + 28-10),不放宽阈值。health 活检:active phase 未收口未豁免票的 verify 字节超预算 → 判红。运行期自证:rgv-2/rgv-3 锚点。",
+      "friction": "mid",
+      "friction_note": "F3/F6 advisory 几乎每张票都出(covers-orphan 类),advisory 不拦但持续产生噪声;真拦(体量超标)本会话 0 次"
     },
     {
       "id": "R-28",
@@ -236,7 +288,9 @@
       "statement": "核心不许知道可选包:核心的 .md 不出现包的显示名,核心的任何文件不出现包的目录名或命令调用形(带 mm-gsd 前缀,裸词别名不查);可选包自己随便写;没有可选包时判 0 条。",
       "check": "check-core-boundary",
       "_note": "2026-11-19 phase 28-04 落地(用户拍板决定 #1 的机器化:做成点缀包,不要和核心流程强耦合)。判据口径三条:规则一只扫核心 .md 的显示名(readme-lf 的禁则词表是合法 .mjs 内容);规则二扫核心任何文件的目录名与命令调用形;规则三无包判 0 条。判定走 28-01 的 discoverPacks(包自声明),核心零硬编码。编号:28-04 票面原写 R-24(当时未占用),按台账顺次纪律落为 R-28(28-13 已占 R-24)。冻结基准快照与孪生(plan-review-fixtures/)是数据非活文案,扫描排除。",
-      "_候选顾虑回应": "与 R-16(模块登记)、R-21(研究消费)不重叠:那两条管登记与引用,这条管核心与可选包的边界;与 R-27(体量)不重叠。"
+      "_候选顾虑回应": "与 R-16(模块登记)、R-21(研究消费)不重叠:那两条管登记与引用,这条管核心与可选包的边界;与 R-27(体量)不重叠。",
+      "friction": "low",
+      "friction_note": "0 次触发;核心边界干净"
     },
     {
       "id": "R-29",
@@ -245,7 +299,9 @@
       "statement": "discuss 落 REQ 前必须先深挖:每条用户诉求先答出四问(真实需求/谁消费/什么时候会废/做完长什么样),答案写进 CONTEXT 的 <mining> 节,确认门连深挖结论一起复述;机器门 checkRequirementMining 在 --plan 时核对本 phase 票覆盖的每条 REQ 都有四问,缺一条判红。豁免:只有写了 <mining> 节的 CONTEXT 才判(老项目豁免);REQUIREMENTS.md 标 (baseline 的 REQ 与 req-ledger 已处置的 REQ 不判。",
       "check": "check-requirement-mining",
       "_note": "2026-11-19 phase 28-07 落地。用户当场指出「我没看见你深挖需求这个动作」—— 缺的是纪律这一步,不是执行者偷懒;phase 26 教训:纪律写了但没机器门等于没写。豁免两套口径照 verification-gates checkReqCoverage(baseline 行/req-ledger 已处置)。编号:28-07 票面原写 R-25(已被 28-11 的 check-review-scope 占用),按台账顺次落 R-29。",
-      "_候选顾虑回应": "与 R-21(研究消费)、R-25(预审分类)不重叠:那条管研究产物被引用,这条管需求深挖四问进 CONTEXT。"
+      "_候选顾虑回应": "与 R-21(研究消费)、R-25(预审分类)不重叠:那条管研究产物被引用,这条管需求深挖四问进 CONTEXT。",
+      "friction": "mid",
+      "friction_note": "30 规划时真拦过一次(REQ 缺 mining 块),抓的是真缺口;频次低但每次都要求回 CONTEXT 补四问"
     },
     {
       "id": "R-30",
@@ -254,7 +310,9 @@
       "statement": "模板里的脚本必须真能跑,不是「看着像对的」。三条判据:①内联 <script> 必须过 node --check;②CSS 必须有显式隐藏 [hidden] 的 display:none 规则;③先声明后引导 —— 顶层裸调用必须排在所有顶层 const/let/class 声明之后。机器门 check-web-template-js 扫 skills 下全部 .html(核心与可选包一视同仁,核心不认识任何包名)。",
       "check": "check-web-template-js",
       "_note": "2026-11-19 看板重做落地。三个真事故各对应一条判据:游离大括号让整页 JS 死掉,页面永远停在「连接中…」;作者样式(.view-fit{display:flex})压过 UA 的 [hidden]{display:none},被 hidden 的视图在每个视图里都显示,顶栏永远压在内容上;顶层调用早于 const 声明 → TDZ(ReferenceError: Cannot access 'reqdep' before initialization),直接以 #reqdep 打开看板必崩。旧的自测探针只测服务端与模板静态字符串,不测模板 JS 能否运行 —— 三个事故全从那里逃出去,所以补这条门。活违规输入:门上线时真判红过(顶层 setInterval 早于 const RD,已按判据三移到脚本底部)。编号:R-24..R-29 已占用,按台账顺次取 R-30。",
-      "_候选顾虑回应": "与 R-04(核心 .mjs 语法)不重叠:那条管 .mjs 源文件,这条管 HTML 模板里的内联脚本与 CSS 规则;与 R-28(核心边界)不重叠:那条管核心不许引用可选包,这条扫全部 .html 且不区分核心与包。"
+      "_候选顾虑回应": "与 R-04(核心 .mjs 语法)不重叠:那条管 .mjs 源文件,这条管 HTML 模板里的内联脚本与 CSS 规则;与 R-28(核心边界)不重叠:那条管核心不许引用可选包,这条扫全部 .html 且不区分核心与包。",
+      "friction": "low",
+      "friction_note": "0 次触发;看板模板重做后一直绿"
     },
     {
       "id": "R-31",
@@ -263,7 +321,9 @@
       "statement": "mm-gsd update 必须先问 registry「最新发布的是哪一版」,再决定盖哪一份:registry 上有新版就换新再盖(版本清单里的版本 = registry 那版、技能内容来自那一版);registry 上更旧就不降级;registry 问不到就不硬失败,并把「问不到」说出来。覆盖之前还要比一次「已装的那份」:已装的比要盖的还新就不许盖(全局命令旧、主仓新的时候不能把主仓盖回旧版)。覆盖之后,新增的技能必须补链进宿主技能目录 —— 链接是指向主仓的 junction,内容会跟着主仓变,但新增的技能名不会自己长出来。机器门 check-update-maps-latest 用假 npm 顶替 registry 跑四个场景。",
       "check": "check-update-maps-latest",
       "_note": "2026-11-19 用户报修:「mm-gsd update 还是没有映射最新,这个是用户用的最多的指令,我刚刚去其他的机器使用,指向的0.7.3」。根因两条:①latest 通道停在 0.7.3(已 promote 0.7.7 修);②update 的语义是「用包里这份盖掉装出去的那份」,根本不查 registry —— 全局装着旧版的机器敲 update,盖回去的还是旧版,指令跑了版本没动,而且不报错。修法:update 先 npm view dist-tags.<channel>(默认 latest,--next 跟预发布通道),registry 更新就 npm install 那一版再拿它的技能去盖;问不到就照旧覆盖并说清;registry 更旧就不降级。补链进宿主目录是第二刀:链接是指向主仓的 junction,内容会跟着主仓变,但**新增的技能名**不会自己长出来 —— 0.7.6 才有的看板包,装过一遍的老机器上再也没被链进宿主目录,用户更新完还是看不到它(实测 claude/codex/trae/cursor 四个宿主都缺)。活违规输入:门上线时拿一个「只覆盖不问 registry」的旧版 stub 跑过,真判红 9 条。同批发现并修掉的降级隐患:「不降级」原先只比「registry 上的版本 vs 正在跑的这份包」,没比「已装的那份」—— 实测全局命令是 0.7.0、主仓是 0.7.9 时,旧 update 把主仓盖回 0.7.0(看板包直接没了)。补法:覆盖前读 target/.mm-gsd-install.json 的 version,比要盖的还新就提前返回并说清「先刷新 mm-gsd 本身」;门禁加场景⑤(预置清单 version=9999.0.0,断言清单仍是 9999.0.0 且输出含「不降级」)。防降级优先于假降级:清单可能被手改,但降级比误判更糟。编号:R-24..R-30 已占用,按台账顺次取 R-31。",
-      "_候选顾虑回应": "与 R-12(安装可追溯)不重叠:那条查版本清单有没有写、写得全不全;这条查 update 有没有真的按 registry 上的版本去换。与 R-19(通道安全)不重叠:那条查 next 不得比 latest 旧;这条查 update 的行为。两个门都碰 registry,但一个是「标签对不对」,一个是「用户那条命令有没有真的升级」。"
+      "_候选顾虑回应": "与 R-12(安装可追溯)不重叠:那条查版本清单有没有写、写得全不全;这条查 update 有没有真的按 registry 上的版本去换。与 R-19(通道安全)不重叠:那条查 next 不得比 latest 旧;这条查 update 的行为。两个门都碰 registry,但一个是「标签对不对」,一个是「用户那条命令有没有真的升级」。",
+      "friction": "low",
+      "friction_note": "0 次触发;update 门静默守护"
     }
   ],
   "candidates": [
