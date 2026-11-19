@@ -129,19 +129,47 @@ export function listSkills(skillsRoot) {
   return dirs.filter((d) => d.isDirectory() && d.name.startsWith("mm-gsd-") && !d.name.endsWith(".bak-mmgsd")).map((d) => d.name).sort();
 }
 
+export const ROUTE_TIERS = [
+  {
+    id: "L1",
+    name: "Direct",
+    label: "L1 Direct",
+    scope: "单域明确微调（≤5 文件、无新依赖、无架构变更）",
+    artifacts: "零 .planning/ 工件；直接实施 + verify 转绿 + 原子提交 + STATE 记一行",
+    agents: "无需冷启新代理，优先复用当前或热上下文 Worker",
+  },
+  {
+    id: "L2",
+    name: "Lite",
+    label: "L2 Lite",
+    scope: "常规功能迭代或局部重构",
+    artifacts: "保留轻量 CONTEXT 与 PLAN（四件套 + --plan），免独立 Judge 预审与 SHIP",
+    agents: "同模块修改、文档纠偏与修复优先 resume 原 Worker 代理",
+  },
+  {
+    id: "L3",
+    name: "Full",
+    label: "L3 Full",
+    scope: "跨多域、不可逆变更、高风险或并行 worktree 开发",
+    artifacts: "完整五步环（CONTEXT / PLAN / PLAN-CHECK / SUMMARY / VERIFICATION / SHIP）",
+    agents: "Worker 热复用 + Judge（独立 verify / 高风险预审）冷隔离只读上下文",
+  },
+];
+
 /**
  * 造一份路由提示:该读哪些路径、本项目门禁速查、宿主能不能开子代理。
- * 只给路径,不给内容(SKILL.md:136:主会话上下文 ≤15%,只传路径不传内容)。
+ * 只给路径,不给内容(SKILL.md:主会话上下文 ≤15%,只传路径不传内容)。
  * @param stage 阶段名(= 技能名去掉 mm-gsd- 前缀);null = 不知道要哪一步,返回环
  */
 export function buildRouteBrief({ stage, skillsRoot, projectRoot, home, activePhase }) {
   const skills = listSkills(skillsRoot);
   const host = detectHost(home);
   const quick = gateQuickRef(projectRoot);
+  const tiers = ROUTE_TIERS;
   if (!stage) {
     // 不知道要哪一步 → 把环摆出来让人挑。环的顺序由各技能的「完成后」小节持有,
-    // 这里只转述,不另造一张表(D-01 的教训:第二真相源必然分叉)。
-    // 可选包分栏(28-01):声明 entry 且 optional 的不进 ring,进 packs 栏(点缀,不参与环)。
+    // 这里只转述,不另造一张表(第二真相源必然分叉)。
+    // 可选包分栏:声明 entry 且 optional 的不进 ring,进 packs 栏(点缀,不参与环)。
     const allPacks = discoverPacks(skillsRoot);
     const ring = [];
     const packs = [];
@@ -152,11 +180,11 @@ export function buildRouteBrief({ stage, skillsRoot, projectRoot, home, activePh
       if (pk && pk.optional) packs.push({ name: pk.name, display: pk.display, path: pk.dir, entry: pk.entry });
       else ring.push({ skill: s, path: f, exits });
     }
-    return { kind: "ring", stage: null, skills: ring, packs, host, quick, readPaths: [], projectPaths: [] };
+    return { kind: "ring", stage: null, tiers, skills: ring, packs, host, quick, readPaths: [], projectPaths: [] };
   }
   const skill = "mm-gsd-" + stage;
   if (!skills.includes(skill))
-    return { kind: "unknown", stage, skills, host, quick, readPaths: [], projectPaths: [],
+    return { kind: "unknown", stage, tiers, skills, host, quick, readPaths: [], projectPaths: [],
       message: `没有 ${skill} 这个技能。可用:${skills.map((s) => s.replace("mm-gsd-", "")).join(", ")}` };
   const skillDir = join(skillsRoot, skill);
   const readPaths = [join(skillDir, "SKILL.md")];
@@ -171,7 +199,7 @@ export function buildRouteBrief({ stage, skillsRoot, projectRoot, home, activePh
     const f = join(projectRoot, ".planning", `${activePhase}-${p}.md`);
     if (existsSync(f)) projectPaths.push(f);
   }
-  return { kind: "stage", stage, skill, skillPath: join(skillDir, "SKILL.md"),
+  return { kind: "stage", stage, tiers, skill, skillPath: join(skillDir, "SKILL.md"),
     readPaths, projectPaths, host, quick, message: "" };
 }
 

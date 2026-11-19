@@ -396,6 +396,55 @@ async function main() {
       `stB=${stB.status} stGhost=${stGhost.status} annB=${annB.status} annGhost=${annGhost.status} bAnns=${JSON.stringify(bAnns)}`,
     );
 
+    // ⑲b PATCH /api/annotations 支持编辑批注正文/类型/目标/动作/状态/消化结论，且同样受 ?project= 名单约束
+    const annBId = JSON.parse(annB.body).id;
+    const patchB = await httpCall(
+      port,
+      "PATCH",
+      "/api/annotations?project=" + encodeURIComponent(rootBN),
+      JSON.stringify({
+        id: annBId,
+        target: "phase:22",
+        type: "验收不过",
+        text: "落 B 已修改",
+        action: "repair",
+        status: "digested",
+        note: "已核对修复",
+      }),
+    );
+    const patchMiss = await httpCall(
+      port,
+      "PATCH",
+      "/api/annotations?project=" + encodeURIComponent(rootBN),
+      JSON.stringify({ id: "a-missing", target: "phase:22", type: "备注", text: "x" }),
+    );
+    const patchGhost = await httpCall(
+      port,
+      "PATCH",
+      "/api/annotations?project=" + encodeURIComponent(stranger),
+      JSON.stringify({ id: annBId, target: "phase:22", type: "备注", text: "越名单" }),
+    );
+    let bAnnsAfter = [];
+    try { bAnnsAfter = JSON.parse(readFileSync(join(rootB, ".planning", "annotations.json"), "utf8")); } catch {}
+    const patchedRec = bAnnsAfter[0] || {};
+    ok(
+      "PATCH /api/annotations 原地更新目标/类型/正文/动作/状态/结论与 updatedAt，未知 id 404，越名单 400",
+      patchB.status === 200
+        && JSON.parse(patchB.body).ok === true
+        && patchMiss.status === 404
+        && patchGhost.status === 400
+        && bAnnsAfter.length === 1
+        && patchedRec.id === annBId
+        && patchedRec.target === "phase:22"
+        && patchedRec.type === "验收不过"
+        && patchedRec.text === "落 B 已修改"
+        && patchedRec.action === "repair"
+        && patchedRec.status === "digested"
+        && patchedRec.note === "已核对修复"
+        && typeof patchedRec.updatedAt === "string" && patchedRec.updatedAt.length > 0,
+      `patchB=${patchB.status} patchMiss=${patchMiss.status} patchGhost=${patchGhost.status} rec=${JSON.stringify(patchedRec)}`,
+    );
+
     // ── 拓扑纯函数三例(24-01 T1a):spawn 子进程 import phase-topo.mjs 直测(req-ledger selftest 同款手法)──
     // 裸临时 cwd 里跑,stdout 必须恰好是目标 JSON;spawnSync 带超时,模块死循环会被杀成非零退出 ——
     // 「不挂死」本身就是判据的一部分。
