@@ -7,7 +7,7 @@
   "check-budget": "把 glob 匹配器弄坏(让它永远不匹配 / 直接抛错)→ 判红「匹配器自测失败/崩了」。2026-10-26 起体积只报不拦(体积硬顶退役,见 docs/theory.md T-16),这条门禁的失败路径只剩匹配器自测 —— 它现在用于按族分组统计,坏掉的匹配器会让统计静默空过(假绿)。",
   "check-syntax-and-modes": "任意 .mjs 引入语法错误 → 判红;六种模式在未初始化项目里任一跑不起来 → 判红",
   "check-templates-self-validate": "从模板里删掉一个必填小节(如 ship.md 的「交付内容」)→ --templates 报该模板不合规",
-  "check-package-verifiable": "把 package.json 的 files 改到漏掉 bin/ → 判红「打包清单不符合预期」",
+  "check-package-verifiable": "把 package.json 的 files 改到漏掉 bin/ → 判红「打包清单不符合预期」;把 files 白名单改到漏掉某个技能目录 → 判红「包内缺技能目录 skills/xxx」(I-006:包内技能清单 ↔ 仓库技能目录必须对账,少了用户少装一个技能、多了装进已删技能);files 里写了排除项但没真排掉 → 判红",
   "check-install-traceable": "安装流程不写版本清单文件 → 判红「安装不可追溯」",
   "check-zero-dep": "在任一 .mjs 里 import 一个非 node: 的包 → 判红并指名是哪个文件的哪一行",
   "check-report-reachable": "从 package.json 的 files 里删掉 skills/ → 报修入口在包内不可达,判红",

@@ -678,6 +678,22 @@ export function runBoundaryCases(st) {
   try { execFileSync(process.execPath, [guard], { input: "not-json", stdio: "pipe" }); }
   catch (e) { st2 = e.status ?? 1; }
   eqN(st2, 2, "守卫对非法输入判 2(fail-closed)");
+  // 守卫的拦截口径逐条钉住(2026-11-19 修过一条:强删 -D 拦,安全删 -d 不拦 —— git 自己会拒绝删未合并的分支)
+  const D = "-";
+  const guardRc = (cmd) => {
+    try { execFileSync(process.execPath, [guard], { input: JSON.stringify({ tool_input: { command: cmd } }), stdio: "pipe" }); return 0; }
+    catch (e) { return e.status ?? 1; }
+  };
+  eqN(guardRc(`git branch ${D}D old`), 2, "守卫拦强删分支(-D)");
+  eqN(guardRc(`git branch ${D}d old`), 0, "守卫放行安全删分支(-d,已合并的旧分支能清)");
+  eqN(guardRc(`git update-ref ${D}d refs/heads/x`), 2, "守卫拦删引用(update-ref -d)");
+  eqN(guardRc("git reset --hard HEAD"), 2, "守卫拦 reset --hard");
+  eqN(guardRc("git clean -fd"), 2, "守卫拦 clean -f");
+  eqN(guardRc("git stash"), 2, "守卫拦 stash 全族");
+  eqN(guardRc("git checkout ."), 2, "守卫拦 checkout .(全量重置工作区)");
+  eqN(guardRc("git push origin main --force"), 2, "守卫拦强推保护分支");
+  eqN(guardRc("git push origin main --force-with-lease"), 0, "守卫放行 lease 强推(留的出路)");
+  eqN(guardRc("git status"), 0, "守卫放行普通命令");
   rmSync(dir, { recursive: true, force: true });
 }
 
