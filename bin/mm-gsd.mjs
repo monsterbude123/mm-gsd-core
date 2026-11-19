@@ -7,7 +7,7 @@
 //   npx mm-gsd-core install --hooks 顺带装宿主 hook(危险 git 拦截 + 工具遥测)
 //   npx mm-gsd-core doctor          体检宿主环境与已装状态(只读)
 //   npx mm-gsd-core check [--plan]  跑状态检查器(转发)
-//   npx mm-gsd-core update          机械覆盖更新:整删重拷技能 + 无条件刷新自己的卡(零提问零判断)
+//   npx mm-gsd-core update          先对齐 registry 上的最新版,再机械覆盖:整删重拷技能 + 无条件刷新自己的卡
 //   npx mm-gsd-core --help
 //
 // 零依赖,跨平台。
@@ -15,10 +15,11 @@
 import { readFileSync, readdirSync, existsSync, cpSync, mkdirSync, rmSync, lstatSync, writeFileSync, readFileSync as rf } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { discoverPacks, resolvePack, resolveEntry, skillsRootOr } from "../skills/mm-gsd-loop/references/packs.mjs";
+import { cmpVersion, pickUpdateAction } from "../skills/mm-gsd-loop/references/update-resolve.mjs";
 
 const PKG_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SKILLS_SRC = join(PKG_ROOT, "skills");
@@ -67,7 +68,7 @@ const warn = (s) => log(`${C.y}!${C.x} ${s}`);
 const bad = (s) => log(`${C.r}✗${C.x} ${s}`);
 const head = (s) => log(`\n${C.b}${s}${C.x}`);
 
-const SKILL_NAMES = () => readdirSync(SKILLS_SRC).filter((d) => d.startsWith("mm-gsd-"));
+const SKILL_NAMES = (src = SKILLS_SRC) => readdirSync(src).filter((d) => d.startsWith("mm-gsd-"));
 
 // 目录内容是否完全一致 —— 比顶层条目数靠谱得多。
 // 顶层条目数相同的两个目录内容可能完全不同(改了一个文件,数量不变)。
@@ -102,7 +103,8 @@ ${C.b}mm-gsd${C.x} — 极简 GSD 核心安装器
   ${C.b}doctor${C.x}             体检:宿主环境、已装状态、hooks(只读,不改任何东西)
   ${C.b}check${C.x} [args]       跑状态检查器(转发 --plan / --plan-check / --phases / --worktrees / --stats / --stats --tools / --templates)
   ${C.b}check --plan-check${C.x} <PLAN>  显式校验一份计划:现在能不能开工(退出码 0 = 能)
-  ${C.b}update${C.x}             机械覆盖更新:技能整删重拷、自己的宿主卡无条件刷新、守卫/工具遥测脚本刷新
+  ${C.b}update${C.x}             先对齐 registry 上的最新版,再机械覆盖:技能整删重拷、宿主卡无条件刷新、守卫/工具遥测脚本刷新
+      --next                 跟预发布通道(next)而不是正式通道(latest)
       --local                 更新当前项目的 ./.agents/skills/(跳过宿主卡)
       --dir <path>            更新指定目录(跳过宿主卡)
       --home <dir>            覆盖家目录(测试用)
@@ -206,65 +208,135 @@ function install() {
   return 0;
 }
 
-// ---- update:机械覆盖(用户指令:更新就是覆盖,不让 agent 逐项判断)----
+// ---- npm 通道:update 要问 registry「最新发布的是哪一版」 ----
+// Windows 上必须 npm.cmd + shell:true(cmd.exe 才能跑 .cmd);这是本仓既有先例
+// (tools/release-flow.mjs 从 npm 取包就是这么干的)。
+function npmBin() { return process.platform === "win32" ? "npm.cmd" : "npm"; }
+
+function npmRun(args, timeout = 120000) {
+  return execFileSync(npmBin(), args, {
+    encoding: "utf8",
+    shell: process.platform === "win32",
+    timeout,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+}
+
+/** registry 上该通道发布的是哪一版;问不到(离线/没装 npm/包名错)就 null */
+function publishedVersion(channel) {
+  try {
+    const out = String(npmRun(["view", NAME, "dist-tags." + channel], 60000) ?? "").trim().replace(/^["']|["']$/g, "");
+    return /^\d+\.\d+\.\d+/.test(out) ? out : null;
+  } catch { return null; }
+}
+
+/** 从 npm 把指定版本取到临时目录 —— 返回 {dir, sb},sb 由调用方用完清掉 */
+function fetchPublished(version) {
+  const sb = join(tmpdir(), "mm-gsd-update-" + version.replace(/[^\w.-]/g, "_"));
+  rmSync(sb, { recursive: true, force: true });
+  npmRun(["install", "--prefix", sb, "--no-audit", "--no-fund", `${NAME}@${version}`], 300000);
+  const dir = join(sb, "node_modules", NAME);
+  if (!existsSync(join(dir, "skills"))) throw new Error(`取到的 ${NAME}@${version} 里没有 skills/ —— 包不完整`);
+  return { dir, sb };
+}
+
+// ---- update:先对齐 registry 上的最新版,再机械覆盖 ----
+//
+// 语义分两步:①问 registry「最新发布的是哪一版」(默认 latest 通道,加 --next 跟预发布通道);
+// ②把技能整删重拷 —— 旧文件不残留,这就是「覆盖」的定义。
+//
+// 为什么不能只做②:update 跑的是**当前这一份包**。全局装着旧版的机器敲 update,
+// 盖回去的还是旧版 —— 用户用得最多的指令,版本却永远不动(实测:别的机器上指向 0.7.3)。
+// 问不到 registry(离线/没装 npm)→ 照旧覆盖当前这份,并把「问不到」说出来;
+// registry 上比当前旧 → 不降级,照旧覆盖当前这份。
+//
 // 与 install 的分工:install 是首次安装(尊重已有内容、会备份、可交互);update 是更新,
-// 语义就是「用包里这份盖掉装出去的那份」—— 不问、不比对、不保留用户改动。
+// 语义就是「用最新那份盖掉装出去的那份」—— 不问、不比对、不保留用户改动。
 // 卡与守卫脚本是生成物,不是用户数据;真有自定义需求的用户应该改 SKILL.md 而不是卡。
 async function update() {
   const local = has("--local");
   const target = has("--dir") ? resolve(val("--dir")) : local ? join(process.cwd(), ".agents", "skills") : join(HOME, ".agents", "skills");
+  const channel = has("--next") ? "next" : "latest";
   head("update —— 机械覆盖更新");
-  log(`  目标:${target}(来源 ${SOURCE} v${VERSION})`);
 
-  const names = SKILL_NAMES();
-  if (!names.length) { bad("包里没有 skills/mm-gsd-* —— 打包不完整"); return 1; }
-
-  // 1) 技能:整目录删除重拷 —— 旧文件不残留,这就是「覆盖」的定义
-  mkdirSync(target, { recursive: true });
-  const manifest = { version: VERSION, source: SOURCE, installedAt: new Date().toISOString(), skills: {} };
-  for (const n of names) {
-    const dst = join(target, n);
-    rmSync(dst, { recursive: true, force: true });
-    cpSync(join(SKILLS_SRC, n), dst, { recursive: true });
-    manifest.skills[n] = digest(join(SKILLS_SRC, n));
-    log(`  ${C.g}+${C.x} ${n}`);
-  }
-  writeFileSync(join(target, MANIFEST), JSON.stringify(manifest, null, 2) + "\n");
-  ok(`${names.length} 个技能已覆盖`);
-
-  // 2) 宿主指针卡:无条件覆盖 mm-gsd 自己的卡。卡是生成物(读 SKILL.md 现拼),不比对指纹。
-  //    宿主清单用包内 HOSTS(单一真相源);目录存在才写,不硬造目录结构。--local/--dir 只更新技能。
-  let cards = 0;
-  if (!local && !has("--dir")) {
-    const routing = await import(pathToFileURL(join(SKILLS_SRC, "mm-gsd-loop", "references", "agent-routing.mjs")).href);
-    const routeCmd = `node "${join(target, "mm-gsd-loop", "scripts", "gsd-state-check.mjs")}"`;
-    const cardFiles = names.map((n) => n + ".md").concat(["mm-gsd-plan-reviewer.md"]);
-    const bodies = new Map(names.map((n) => [n + ".md", routing.pointerCard({ skill: n, skillPath: join(target, n, "SKILL.md"), routeCmd })]));
-    bodies.set("mm-gsd-plan-reviewer.md", routing.reviewerCard({ routeCmd }));
-    for (const [, v] of Object.entries(routing.HOSTS)) {
-      if (!v.agents) continue;
-      const dir = join(HOME, v.agents);
-      if (!existsSync(dir)) continue;
-      for (const f of cardFiles) { writeFileSync(join(dir, f), bodies.get(f)); cards++; }
-      log(`  ${C.g}+${C.x} 宿主卡 ${cardFiles.length} 张 → ${dir}`);
+  // 0) 先问 registry:最新发布的是哪一版
+  const published = publishedVersion(channel);
+  const action = pickUpdateAction(VERSION, published);
+  let skillsSrc = SKILLS_SRC, version = VERSION, source = SOURCE, tmp = null;
+  if (action === "upgrade") {
+    ok(`registry 上的 ${channel} 是 ${published},比当前包新(${VERSION})—— 先取新版再覆盖`);
+    try {
+      const got = fetchPublished(published);
+      tmp = got.sb;
+      skillsSrc = join(got.dir, "skills");
+      version = published;
+      source = `npm:${NAME}@${published}`;
+    } catch (e) {
+      bad("取新版失败:" + String(e?.message || e));
+      warn(`退回当前包这份(${VERSION})—— 覆盖照做,版本没升`);
     }
-    if (!cards) warn("没有探测到任何宿主 agent 卡目录 —— 卡未更新(装卡用 install)");
+  } else if (action === "current") {
+    ok(`当前包已是 registry 上的最新(${channel} ${published})`);
+  } else if (action === "older") {
+    warn(`registry 上的 ${channel} 是 ${published},比当前包旧(${VERSION})—— 不降级,按当前这份覆盖`);
+  } else {
+    warn(`问不到 registry 上的 ${channel}(离线?)—— 按当前包这份覆盖(${VERSION})`);
   }
+  log(`  目标:${target}(来源 ${source} v${version})`);
 
-  // 3) 守卫/遥测脚本:公共区文件刷新(各宿主 hook 配置指向它,配置本身不动 —— 那是 install --hooks 的活)
-  if (!local && !has("--dir")) {
-    const hooksDir = join(HOME, ".agents", "hooks");
-    mkdirSync(hooksDir, { recursive: true });
-    for (const f of ["guard-dangerous-git.mjs", "mm-gsd-tool-telemetry.mjs"]) {
-      const src = join(SKILLS_SRC, "mm-gsd-loop", "hooks", f);
-      if (existsSync(src)) cpSync(src, join(hooksDir, f));
+  try {
+    const names = SKILL_NAMES(skillsSrc);
+    if (!names.length) { bad("包里没有 skills/mm-gsd-* —— 打包不完整"); return 1; }
+
+    // 1) 技能:整目录删除重拷 —— 旧文件不残留,这就是「覆盖」的定义
+    mkdirSync(target, { recursive: true });
+    const manifest = { version, source, installedAt: new Date().toISOString(), skills: {} };
+    for (const n of names) {
+      const dst = join(target, n);
+      rmSync(dst, { recursive: true, force: true });
+      cpSync(join(skillsSrc, n), dst, { recursive: true });
+      manifest.skills[n] = digest(join(skillsSrc, n));
+      log(`  ${C.g}+${C.x} ${n}`);
     }
-    log(`  ${C.g}+${C.x} 守卫/工具遥测脚本已刷新 → ${hooksDir}(hook 配置不动;要接线用 install --hooks)`);
-  }
+    writeFileSync(join(target, MANIFEST), JSON.stringify(manifest, null, 2) + "\n");
+    ok(`${names.length} 个技能已覆盖`);
 
-  head("完成");
-  log(`  版本 ${VERSION}(${SOURCE});宿主卡 ${cards} 张;下次 doctor 会显示与包一致。`);
-  return 0;
+    // 2) 宿主指针卡:无条件覆盖 mm-gsd 自己的卡。卡是生成物(读 SKILL.md 现拼),不比对指纹。
+    //    宿主清单用包内 HOSTS(单一真相源);目录存在才写,不硬造目录结构。--local/--dir 只更新技能。
+    let cards = 0;
+    if (!local && !has("--dir")) {
+      const routing = await import(pathToFileURL(join(skillsSrc, "mm-gsd-loop", "references", "agent-routing.mjs")).href);
+      const routeCmd = `node "${join(target, "mm-gsd-loop", "scripts", "gsd-state-check.mjs")}"`;
+      const cardFiles = names.map((n) => n + ".md").concat(["mm-gsd-plan-reviewer.md"]);
+      const bodies = new Map(names.map((n) => [n + ".md", routing.pointerCard({ skill: n, skillPath: join(target, n, "SKILL.md"), routeCmd })]));
+      bodies.set("mm-gsd-plan-reviewer.md", routing.reviewerCard({ routeCmd }));
+      for (const [, v] of Object.entries(routing.HOSTS)) {
+        if (!v.agents) continue;
+        const dir = join(HOME, v.agents);
+        if (!existsSync(dir)) continue;
+        for (const f of cardFiles) { writeFileSync(join(dir, f), bodies.get(f)); cards++; }
+        log(`  ${C.g}+${C.x} 宿主卡 ${cardFiles.length} 张 → ${dir}`);
+      }
+      if (!cards) warn("没有探测到任何宿主 agent 卡目录 —— 卡未更新(装卡用 install)");
+    }
+
+    // 3) 守卫/遥测脚本:公共区文件刷新(各宿主 hook 配置指向它,配置本身不动 —— 那是 install --hooks 的活)
+    if (!local && !has("--dir")) {
+      const hooksDir = join(HOME, ".agents", "hooks");
+      mkdirSync(hooksDir, { recursive: true });
+      for (const f of ["guard-dangerous-git.mjs", "mm-gsd-tool-telemetry.mjs"]) {
+        const src = join(skillsSrc, "mm-gsd-loop", "hooks", f);
+        if (existsSync(src)) cpSync(src, join(hooksDir, f));
+      }
+      log(`  ${C.g}+${C.x} 守卫/工具遥测脚本已刷新 → ${hooksDir}(hook 配置不动;要接线用 install --hooks)`);
+    }
+
+    head("完成");
+    log(`  版本 ${version}(${source});宿主卡 ${cards} 张;下次 doctor 会显示与包一致。`);
+    return 0;
+  } finally {
+    if (tmp) { try { rmSync(tmp, { recursive: true, force: true }); } catch {} }
+  }
 }
 
 // ---- doctor ----
@@ -286,7 +358,12 @@ function doctor() {
     log(`  装于:   ${mf.installedAt ?? "?"}`);
     const drift = names.filter((n) => mf.skills?.[n] && mf.skills[n] !== digest(join(SKILLS_SRC, n)));
     if (drift.length) {
-      warn(`${drift.join(", ")} 与当前包内容不同 —— 装的是旧版,跑一次 update 机械覆盖`);
+      // 装的不一定比当前包旧:update 现在会从 registry 取新版,装的可能更新。
+      // 说反了就是假话 —— 「装的是旧版」只在真的旧的时候才说。
+      if (cmpVersion(mf.version ?? "0.0.0", VERSION) > 0)
+        warn(`${drift.join(", ")} 与当前包内容不同 —— 装的是更新的 ${mf.version}(当前包 ${VERSION}),正常`);
+      else
+        warn(`${drift.join(", ")} 与当前包内容不同 —— 装的是旧版,跑一次 update 机械覆盖`);
     } else {
       ok("已装内容与当前包一致");
     }

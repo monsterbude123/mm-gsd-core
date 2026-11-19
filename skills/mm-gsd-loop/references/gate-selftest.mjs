@@ -6,7 +6,7 @@ import { validateVerification, checkTicketPremises, checkTicketLoad, checkReqCla
 import { checkDecisions, locateContexts, checkDrift, checkConclusionDrift } from "./decision-gates.mjs";
 import { ticketsCovered } from "./ticket-alive.mjs";
 import { mmGsdVersion, splitByVersion } from "./version.mjs";
-import { mkAssert, runArtifactCases, runCoverageCases, runLedgerGateCases, runPhaseHealthCases, runRouteCases, runPlanReadyCases, runPlanCheckE2ECases, runBoundaryCases, runPremiseLocateCases, runWaveFromDagCases, runReviewGateCases, runConvergenceCases, runPackCases, runTelemetryViewCases, runCoreBoundaryCases, runRequirementMiningCases, runDecisionScopeCases, runWebTemplateGateCases } from "./selftest-suite.mjs";
+import { mkAssert, runArtifactCases, runCoverageCases, runLedgerGateCases, runPhaseHealthCases, runRouteCases, runPlanReadyCases, runPlanCheckE2ECases, runBoundaryCases, runPremiseLocateCases, runWaveFromDagCases, runReviewGateCases, runConvergenceCases, runPackCases, runTelemetryViewCases, runCoreBoundaryCases, runRequirementMiningCases, runDecisionScopeCases, runWebTemplateGateCases, runUpdateGateCases } from "./selftest-suite.mjs";
 import { researchRequired, researchCompliant, checkResearchConsumed, checkResearchSummary } from "./research-gates.mjs";
 import { checkBatchGraph, checkTicketBudget, isFullSuite } from "./worktree-view.mjs";
 import { buildRouteBrief, pointerCard, listSkills } from "./agent-routing.mjs";
@@ -194,6 +194,7 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   runRequirementMiningCases({ eqN });
   runDecisionScopeCases({ eqN });
   runWebTemplateGateCases({ eqN });
+  runUpdateGateCases({ eqN });
   // 模板块必须认 CRLF:Git for Windows 的系统级 core.autocrlf=true(不在仓库里)让新克隆全是 CRLF
   // —— 只认 \n 的正则会让六份模板在每个 Windows 用户机器上一起假红。
   eqN(extractTemplateBlock("```markdown\r\nx\r\n```") !== null, true, "CRLF 模板也抽得出 ```markdown 块");

@@ -8,6 +8,8 @@ import { checkPlanReady, readPhaseConvergence, classifyArtifactBlockers, REVIEW_
 import { discoverPacks, resolvePack, resolveEntry, makePackFixture } from "./packs.mjs";
 import { checkCoreBoundary } from "./core-boundary.mjs";
 import { checkWebTemplateJs } from "./web-template-gate.mjs";
+import { checkUpdateScenarios, parseInstallTarget } from "./update-gate.mjs";
+import { cmpVersion, pickUpdateAction } from "./update-resolve.mjs";
 import { checkRequirementMining, phaseReqs } from "./requirement-mining.mjs";
 import { checkPhaseCoverage, checkReversibility } from "./decision-gates.mjs";
 import { checkTicketPremises } from "./verification-gates.mjs";
@@ -221,6 +223,33 @@ export function runWebTemplateGateCases({ eqN }) {
   eqN(r3.join(","), "3", "webgate-4 顶层调用早于顶层声明 → 判据三(TDZ)");
   const r4 = rulesOf(tree({ [rel]: "<html><style>" + css + "</style><body><script>" + cleanJs + "</script></body></html>" }));
   eqN(r4.length, 0, "webgate-5 同一棵干净的树复跑 → 仍 0 条(门不是随机红)");
+}
+
+/** update 映射门用例组(R-31):版本决策是纯函数(四个结局),门禁本身拿一个「只覆盖不问 registry」的旧版 stub 当违规输入 */
+export function runUpdateGateCases({ eqN }) {
+  eqN(pickUpdateAction("0.7.0", "0.7.7"), "upgrade", "update-1 registry 上更新 → 换新再盖");
+  eqN(pickUpdateAction("0.7.7", "0.7.7"), "current", "update-2 registry 上同版 → 盖当前这份");
+  eqN(pickUpdateAction("0.7.8", "0.7.7"), "older", "update-3 registry 上更旧 → 不降级");
+  eqN(pickUpdateAction("0.7.7", null), "offline", "update-4 registry 问不到 → 照旧覆盖并说清");
+  eqN(cmpVersion("0.7.10", "0.7.9"), 1, "update-5 版本比较按数字比(0.7.10 比 0.7.9 新)");
+  eqN(parseInstallTarget(["install", "--prefix", "/tmp/x", "--no-audit", "mm-gsd-core@0.7.7"]).version, "0.7.7", "update-6 解析 npm install 要取的那一版");
+
+  // 违规输入:旧版 update 的行为 —— 只覆盖、从不问 registry。门必须判红,不然这道门是装饰。
+  const d = mkdtempSync(join(tmpdir(), "mm-gsd-update-gate-"));
+  const stub = join(d, "stub.mjs");
+  writeFileSync(stub, [
+    'import { mkdirSync, writeFileSync } from "node:fs";',
+    'import { join, resolve } from "node:path";',
+    'const i = process.argv.indexOf("--home");',
+    'const target = join(resolve(process.argv[i + 1]), ".agents", "skills");',
+    'mkdirSync(target, { recursive: true });',
+    'writeFileSync(join(target, ".mm-gsd-install.json"), JSON.stringify({ version: "0.0.1", source: "npm:mm-gsd-core@0.0.1", installedAt: new Date().toISOString(), skills: {} }));',
+    'console.log("update —— 机械覆盖更新");',
+    'console.log("  3 个技能已覆盖");',
+  ].join("\n"));
+  const res = checkUpdateScenarios({ installer: stub, version: "0.7.7", workRoot: join(d, "run") });
+  eqN(res.problems.length > 0, true, "update-7 旧版 stub(不问 registry)→ 门必须判红");
+  rmSync(d, { recursive: true, force: true });
 }
 
 /** 决策声明口径用例组(28-08):只认带方括号的大写 ID,散文裸引用不算;三条契约同一把尺 */
