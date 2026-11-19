@@ -1,0 +1,1 @@
+{"state":{"declared":"verifying","phase":null,"dir":null},"derived":"verifying","layout":"root","artifacts":{"context":"99-CONTEXT.md","plans":1,"summaries":1,"verification":null,"shipment":null},"errors":[{"message":"99-01: 已经开工却没有预审结论(缺 99-01-PLAN-CHECK.md) —— 机械合规过了不等于这份计划成立","fix":"先派一个全新上下文的只读子代理做预审(见 mm-gsd-verify「执行前预审」),产出 .planning/<NN-MM>-PLAN-CHECK.md"}],"warnings":[]}

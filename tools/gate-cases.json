@@ -1,7 +1,7 @@
 {
   "_why": "每个门禁必须登记一条会红用例:违反什么输入、期望看到什么输出。R-16 拿它和 mmc.mjs 的 CHECKS 双向核对。GitHub #6/#7/#8 三条事故的根因都是「门禁看起来在跑、实际永远绿或判错」,而 R-15 只覆盖检查器的正则 —— mmc 自己的门禁坏了,当时没有任何东西能发现。",
-  "_形态说明": "刻意不做「lint 自动发现红用例」:这些门禁是 mmc.mjs 里的内联代码块,不是可枚举模块,自动枚举在当前结构下不成立,靠正则瞎猜会假绿。这是显式声明 + 双向核对,不是自动推导。",
-  "_重开条件": "若某轮把门禁重构成独立模块,就把这里换成自动枚举 —— 那时才值得付自动化的维护成本。",
+  "_形态说明": "30-02 起门禁实现下沉到 tools/checks/core-checks.mjs(mmc.mjs 只剩转发壳);键名仍是这批 check-*,会红用例仍然登记在这里,由 R-16 的 registryGaps 双向核对。刻意不做「lint 自动发现红用例」:这些门禁的判据是结构事实,自动枚举在当前结构下不成立,靠正则瞎猜会假绿。这是显式声明 + 双向核对,不是自动推导。",
+  "_重开条件": "已兑现一半:实现已是独立模块(tools/checks/),但红用例仍是本文件的人工登记 —— 全自动枚举等「每个门禁的判据本身可枚举」那一轮。",
   "check-issue-evidence": "报修 issue 只给标题不给证据 → 非零退出并打印缺什么;证据只写占位符同样判红",
   "check-ledger-integrity": "台账里某条 active 规则的 check 指向 mmc.mjs 中不存在的门禁 → 判红「台账指向了不存在的门禁」",
   "check-budget": "把 glob 匹配器弄坏(让它永远不匹配 / 直接抛错)→ 判红「匹配器自测失败/崩了」。2026-10-26 起体积只报不拦(体积硬顶退役,见 docs/theory.md T-16),这条门禁的失败路径只剩匹配器自测 —— 它现在用于按族分组统计,坏掉的匹配器会让统计静默空过(假绿)。",
@@ -18,6 +18,7 @@
   "check-gate-cases": "从本文件删掉任意一个门禁条目 → R-16 判红「没登记会红用例」;往本文件加一个 mmc.mjs 里不存在的键 → 判红「可能删了门禁忘了删台账」;往 _modules 删掉一个 references/ 下的门禁模块登记 → 判红;新增一个导出 check*/validate* 但没登记的模块(写 export function / async function / const 箭头 / default / 尾部 export {} 都会被真导入抓到)→ 判红;**把某个门禁的体整个掏空成 `return true;` → 判红「实现里没有失败路径,这条门禁现在永远绿」**(phase 07 挖出来的洞:登记在、名字在、台账也在,但实现已经不判红了 —— 登记只证明「打算红」,不证明「还红着」) 补记(2026-10-24):死门禁判据原来只到下一个 `\n  },`,单行门禁后面根本没有这一行,体一路贪到下一条门禁 —— 拿下一条的门禁名替它证明它还活着。实测把单行的 check-card-claims 掏成 `return true;` 时判据说它还活着。现判据只取这条门禁自己的体,并且自带自证(掏空的单行门禁必须被判死、完好的不能;自证不过 → 判红「门禁存活判据自证失败」)。",
   "check-wave-from-dag": "手写 wave 与 depends_on 推导不符(活例:28-06 手写 6 推导 5)→ health 判红并指名票号与推导值;收口票(status=complete)按 D-14 豁免;改对 wave 或补 depends_on 边 → 转绿",
   "check-review-scope": "把 plan-ready.mjs 里的 MACHINE-CLASSIFIABLE / MACHINE_SIGNS / classifyArtifactBlockers 任一标记剥掉 → R-25 判红「预审工件里的机器可判发现会重新混进拦工」",
+    "check-main-file-ownership": "往任一主文件(gsd-state-check.mjs / tools/mmc.mjs)塞一个新顶层函数(不在 tools/main-file-baseline.mjs 冻结基线里、references/ 与 tools/checks/ 也无同名导出)→ 判红并指名函数名;删掉 → 恢复绿。基线文件被清空 → 门红(fail-closed)。上线时实测:塞 tmpOwnershipProbe → 红 1 条,删 → 绿(R-32,phase 30 T2)",
   "check-review-convergence": "把 plan-ready.mjs 里的 readPhaseConvergence / REVIEW-CONVERGENCE-STALLED / PHASE_CONVERGENCE_REQUIRED_FROM 任一剥掉 → 判红;active phase 的收敛工件 new_judgment 不降序列 → 活检判红「升级到人」",
   "check-core-boundary": "核心 .md 出现可选包的显示名、核心任何文件出现可选包的目录名或命令调用形(带 mm-gsd 前缀,裸词别名不查)→ 活检判红并指名文件;可选包自己的文件豁免;没有可选包的树判 0 条",
   "check-ticket-size": "active phase 未收口且不在 SIZE_EXEMPT 的票,verify 字节超 4000 → 活检判红;把 BUDGET.verifyBytes 删掉 → 结构断言红;豁免名单内的票不判",
