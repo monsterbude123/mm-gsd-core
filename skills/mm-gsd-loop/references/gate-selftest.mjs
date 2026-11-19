@@ -23,6 +23,9 @@ import { fileURLToPath } from "node:url";
 const CHECKER = fileURLToPath(new URL("../scripts/gsd-state-check.mjs", import.meta.url));
 
 /** 跑一遍自测,返回失败条数 */
+// 断言总数基线(phase 30 T3):与 --selfcheck 的总断言数一致;有意增删断言时人工 bump。
+const SELFTEST_CASES_TOTAL = 434;
+
 export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   const { eq, eqN, eqArr, st } = mkAssert();
   // 自测必须声明自己的沙箱身份(26-06 / D-11 / REQ-39):自测故意造的失败写进共享遥测文件,
@@ -1006,6 +1009,16 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   for (const [k, v] of Object.entries(ENV_BACKUP)) {
     if (v === undefined) delete process.env[k];
     else process.env[k] = v;
+  }
+  // 断言总数基线门(phase 30 T3,REQ-66):纯搬移不该改变总数;总数变了而 N 没改 = 覆盖被拆丢或重复跑。
+  // N 是本文件顶部的冻结常量,只在有意增删断言时人工 bump(30-02 拆族/30-03 加夹具断言时各 bump 一次)。
+  if (st.total !== SELFTEST_CASES_TOTAL) {
+    st.bad++;
+    console.log(`
+✗ 断言总数 ${st.total} ≠ 基线 ${SELFTEST_CASES_TOTAL} —— 覆盖被拆丢或重复跑;有意增删断言时人工 bump SELFTEST_CASES_TOTAL`);
+  } else {
+    console.log(`
+✓ 断言总数 ${st.total} == 基线 ${SELFTEST_CASES_TOTAL}(覆盖完整)`);
   }
   rmSync(SELFTEST_TMP, { recursive: true, force: true });
   console.log(st.bad ? `\n${st.bad} 项自测不过 —— 门禁本身是坏的,先修门禁` : "\n✓ 门禁自测全过");

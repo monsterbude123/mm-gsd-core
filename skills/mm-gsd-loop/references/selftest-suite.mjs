@@ -27,19 +27,22 @@ import { aggregateByDay } from "./telemetry-view.mjs";
 
 /** 造一组断言。返回的 st.bad 是失败条数 —— 调用方自己决定怎么汇报 */
 export function mkAssert() {
-  const st = { bad: 0 };
+  const st = { bad: 0, total: 0 };
   const eq = (re, s, want, why) => {
     const got = re.test(s), good = got === want;
+    st.total++;
     if (!good) st.bad++;
     console.log(`  ${good ? "✓" : "✗"} ${why}: ${JSON.stringify(s)} → ${got}`);
   };
   const eqN = (got, want, why) => {
     const good = got === want;
+    st.total++;
     if (!good) st.bad++;
     console.log(`  ${good ? "✓" : "✗"} ${why}: ${got} → ${good ? "" : want}`);
   };
   const eqArr = (got, want, why) => {
     const good = JSON.stringify(got) === JSON.stringify(want);
+    st.total++;
     if (!good) st.bad++;
     console.log(`  ${good ? "✓" : "✗"} ${why}: ${JSON.stringify(got)} → ${good ? "" : JSON.stringify(want)}`);
   };
@@ -693,7 +696,7 @@ export function runBoundaryCases(st) {
   eqN(guardRc("git checkout ."), 2, "守卫拦 checkout .(全量重置工作区)");
   eqN(guardRc("git push origin main --force"), 2, "守卫拦强推保护分支");
   eqN(guardRc("git push origin main --force-with-lease"), 0, "守卫放行 lease 强推(留的出路)");
-  eqN(guardRc("git status"), 0, "守卫放行普通命令");
+    eqN(guardRc("git status"), 0, "守卫放行普通命令");
   rmSync(dir, { recursive: true, force: true });
 }
 
