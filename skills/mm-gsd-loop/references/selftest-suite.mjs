@@ -16,7 +16,7 @@ import { checkTicketPremises } from "./verification-gates.mjs";
 import { staleDecisions, coveredDecisions, phaseCovered, staleNote, planExists, runDecisionContracts, checkPlanCheckArtifacts } from "./ticket-alive.mjs";
 import { phaseHealth } from "./telemetry-aggregate.mjs";
 import { checkRoutes, routeSection, pointerCard, reviewerCard, buildRouteBrief } from "./agent-routing.mjs";
-import { deriveWaves } from "./worktree-view.mjs";
+import { depsFromPlanText, deriveWaves } from "./worktree-view.mjs";
 import { checkPlanQuality, SIZE_EXEMPT } from "./plan-review-gate.mjs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, rmSync, existsSync, readdirSync } from "node:fs";
@@ -99,6 +99,17 @@ export function runConvergenceCases({ eqN }) {
   writeFileSync(join(dir, ".planning", "99-01-PLAN" + MD), ["---", "phase: \"99\"", "plan: \"01\"", "goal: 夹具", "files_modified:", "  - x.md", "depends_on: []", "cwd: .", "---", "", "## T1", "", "- **files**: x.md", "- **action**: 改 x.md", "- **verify**: node -e \"0\"", "- **done**: 夹具即本行"].join("\n"));
   const sup = checkPlanReady({ planPath: join(dir, ".planning", "99-01-PLAN" + MD) }, { superseded: true });
   eqN(sup.state, "passed", "rcv-4 superseded 下全 machine 类降级不拦工");
+
+  // wave-dag-deps(D-30-04):depends_on 列表形此前不可见(两张取值口只读同行内联值)
+  // ⇒ 合法票面被误红(R-24 摩擦档 high 的根因之一)。解析器形态钉住。
+  const LIST_ONE = 'depends_on:\n  - "30-01"';
+  const LIST_MULTI = 'depends_on:\n  - 30-01\n  - 30-02\ncwd: .';
+  const INLINE_MULTI = 'depends_on: "30-01, 30-02"';
+  const EMPTY_ARR = 'depends_on: []';
+  eqN(JSON.stringify(depsFromPlanText(LIST_ONE)), '["30-01"]', "wave-dag-deps-1 列表形单值");
+  eqN(JSON.stringify(depsFromPlanText(LIST_MULTI)), '["30-01","30-02"]', "wave-dag-deps-2 列表形多值,遇非列表行停止");
+  eqN(JSON.stringify(depsFromPlanText(INLINE_MULTI)), '["30-01","30-02"]', "wave-dag-deps-3 内联多值(旧口径不回归)");
+  eqN(JSON.stringify(depsFromPlanText(EMPTY_ARR)), '[]', "wave-dag-deps-4 空数组");
   const legacy = checkPlanReady({ planPath: join(dir, ".planning", "99-01-PLAN" + MD) });
   eqN(legacy.state === "blocked" || legacy.state === "missing", true, "rcv-4b 祖父路径:无收敛工件时保持票级旧判");
   // rcv-5/6/7/8:逐票预审工件契约门必须与 checkPlanReady 同一 superseded 口径(R-26)。

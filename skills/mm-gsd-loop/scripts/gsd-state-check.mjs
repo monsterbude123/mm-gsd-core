@@ -236,7 +236,6 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
   }
 
   const batchPlans = [], review = [], reviewErrs = [];
-  const depList = (v) => String(v ?? "").replace(/[[\]"'\s]/g, "").split(/[,、]/).filter(Boolean);
   const { checkTicketBudget } = await import("../references/worktree-view.mjs");
   const { checkDiscriminatingLints, checkZeroMatchErrors, checkBatchVerifyLints } = await import("../references/verification-gates.mjs");
   // 已收口的票(status: complete)退出该票的全部门禁(phase 26 D-12/D-14):
@@ -367,8 +366,9 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
     for (const f of parsed.files) {
       if (VAGUE_FILE.test(f)) e(`${name}: files_modified 模糊项 "${f}"`, "改成精确路径 —— 机器无法据此判断并行冲突");
     }
-    const dep = unquote(String(fm.depends_on ?? "").replace(/[[\]"']/g, ""));
-    if (dep && fm.plan && dep.split(/[,\s]+/).includes(unquote(fm.plan))) {
+    const { depsFromPlanText } = await import("../references/worktree-view.mjs");
+    const selfDeps = depsFromPlanText(txt);
+    if (selfDeps.length && fm.plan && selfDeps.includes(unquote(fm.plan))) {
       e(`${name}: depends_on 依赖了自己`, "删掉自引用");
     }
 
@@ -495,7 +495,7 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
     // R 票不进批图(D-06):修复是原 phase 收尾后的串行补票,不是新的并行面 ——
     // 两张 R 票碰同一个被修文件是常态,卷进批图会误判「并行撞文件」。
     if (!isRepair)
-      batchPlans.push({ id: name.replace(/-PLAN\.md$/, ""), phase: phaseNo, files: parsed.files, depends: depList(fm.depends_on), wave: String(fm.wave ?? "").trim() === "" ? null : Number(fm.wave), dir: dirname(path) });
+      batchPlans.push({ id: name.replace(/-PLAN\.md$/, ""), phase: phaseNo, files: parsed.files, depends: depsFromPlanText(txt), wave: String(fm.wave ?? "").trim() === "" ? null : Number(fm.wave), dir: dirname(path) });
   }
   {
     const wv = await import("../references/worktree-view.mjs");
@@ -519,8 +519,7 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
             if (universe.has(oid)) continue;
             const fm2 = readFileSync(join(b.dir, n), "utf8").split(/^---$/m)[1] ?? "";
             const wm = fm2.match(/^wave:\s*(\d+)\s*$/m);
-            const dm = fm2.match(/^depends_on:\s*(.+)$/m);
-            universe.set(oid, { id: oid, wave: wm ? Number(wm[1]) : null, depends: dm ? (dm[1].match(/\d+-\d+/g) ?? []) : [] });
+            universe.set(oid, { id: oid, wave: wm ? Number(wm[1]) : null, depends: wv.depsFromPlanText(fm2) });
           }
         } catch { /* 目录读不到就按批内集合推导 */ }
       }

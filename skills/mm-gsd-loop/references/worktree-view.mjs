@@ -277,3 +277,29 @@ export function isFullSuite(cmd) {
   if (/\bmvn\s+test\b|\bgradle\s+test\b|\bmake\s+test\b/.test(c)) return true;
   return false;
 }
+
+/**
+ * depends_on 解析(30-04,30-RESEARCH deferred 兑现):两种形态都认 ——
+ * 同行内联值(`depends_on: "30-01"` / `depends_on: []`)与 YAML 列表项
+ * (`depends_on:` 后跟 `  - "30-01"`)。此前两张取值口(批图 depList / wave 宇宙种子)
+ * 只读同行内联值,列表形解析成空依赖:依赖失明,合法票面被误红(R-24 摩擦档 high 的根因之一)。
+ * 返回票号数组(30-01 形态);无依赖返回 []。
+ */
+export function depsFromPlanText(text) {
+  const out = [];
+  let inList = false;
+  for (const l of String(text ?? "").split(/\r?\n/)) {
+    if (/^depends_on:/.test(l)) {
+      const inline = l.slice("depends_on:".length).trim();
+      if (inline) { for (const m of inline.matchAll(/\d+-\d+/g)) out.push(m[0]); inList = false; continue; }
+      inList = true; continue;
+    }
+    if (inList) {
+      const m = l.match(/^\s*-\s*"?(\d+-\d+)"?\s*$/);
+      if (m) { out.push(m[1]); continue; }
+      if (l.trim() === "") continue;
+      inList = false;
+    }
+  }
+  return out;
+}
