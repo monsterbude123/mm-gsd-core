@@ -545,6 +545,12 @@ const CHECKS = {
     return checkRequirementMiningAll({ root: ROOT, report });
   },
 
+  // R-30:模板里的脚本必须真能跑 —— 判据权威在 references/web-template-gate.mjs
+  async "check-web-template-js"(report) {
+    const { checkWebTemplateJsAll } = await import("../skills/mm-gsd-loop/references/web-template-gate.mjs");
+    return checkWebTemplateJsAll({ root: ROOT, report });
+  },
+
   async "check-channel-safety"(report) {
     const { makeReleaseFlow, publishArgs } = await import("./release-flow.mjs");
     const calls = [];

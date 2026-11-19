@@ -246,6 +246,15 @@
       "check": "check-requirement-mining",
       "_note": "2026-11-19 phase 28-07 落地。用户当场指出「我没看见你深挖需求这个动作」—— 缺的是纪律这一步,不是执行者偷懒;phase 26 教训:纪律写了但没机器门等于没写。豁免两套口径照 verification-gates checkReqCoverage(baseline 行/req-ledger 已处置)。编号:28-07 票面原写 R-25(已被 28-11 的 check-review-scope 占用),按台账顺次落 R-29。",
       "_候选顾虑回应": "与 R-21(研究消费)、R-25(预审分类)不重叠:那条管研究产物被引用,这条管需求深挖四问进 CONTEXT。"
+    },
+    {
+      "id": "R-30",
+      "status": "active",
+      "since": "0.7.7",
+      "statement": "模板里的脚本必须真能跑,不是「看着像对的」。三条判据:①内联 <script> 必须过 node --check;②CSS 必须有显式隐藏 [hidden] 的 display:none 规则;③先声明后引导 —— 顶层裸调用必须排在所有顶层 const/let/class 声明之后。机器门 check-web-template-js 扫 skills 下全部 .html(核心与可选包一视同仁,核心不认识任何包名)。",
+      "check": "check-web-template-js",
+      "_note": "2026-11-19 看板重做落地。三个真事故各对应一条判据:游离大括号让整页 JS 死掉,页面永远停在「连接中…」;作者样式(.view-fit{display:flex})压过 UA 的 [hidden]{display:none},被 hidden 的视图在每个视图里都显示,顶栏永远压在内容上;顶层调用早于 const 声明 → TDZ(ReferenceError: Cannot access 'reqdep' before initialization),直接以 #reqdep 打开看板必崩。旧的自测探针只测服务端与模板静态字符串,不测模板 JS 能否运行 —— 三个事故全从那里逃出去,所以补这条门。活违规输入:门上线时真判红过(顶层 setInterval 早于 const RD,已按判据三移到脚本底部)。编号:R-24..R-29 已占用,按台账顺次取 R-30。",
+      "_候选顾虑回应": "与 R-04(核心 .mjs 语法)不重叠:那条管 .mjs 源文件,这条管 HTML 模板里的内联脚本与 CSS 规则;与 R-28(核心边界)不重叠:那条管核心不许引用可选包,这条扫全部 .html 且不区分核心与包。"
     }
   ],
   "candidates": [

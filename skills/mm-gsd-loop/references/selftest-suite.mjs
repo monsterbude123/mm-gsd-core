@@ -7,6 +7,7 @@ import { classifyArtifact, parseAccounting, commitExists, checkArtifactLedger } 
 import { checkPlanReady, readPhaseConvergence, classifyArtifactBlockers, REVIEW_PROMPT } from "./plan-ready.mjs";
 import { discoverPacks, resolvePack, resolveEntry, makePackFixture } from "./packs.mjs";
 import { checkCoreBoundary } from "./core-boundary.mjs";
+import { checkWebTemplateJs } from "./web-template-gate.mjs";
 import { checkRequirementMining, phaseReqs } from "./requirement-mining.mjs";
 import { checkPhaseCoverage, checkReversibility } from "./decision-gates.mjs";
 import { checkTicketPremises } from "./verification-gates.mjs";
@@ -193,6 +194,33 @@ export function runCoreBoundaryCases({ eqN }) {
   eqN(r6.length, 0, "core-6 可选包自己的文件豁免");
   const r7 = rules(tree({ [coreMd]: "核心文档点了命令调用形:mm-gsd fake\n", [packMd]: packSkill, [packEntry]: "export const x = 1;\n" }));
   eqN(r7.join(","), "2", "core-4 核心文件有命令调用形 → 规则二");
+}
+
+/** 模板脚本门禁用例组(R-30):三条判据各造一个违规输入 —— 门真的会红才算数(AGENTS.md「造门禁的判据」) */
+export function runWebTemplateGateCases({ eqN }) {
+  const tree = (files) => {
+    const root = mkdtempSync(join(tmpdir(), "mm-gsd-webgate-"));
+    for (const k of Object.keys(files)) {
+      const p = join(root, k);
+      mkdirSync(dirname(p), { recursive: true });
+      writeFileSync(p, files[k]);
+    }
+    return root;
+  };
+  const rel = "skills/mm-gsd-fake/templates/page.html";
+  const rulesOf = (root) => checkWebTemplateJs({ skillsRoot: join(root, "skills") }).map((p) => p.rule);
+  const css = ".view{display:flex}\n.view[hidden]{display:none !important}\n";
+  const cleanJs = 'const a = 1;\nfunction boot() { return a; }\nboot();\n';
+  const r0 = rulesOf(tree({ [rel]: "<html><style>" + css + "</style><body><script>" + cleanJs + "</script></body></html>" }));
+  eqN(r0.length, 0, "webgate-1 干净模板 → 0 条");
+  const r1 = rulesOf(tree({ [rel]: "<html><style>" + css + "</style><body><script>const a = 1;\n}\n</script></body></html>" }));
+  eqN(r1.join(","), "1", "webgate-2 内联脚本有游离大括号 → 判据一(语法)");
+  const r2 = rulesOf(tree({ [rel]: "<html><style>.view{display:flex}\n</style><body><script>" + cleanJs + "</script></body></html>" }));
+  eqN(r2.join(","), "2", "webgate-3 CSS 没有显式隐藏 [hidden] → 判据二");
+  const r3 = rulesOf(tree({ [rel]: "<html><style>" + css + "</style><body><script>boot();\nconst a = 1;\nfunction boot() { return a; }\n</script></body></html>" }));
+  eqN(r3.join(","), "3", "webgate-4 顶层调用早于顶层声明 → 判据三(TDZ)");
+  const r4 = rulesOf(tree({ [rel]: "<html><style>" + css + "</style><body><script>" + cleanJs + "</script></body></html>" }));
+  eqN(r4.length, 0, "webgate-5 同一棵干净的树复跑 → 仍 0 条(门不是随机红)");
 }
 
 /** 决策声明口径用例组(28-08):只认带方括号的大写 ID,散文裸引用不算;三条契约同一把尺 */
