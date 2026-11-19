@@ -5,7 +5,8 @@
 // 指令跑了、版本没动,而且**不报错** —— 这类故障从外面看是「命令好使」,只能靠门禁钉住。
 //
 // 三个场景,都用假 npm 顶替 registry(不碰真 registry:门禁不能变成网络投票):
-//   ① registry 上有新版 → 必须换新再盖:版本清单里的版本 = registry 那版,技能内容来自那一版
+//   ① registry 上有新版 → 必须换新再盖:版本清单里的版本 = registry 那版,技能内容来自那一版,
+//      新增的技能还要链进宿主目录(不然用户更新完还是看不到它)
 //   ② registry 上更旧   → 不降级:版本清单里的版本 = 当前这版
 //   ③ registry 问不到   → 不硬失败:退出码 0,并把「问不到」说出来
 //
@@ -43,7 +44,7 @@ if (args[0] === "install") {
   fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ name: "mm-gsd-core", version }, null, 2));
   fs.writeFileSync(path.join(root, "skills", "mm-gsd-fake", "SKILL.md"), "---\\nname: mm-gsd-fake\\n---\\n\\nfake " + version + "\\n");
   fs.writeFileSync(path.join(root, "skills", "mm-gsd-loop", "references", "agent-routing.mjs"),
-    "export const HOSTS = {};\\nexport const pointerCard = () => '# stub\\\\n';\\nexport const reviewerCard = () => '# stub\\\\n';\\n");
+    "export const HOSTS = { claude: { dir: '.claude', skills: '.claude/skills', agents: null } };\\nexport const pointerCard = () => '# stub\\\\n';\\nexport const reviewerCard = () => '# stub\\\\n';\\n");
   process.stdout.write("added 1 package\\n");
   process.exit(0);
 }
@@ -108,6 +109,7 @@ export function checkUpdateScenarios({ installer, version, workRoot }) {
   const run = (name, fakeVersion) => {
     const home = join(root, name);
     mkdirSync(home, { recursive: true });
+    mkdirSync(join(home, ".claude"), { recursive: true });   // 假扮一台装了 claude 的机器:查「新技能有没有链进宿主目录」
     const fake = makeFakeNpm(join(root, "fake-" + name), fakeVersion);
     const r = runUpdate({ installer, home, fake });
     return { name, r, manifest: readManifest(home), home };
@@ -120,6 +122,9 @@ export function checkUpdateScenarios({ installer, version, workRoot }) {
   if (up.manifest?.version !== "999.0.0") problems.push(`场景① 版本清单里的版本是 ${up.manifest?.version},应是 registry 上的 999.0.0 —— 没有换新再盖`);
   if (up.manifest?.source !== `npm:${PKG}@999.0.0`) problems.push(`场景① 版本清单里的来源是 ${up.manifest?.source},应是 npm:${PKG}@999.0.0`);
   if (!existsSync(join(up.home, ".agents", "skills", "mm-gsd-fake", "SKILL.md"))) problems.push("场景① 装出来的技能不来自取到的那一版 —— 覆盖的还是旧内容");
+  // ④ 新技能要链进宿主目录:链接是指向主仓的 junction,内容跟着主仓变,
+  //    但**新增的技能名**不会自己长出来 —— 不补这一步,用户更新完还是看不到新技能(实测:看板包就没进宿主目录)。
+  if (!existsSync(join(up.home, ".claude", "skills", "mm-gsd-fake"))) problems.push("场景① 新增的技能没有链进宿主目录 —— 用户更新完还是看不到它");
 
   // ② registry 上更旧 → 不降级
   const old = run("older", "0.0.1");

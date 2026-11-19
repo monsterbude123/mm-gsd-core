@@ -12,7 +12,7 @@
 //
 // 零依赖,跨平台。
 
-import { readFileSync, readdirSync, existsSync, cpSync, mkdirSync, rmSync, lstatSync, writeFileSync, readFileSync as rf } from "node:fs";
+import { readFileSync, readdirSync, existsSync, cpSync, mkdirSync, rmSync, lstatSync, writeFileSync, readFileSync as rf, symlinkSync, copyFileSync } from "node:fs";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { homedir, tmpdir } from "node:os";
@@ -318,6 +318,32 @@ async function update() {
         log(`  ${C.g}+${C.x} 宿主卡 ${cardFiles.length} 张 → ${dir}`);
       }
       if (!cards) warn("没有探测到任何宿主 agent 卡目录 —— 卡未更新(装卡用 install)");
+    }
+
+    // 2b) 宿主技能链接:只补缺失的。
+    //     链接是指向主仓的 junction,内容会跟着主仓变;但**新增的技能名**不会自己长出来 ——
+    //     0.7.6 才有的看板包,老机器上装过一遍就再也不会被链进宿主目录,用户更新完还是看不到它。
+    if (!local && !has("--dir")) {
+      const routing = await import(pathToFileURL(join(skillsSrc, "mm-gsd-loop", "references", "agent-routing.mjs")).href);
+      for (const [hname, v] of Object.entries(routing.HOSTS)) {
+        if (!v.skills || v.skills === ".agents/skills") continue;
+        if (!existsSync(join(HOME, v.dir))) continue;   // 只动真的装了本宿主的机器,别给没用的宿主凭空造目录
+        const dstRoot = join(HOME, v.skills);
+        let made = 0;
+        for (const n of names) {
+          const link = join(dstRoot, n);
+          let there = false;
+          try { const st = lstatSync(link); there = st.isSymbolicLink() || st.isDirectory(); } catch {}
+          if (there) continue;
+          try {
+            mkdirSync(dstRoot, { recursive: true });
+            try { symlinkSync(join(target, n), link, "junction"); }
+            catch { mkdirSync(link, { recursive: true }); copyFileSync(join(target, n, "SKILL.md"), join(link, "SKILL.md")); }
+            made++;
+          } catch (e) { warn(`宿主 ${hname} 链接 ${n} 失败:${e.message}`); }
+        }
+        if (made) log(`  ${C.g}+${C.x} 宿主 ${hname} 补链 ${made} 个技能 → ${dstRoot}`);
+      }
     }
 
     // 3) 守卫/遥测脚本:公共区文件刷新(各宿主 hook 配置指向它,配置本身不动 —— 那是 install --hooks 的活)

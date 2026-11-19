@@ -23,7 +23,7 @@
   "check-ticket-size": "active phase 未收口且不在 SIZE_EXEMPT 的票,verify 字节超 4000 → 活检判红;把 BUDGET.verifyBytes 删掉 → 结构断言红;豁免名单内的票不判",
   "check-requirement-mining": "CONTEXT 的 <mining> 节缺一问、缺整块、问了但答案为空 → 活检判红并点名 REQ 号与缺的那一问;没有 <mining> 节的老 CONTEXT 豁免;REQUIREMENTS 标 (baseline 的 REQ 与 req-ledger 已处置的 REQ 不判",
   "check-web-template-js": "模板内联脚本有游离大括号 → node --check 判红(整页 JS 会死,页面永远停在「连接中…」);CSS 缺显式隐藏 [hidden] 的 display:none 规则 → 判红(作者样式压过 UA 的 [hidden],被隐藏的视图照样显示);顶层裸调用排在顶层 const/let/class 声明之前 → 判红(TDZ:ReferenceError: Cannot access ... before initialization,直接带 # 打开看板必崩)",
-  "check-update-maps-latest": "registry 上有更新的版本而 update 不去取 → 判红(版本清单里的版本不等于 registry 那版 / 装出来的技能不来自那一版);registry 上更旧而 update 降级 → 判红(版本清单里的版本被改小);registry 问不到而 update 硬失败或悄悄按旧版盖过去 → 判红(退出码非 0 或输出里没有「问不到 registry」)",
+  "check-update-maps-latest": "registry 上有更新的版本而 update 不去取 → 判红(版本清单里的版本不等于 registry 那版 / 装出来的技能不来自那一版);registry 上更旧而 update 降级 → 判红(版本清单里的版本被改小);registry 问不到而 update 硬失败或悄悄按旧版盖过去 → 判红(退出码非 0 或输出里没有「问不到 registry」);新增的技能没链进宿主技能目录 → 判红(用户更新完还是看不到新技能)",
   "_modules": {
     "core-boundary.mjs": "核心边界门(28-04,R-28):由 mmc 的 check-core-boundary 驱动(活检核心 .md 显示名与目录名/命令调用形),判定内核由 R-15 的 --selfcheck 覆盖 —— runCoreBoundaryCases 造脏树/净树/无包树/包内豁免四场景真调 checkCoreBoundary",
     "requirement-mining.mjs": "深挖需求门(28-07,R-29):由 mmc 的 check-requirement-mining 驱动(活检有 <mining> 节的 CONTEXT 四问齐全),判定内核由 R-15 的 --selfcheck 覆盖 —— runMiningCases 造全量/缺一问/缺块/空答/豁免五场景真调 checkRequirementMining",
