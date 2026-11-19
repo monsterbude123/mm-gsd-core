@@ -9,6 +9,7 @@
 //      新增的技能还要链进宿主目录(不然用户更新完还是看不到它)
 //   ② registry 上更旧   → 不降级:版本清单里的版本 = 当前这版
 //   ③ registry 问不到   → 不硬失败:退出码 0,并把「问不到」说出来
+//   ⑤ 已装的比当前包新 → 不降级:全局命令旧、主仓新的时候不能把主仓盖回旧版
 //
 // 零依赖:只用 node: 内置模块。
 import { spawnSync } from "node:child_process";
@@ -106,10 +107,16 @@ function readManifest(home) {
 export function checkUpdateScenarios({ installer, version, workRoot }) {
   const root = workRoot || mkdtempSync(join(tmpdir(), "mm-gsd-update-gate-"));
   const problems = [];
-  const run = (name, fakeVersion) => {
+  const run = (name, fakeVersion, seedVersion) => {
     const home = join(root, name);
     mkdirSync(home, { recursive: true });
     mkdirSync(join(home, ".claude"), { recursive: true });   // 假扮一台装了 claude 的机器:查「新技能有没有链进宿主目录」
+    if (seedVersion) {
+      // 预置一份「已装的是更高版本」的清单:模拟全局命令是旧版、主仓却是新版的现场
+      mkdirSync(join(home, ".agents", "skills"), { recursive: true });
+      writeFileSync(join(home, ".agents", "skills", ".mm-gsd-install.json"),
+        JSON.stringify({ version: seedVersion, source: `npm:${PKG}@${seedVersion}`, installedAt: new Date().toISOString(), skills: {} }));
+    }
     const fake = makeFakeNpm(join(root, "fake-" + name), fakeVersion);
     const r = runUpdate({ installer, home, fake });
     return { name, r, manifest: readManifest(home), home };
@@ -138,6 +145,14 @@ export function checkUpdateScenarios({ installer, version, workRoot }) {
   if (!off.r.out.includes("问不到 registry")) problems.push("场景③ registry 问不到时没有说「问不到」—— 悄悄按旧版盖过去,用户以为自己更新过");
   if (off.manifest?.version !== version) problems.push(`场景③ 版本清单里的版本是 ${off.manifest?.version},应是当前这版 ${version}`);
 
+  // ⑤ 已装的比当前包新 → 不降级。
+  // 现场:全局命令是 0.7.0、主仓是 0.7.9,旧 update 把主仓盖回 0.7.0(看板包直接没了)。
+  // registry 问不到(按当前包覆盖)最容易踩这条,所以这里就用问不到的那条路径。
+  const newer = run("installed-newer", null, "9999.0.0");
+  if (newer.r.code !== 0) problems.push(`场景⑤ update 退出码 ${newer.r.code}(应为 0):${newer.r.err.slice(0, 200)}`);
+  if (!newer.r.out.includes("不降级")) problems.push("场景⑤ 已装的比当前包新时没有说「不降级」—— 悄悄降级等于把用户的技能弄丢");
+  if (newer.manifest?.version !== "9999.0.0") problems.push(`场景⑤ 版本清单里的版本是 ${newer.manifest?.version},应是 9999.0.0 —— 把已装的降级盖掉了`);
+
   return { problems, root };
 }
 
@@ -155,7 +170,7 @@ export function checkUpdateMapsLatest({ root, report }) {
     return false;
   }
   for (const p of res.problems) report.fail(p);
-  if (!res.problems.length) report.pass("update 映射 registry 上的最新版(有新版换新再盖 / 不降级 / 问不到不硬失败)");
+  if (!res.problems.length) report.pass("update 映射 registry 上的最新版(有新版换新再盖 / 不降级 / 问不到不硬失败 / 不把已装的盖回旧版)");
   try { rmSync(res.root, { recursive: true, force: true }); } catch {}
   return res.problems.length === 0;
 }

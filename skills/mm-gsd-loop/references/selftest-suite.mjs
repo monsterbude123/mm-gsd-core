@@ -9,7 +9,7 @@ import { discoverPacks, resolvePack, resolveEntry, makePackFixture } from "./pac
 import { checkCoreBoundary } from "./core-boundary.mjs";
 import { checkWebTemplateJs } from "./web-template-gate.mjs";
 import { checkUpdateScenarios, parseInstallTarget } from "./update-gate.mjs";
-import { cmpVersion, pickUpdateAction } from "./update-resolve.mjs";
+import { cmpVersion, pickCoverAction, pickUpdateAction } from "./update-resolve.mjs";
 import { checkRequirementMining, phaseReqs } from "./requirement-mining.mjs";
 import { checkPhaseCoverage, checkReversibility } from "./decision-gates.mjs";
 import { checkTicketPremises } from "./verification-gates.mjs";
@@ -233,6 +233,9 @@ export function runUpdateGateCases({ eqN }) {
   eqN(pickUpdateAction("0.7.7", null), "offline", "update-4 registry 问不到 → 照旧覆盖并说清");
   eqN(cmpVersion("0.7.10", "0.7.9"), 1, "update-5 版本比较按数字比(0.7.10 比 0.7.9 新)");
   eqN(parseInstallTarget(["install", "--prefix", "/tmp/x", "--no-audit", "mm-gsd-core@0.7.7"]).version, "0.7.7", "update-6 解析 npm install 要取的那一版");
+  eqN(pickCoverAction("0.7.9", "0.7.0"), "skip", "update-7 已装的比要盖的新 → 不许盖(全局命令旧、主仓新的现场)");
+  eqN(pickCoverAction("0.7.0", "0.7.9"), "cover", "update-8 已装的更旧 → 照盖");
+  eqN(pickCoverAction(null, "0.7.9"), "cover", "update-9 没装过 → 照盖");
 
   // 违规输入:旧版 update 的行为 —— 只覆盖、从不问 registry。门必须判红,不然这道门是装饰。
   const d = mkdtempSync(join(tmpdir(), "mm-gsd-update-gate-"));
@@ -248,7 +251,7 @@ export function runUpdateGateCases({ eqN }) {
     'console.log("  3 个技能已覆盖");',
   ].join("\n"));
   const res = checkUpdateScenarios({ installer: stub, version: "0.7.7", workRoot: join(d, "run") });
-  eqN(res.problems.length > 0, true, "update-7 旧版 stub(不问 registry)→ 门必须判红");
+  eqN(res.problems.length > 0, true, "update-10 旧版 stub(不问 registry)→ 门必须判红");
   rmSync(d, { recursive: true, force: true });
 }
 

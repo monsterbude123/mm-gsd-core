@@ -34,3 +34,17 @@ export function pickUpdateAction(running, published) {
   if (c === 0) return "current";
   return "older";
 }
+
+/**
+ * 覆盖之前问一次:已装的那份比要盖的还新吗?
+ * 还新 → 不许盖(盖回去等于把用户已经升到的新技能弄丢)。
+ * 现场:全局命令是 0.7.0、主仓是 0.7.9,旧 update 把主仓盖回 0.7.0,看板包直接没了。
+ *
+ * @param installed 已装那份的版本(null = 没装过/读不到清单)
+ * @param target    这次要盖上去的版本
+ * @returns "cover" | "skip"
+ */
+export function pickCoverAction(installed, target) {
+  if (!installed) return "cover";
+  return cmpVersion(installed, target) > 0 ? "skip" : "cover";
+}

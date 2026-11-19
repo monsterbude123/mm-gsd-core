@@ -19,7 +19,7 @@ import { homedir, tmpdir } from "node:os";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { discoverPacks, resolvePack, resolveEntry, skillsRootOr } from "../skills/mm-gsd-loop/references/packs.mjs";
-import { cmpVersion, pickUpdateAction } from "../skills/mm-gsd-loop/references/update-resolve.mjs";
+import { cmpVersion, pickCoverAction, pickUpdateAction } from "../skills/mm-gsd-loop/references/update-resolve.mjs";
 
 const PKG_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SKILLS_SRC = join(PKG_ROOT, "skills");
@@ -283,6 +283,18 @@ async function update() {
     warn(`问不到 registry 上的 ${channel}(离线?)—— 按当前包这份覆盖(${VERSION})`);
   }
   log(`  目标:${target}(来源 ${source} v${version})`);
+
+  // 覆盖前先看已装的是哪一版 —— 已装的比要盖的还新就不降级。
+  // 实测过的现场:全局命令是 0.7.0、主仓却是 0.7.9,旧 update 会把主仓盖回 0.7.0
+  // (看板包直接没了)。用户说的「版本不动/倒退」就是这一类。
+  const installed = (() => {
+    try { return JSON.parse(readFileSync(join(target, MANIFEST), "utf8")).version || null; } catch { return null; }
+  })();
+  if (pickCoverAction(installed, version) === "skip") {
+    warn(`已装的是 ${installed},比要盖的 ${version} 新 —— 不降级,原样保留`);
+    ok(`当前这份 mm-gsd(${VERSION})比已装的旧 —— 先刷新 mm-gsd 本身(npm i -g mm-gsd-core),再跑一次 update`);
+    return 0;
+  }
 
   try {
     const names = SKILL_NAMES(skillsSrc);
