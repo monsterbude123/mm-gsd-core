@@ -318,7 +318,8 @@ export function checkGateSelftest(report) {
     let out = "", code = 0;
     try { out = execFileSync(process.execPath, [CHECKER, "--selfcheck"], { cwd: ROOT, encoding: "utf8", stdio: "pipe" }); }
     catch (e) { code = e.status ?? 1; out = String(e.stdout || "") + String(e.stderr || ""); }
-    const n = (out.match(/✓/g) ?? []).length;
+    // 只数断言行(以 → 收尾的 ✓ 行):两行汇总(总数/全过)也是 ✓ 开头,数进去虚高(G-30-4)
+    const n = out.split(/\r?\n/).filter((l) => l.trim().startsWith("✓") && l.includes(" → ")).length;
     if (code === 0) { report.pass(`门禁自测全过(${n} 条)`); return true; }
     report.fail("门禁自测不过 —— 门禁本身是坏的,先修门禁再谈别的");
     for (const l of out.split(/\r?\n/).filter((x) => x.includes("✗"))) report.info(l.trim());
