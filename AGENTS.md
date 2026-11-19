@@ -158,12 +158,16 @@ npx mm-gsd-core report "<标题>" --evidence "<复现命令或报错>"
 node tools/mmc.mjs sync            # 开发期:仓库 → ~/.agents/skills/
 node tools/mmc.mjs release --patch  # 发布:门禁 → 版本 → 提交/标签 → npm → 钉 next → 推 GitHub → 装回本机
 node tools/mmc.mjs promote 0.4.1    # 演练晋级(默认不碰 registry);真晋级加 --execute
-node tools/mmc.mjs doctor          # 看装的是哪一版、有没有漂移
+npx mm-gsd-core doctor             # 看装的是哪一版、有没有漂移(doctor 属于发布出去的 CLI,不是 mmc)
 ```
 
 **`~/.agents/skills/` 只能通过这条流程更新,不许手工 cp。** 手工拷的东西没有版本清单,
 出了问题说不清是哪一版。安装会写 `~/.agents/skills/.mm-gsd-install.json`
 (版本 / 来源 / 时间 / 每个技能的指纹),doctor 拿它和当前包比对,漂移会报出来。
+
+**`sync` 装的是仓库副本,和 npm 包不完全一样**(仓库多带 `skills/mm-gsd-board/ui/` 源码,
+npm 包按 `files` 白名单把它排掉了)。要对齐「用户拿到的那一份」,跑 `npx mm-gsd-core update`
+或让 `release` 的最后一步从 npm 装回。
 
 `release` 的最后一步是**从 npm 装回本机**,不是从仓库装 —— 这样装回来的就是别人会拿到的那一份,
 不会出现「本地改了没发出去」的错觉。
