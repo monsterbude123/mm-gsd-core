@@ -89,7 +89,8 @@ npm i -g mm-gsd-core     # 之后 mm-gsd web / mm-gsd check / mm-gsd doctor 直�
 **全局装完注意版本对齐**:全局那份与 `~/.agents/skills/` 里那份是两个副本,会各走各的。
 `mm-gsd doctor` 比对两边指纹,报「装的是旧版」就 `mm-gsd update` —— 它会先问 npm registry
 「最新发布的是哪一版」,registry 上有更新的就先取那一版再盖,所以旧版机器敲一次就能升上去
-(问不到 registry 就按当前这份盖,并明说「问不到」;registry 上更旧就不降级)。
+(问不到 registry 就按当前这份盖,并明说「问不到」;registry 上更旧就不降级;
+已装的那份比要盖的还新也不盖 —— 那说明全局命令是旧版,得先 `npm i -g mm-gsd-core`)。
 
 两个命令的分工:**install 首装尊重已有内容** —— 同名技能已存在且内容相同就跳过;
 内容不同,先把原内容备份到 `~/.agents/backups/<技能名>-<时间戳>/` 再覆盖
