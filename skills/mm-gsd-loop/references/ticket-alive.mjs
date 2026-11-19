@@ -203,18 +203,24 @@ export function ticketsCovered(summaries, ticket, opts = {}) {
  * **形状**(status 必须是 passed|blocked,缺了或写了认不出的值 → 判红)与
  * **不许静默跳过**(票已经开工、有 SUMMARY,却找不到对应的预审工件 → 判红;还没开工的不报 ——
  * 预审本来就发生在执行之前)。它**不判预审结论的对错**(判不了):passed 只意味着「有人复核过」。
+ *
  * @param dir 工件目录;@param plans/summaries 本 phase 的 PLAN/SUMMARY 文件名数组
  * @param frontmatter 解析 frontmatter 的函数(调用方注入,避免抄第二份实现)
+ * @param supersededPhases 已被 phase 级收敛工件取代的 phase 号集合(R-26:收敛单位是 phase,
+ *   收敛工件在场票级预审被取代)。**按票自己的 phase 号判**,不用 STATE 的 active_phase ——
+ *   active_phase 为空或跨 phase 时,两路会得出相反结论。
+ *   形状校验照旧:在场的票级工件,status 非法照样判红 —— 取代只免「缺」,不免「坏」。
  * @returns 问题串数组;空数组 = 契约齐
  */
-export function checkPlanCheckArtifacts({ dir, plans = [], summaries = [], frontmatter }) {
+export function checkPlanCheckArtifacts({ dir, plans = [], summaries = [], frontmatter, supersededPhases = new Set() }) {
   const problems = [];
   const names = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith("-PLAN-CHECK.md")) : [];
   for (const p of plans) {
     const base = p.replace(/-PLAN\.md$/, "");
     const cf = `${base}-PLAN-CHECK.md`;
     if (!names.includes(cf)) {
-      if (summaries.includes(`${base}-SUMMARY.md`))
+      const ph = (base.match(/^(\d+)/) || [])[1] ?? "";
+      if (!supersededPhases.has(ph) && summaries.includes(`${base}-SUMMARY.md`))
         problems.push(`${base}: 已经开工却没有预审结论(缺 ${cf}) —— 机械合规过了不等于这份计划成立`);
       continue;
     }

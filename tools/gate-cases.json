@@ -30,7 +30,7 @@
     "web-template-gate.mjs": "模板脚本门(R-30):由 mmc 的 check-web-template-js 驱动(活检 skills 下全部 .html),判定内核由 R-15 的 --selfcheck 覆盖 —— runWebTemplateGateCases 造干净/语法错/缺 hidden 规则/调用早于声明四场景真调 checkWebTemplateJs",
     "update-gate.mjs": "update 映射门(R-31):由 mmc 的 check-update-maps-latest 驱动(用假 npm 顶替 registry 跑三个场景:有新版换新再盖 / 不降级 / 问不到不硬失败);判定内核由 R-15 的 --selfcheck 覆盖 —— runUpdateGateCases 用一个「只覆盖不问 registry」的旧版 stub 当违规输入,确认门会红",
     "plan-review-gate.mjs": "14 族机器门的判据权威(28-10):--plan 接线驱动(未收口票逐张过门,blocker 红 advisory 黄),判定内核由 R-15 的 --selfcheck 覆盖 —— runReviewGateCases 真调 checkPlanQuality(F16 捕获邻接/[TICKET-SIZE] 字节门/豁免名单/F1 盲验四条),外加门自带 --selfcheck 的 28 份 dirty/clean 孪生(脏 14/14、clean 0/14 假红);把任一 detector 掏空,孪生与锚点用例一起红",
-    "plan-ready.mjs": "开工判定(显式校验 --plan-check 的内核):把 checkPlanReady 掏空成永远返回 passed → 判红(缺预审/状态非法/blocked/票号对不上,四种都要判红;WARNING 不再判红 —— 归 Deferred 带进施工);把判定搬出检查器接线 → 端到端用例判红(自测里跑真命令:缺预审时退出码 1、提示词必须打印出来、检查器不许自己写工件 —— 指 --plan-check 判定路径;--init 冷启动本来就要写 STATE,不算、预审 passed 时退出码 0)。28-11 增:phase 级收敛三导出(readPhaseConvergence/classifyArtifactBlockers/MACHINE_SIGNS)由 runConvergenceCases 覆盖(单轮不判停/不降判停/全 machine 降级不拦工/祖父路径保持)",
+    "plan-ready.mjs": "开工判定(显式校验 --plan-check 的内核):把 checkPlanReady 掏空成永远返回 passed → 判红(缺预审/状态非法/blocked/票号对不上,四种都要判红;WARNING 不再判红 —— 归 Deferred 带进施工);把判定搬出检查器接线 → 端到端用例判红(自测里跑真命令:缺预审时退出码 1、提示词必须打印出来、检查器不许自己写工件 —— 指 --plan-check 判定路径;--init 冷启动本来就要写 STATE,不算、预审 passed 时退出码 0)。28-11 增:phase 级收敛三导出(readPhaseConvergence/classifyArtifactBlockers/MACHINE_SIGNS)由 runConvergenceCases 覆盖(单轮不判停/不降判停/全 machine 降级不拦工/祖父路径保持;29-01 增:形状不合(缺 round/new_judgment)的收敛工件不算在场 —— 判据与 mmc 侧活检同口径)",
     "decision-gates.mjs": "由 R-15 的 --selfcheck 覆盖(它会真的执行断言,不是登记):核销、可逆性、漂移三条契约各有用例。**漂移门此前零覆盖而本行声称有 —— 2026-10-20 复核发现该登记是假的并补上**(把 mtime 判定的那段删掉 → --selfcheck 立刻报红)",
     "verification-gates.mjs": "由 R-15 的 --selfcheck 覆盖:判定写法、Artifacts 表不误伤、score 对账各有用例",
     "template-gates.mjs": "由 --templates 模式覆盖(校验六份模板结构)",
@@ -39,8 +39,7 @@
     "research-gates.mjs": "由 --plan 的研究触发检查驱动(触发条件成立又没有合规研究产物 → 判红),判定内核由 R-15 的 --selfcheck 覆盖:跨目录触发、单文件不触发、空洞研究不算合规、URL 端口号不算 file:line 引用",
     "agent-routing.mjs": "由 --routes 模式驱动(每个 mm-gsd 技能都要有「完成后」小节、小节点名的技能必须真实存在),判定内核由 R-15 的 --selfcheck 覆盖:缺小节判红、点名不存在的技能判红、小节边界只到下一个标题。phase 04 加进来的宿主路由提示也在同一组用例里:速查只列 active 规则且文本来自台账、读不到台账时速查为空不补写、指针卡里不许出现规则原文",
     "worktree-view.mjs": "批图门与票预算门(phase 08):同批可并行的票撞文件 → 判红;票级 verify 是全量套件 → 判红;两条都有 --selfcheck 用例覆盖。",
-    "plan-ready.mjs": "开工判定(显式校验 --plan-check 的内核):把 checkPlanReady 掏空成永远返回 passed → 判红(缺预审/状态非法/blocked/票号对不上,四种都要判红;WARNING 不再判红 —— 归 Deferred 带进施工);把判定搬出检查器接线 → 端到端用例判红(自测里跑真命令:缺预审时退出码 1、提示词必须打印出来、检查器不许自己写工件 —— 指 --plan-check 判定路径;--init 冷启动本来就要写 STATE,不算、预审 passed 时退出码 0)",
-    "ticket-alive.mjs": "预审工件契约门(phase 09 D-08):开工了却没有 PLAN-CHECK → 判红;status 非法 → 判红。有 --selfcheck 用例覆盖。"
+    "ticket-alive.mjs": "预审工件契约门(phase 09 D-08):开工了却没有 PLAN-CHECK → 判红;status 非法 → 判红;本 phase 的 phase 级收敛工件在场(R-26)→ 票级预审被取代,不再报「缺票级工件」(取代只免「缺」,不免「坏」:在场的票级工件形状非法照样判红;缺 round/new_judgment 的半截收敛工件不算在场)。取代按**票自己的 phase 号**判 —— 别的 phase 的收敛工件不能免掉这张票的要求。有 --selfcheck 用例覆盖(rcv-5/6/7/7b/8/9a/9b)。"
   },
   "_tools": {
     "_why": "tools/ 下的模块不在 references/ 里,但同样是判定逻辑。按 T-02(散文没闸等于没写),它们也必须有会红的用例,否则改坏了没人知道。",

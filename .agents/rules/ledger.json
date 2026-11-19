@@ -219,7 +219,7 @@
       "since": "0.7.5",
       "statement": "收敛单位是 phase:收敛工件在场票级预审被取代,新增判断项计数不降即判停转人。",
       "check": "check-review-convergence",
-      "_note": "2026-11-19 phase 28-11 落地。预审循环失控的第二台发动机是「轮次×票数」乘法(#13/#22/#25 实测:11 票 46 轮、工件行数是产品代码 5 倍)。机制:plan-ready.mjs 的 readPhaseConvergence 读 <NN>-REVIEW-CONVERGENCE*.md(round/new_judgment/open_judgment),相邻两轮 new_judgment 不降 ⇒ REVIEW-CONVERGENCE-STALLED 判停转人;收敛工件在场时票级预审被取代。在制 phase 祖父路径:PHASE_CONVERGENCE_REQUIRED_FROM=29,29 起新规划才强制 phase 工件(决定 #3:存量施工不判死)。运行期自证:rcv-1/2/4 锚点 + health 活检停滞序列。"
+      "_note": "2026-11-19 phase 28-11 落地。预审循环失控的第二台发动机是「轮次×票数」乘法(#13/#22/#25 实测:11 票 46 轮、工件行数是产品代码 5 倍)。机制:plan-ready.mjs 的 readPhaseConvergence 读 <NN>-REVIEW-CONVERGENCE*.md(round/new_judgment/open_judgment),相邻两轮 new_judgment 不降 ⇒ REVIEW-CONVERGENCE-STALLED 判停转人;收敛工件在场时票级预审被取代。在制 phase 祖父路径:PHASE_CONVERGENCE_REQUIRED_FROM=29,29 起新规划才强制 phase 工件(决定 #3:存量施工不判死)。运行期自证:rcv-1/2/4 锚点 + health 活检停滞序列。 2026-11-19 phase 29-01 补齐实现:statement 早就写着「收敛工件在场票级预审被取代」,但只有 plan-ready.mjs 的 checkPlanReady 兑现了(superseded),逐票工件契约门(ticket-alive.mjs 的 checkPlanCheckArtifacts,phase 09 D-08)照样判「已经开工却没有预审结论」—— 于是 29 起的新规制每张票恒红(恒红的门不是严,是废)。修法:逐票工件门按**票自己的 phase 号**认取代(不用 STATE 的 active_phase:那条为空或跨 phase 时两路会得出相反结论);形状不合(缺 round/new_judgment)的收敛工件不算在场;取代只免「缺」,不免「坏」(在场的票级工件 status 非法照样判红)。活违规输入:同一夹具两端实跑 —— 有收敛工件时检查器不再报缺票级工件,无收敛工件时照样判红(--selfcheck 的 rcv-9a/9b 端到端覆盖接线);散文层同步(mm-gsd-exec 与 mm-gsd-plan-check 写清收敛工件落在哪个目录与半截工件不算数),否则执行端按旧散文会等一张不该存在的票级工件。"
     },
     {
       "id": "R-27",

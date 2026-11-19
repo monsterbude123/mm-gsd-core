@@ -42,11 +42,13 @@ node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --plan-check .plan
 
 收敛单位是 **phase 不是票**：一个 phase 一次预审、一个预算、一份发现清单。phase 收敛工件(`<NN>-REVIEW-CONVERGENCE.md`,frontmatter `round`/`new_judgment`/`open_judgment`)在场时，复核只读增量销号（上一轮判断项的销号结论），不重读全文。
 
+**工件落在哪**：与本 phase 的其它工件同一个目录 —— 根级布局 `.planning/<NN>-REVIEW-CONVERGENCE.md`,phases 布局 `.planning/phases/<NN>/<NN>-REVIEW-CONVERGENCE.md`。检查器按这个目录找,写错地方等于没预审。缺 `round`/`new_judgment` 的半截工件**不算在场**(取代只免「缺」,不免「坏」)。
+
 ### 第 2 步:预审缺失或 blocked → 派复核（按规模分级：Judge 冷隔离 vs 增量复用）
 
 - **L3 重型计划或跨模块变动（Judge 冷隔离）**：派一个**全新上下文的只读子代理**（宿主装有 `mm-gsd-plan-reviewer` 卡则用该卡；否则声明工具限 Read/Grep/Glob）。
 - **L2 常规迭代或增量修订**：仅跑机器门 `--plan` + 对修改段落做增量核对，允许复用熟悉本模块上下文的代理完成修订销号，避免反复冷启动浪费。
-- **复核规则**：提示词用第 1 步输出里打印的那段（判据权威在 `mm-gsd-verify` 的「执行前预审」节：四个判断维度、severity 必填、写不变式、只报不处方）。第一维 REQ 基线以 `REQUIREMENTS.md` 为准；子代理只返回发现清单文本，不写文件；`PLAN-CHECK` 工件(`.planning/<NN-MM>-PLAN-CHECK.md`,`status: passed|blocked`)由主流程落盘。
+- **复核规则**：提示词用第 1 步输出里打印的那段（判据权威在 `mm-gsd-verify` 的「执行前预审」节：四个判断维度、severity 必填、写不变式、只报不处方）。第一维 REQ 基线以 `REQUIREMENTS.md` 为准；子代理只返回发现清单文本，不写文件；`PLAN-CHECK` 工件(`<NN-MM>-PLAN-CHECK.md`,`status: passed|blocked`)由主流程落盘，**放在本 phase 的工件目录**（根级布局 `.planning/`,phases 布局 `.planning/phases/<NN>/`）。走 phase 一次预审的 phase 则落 `<NN>-REVIEW-CONVERGENCE.md`，票级工件可以不存在 —— 检查器认这个取代关系（R-26）。
 - **不能派子代理时**：**停下,把提示词原样交回编排层或用户**；不派独立复核就宣布 L3「通过」等于拆除预审门。
 - **有界修订 ≤2 轮**：BLOCKER 交回 plan 修（要改决策才回 `mm-gsd-discuss`），修完重跑第 1 步；两轮 issue 数不降 → 停下升级到人。INFO 照列但不挡。
 

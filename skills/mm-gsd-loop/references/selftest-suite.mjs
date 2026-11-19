@@ -98,6 +98,78 @@ export function runConvergenceCases({ eqN }) {
   eqN(sup.state, "passed", "rcv-4 superseded 下全 machine 类降级不拦工");
   const legacy = checkPlanReady({ planPath: join(dir, ".planning", "99-01-PLAN" + MD) });
   eqN(legacy.state === "blocked" || legacy.state === "missing", true, "rcv-4b 祖父路径:无收敛工件时保持票级旧判");
+  // rcv-5/6/7/8:逐票预审工件契约门必须与 checkPlanReady 同一 superseded 口径(R-26)。
+  // 修之前:phase 级收敛工件在场,票级工件门照样报「缺预审结论」→ 29 起的新流程每张票恒红。
+  const fmParse = (p) => {
+    const t = readFileSync(p, "utf8");
+    const m = t.match(/^---\n([\s\S]*?)\n---/);
+    const o = {};
+    if (m) for (const l of m[1].split("\n")) { const i = l.indexOf(":"); if (i > 0) o[l.slice(0, i).trim()] = l.slice(i + 1).trim(); }
+    return o;
+  };
+  writeFileSync(join(dir, ".planning", "99-02-PLAN" + MD), ["---", "phase: \"99\"", "---", "", "## T1"].join("\n"));
+  writeFileSync(join(dir, ".planning", "99-02-SUMMARY" + MD), ["---", "phase: \"99\"", "status: complete", "---", "", "夹具"].join("\n"));
+  const noConv = checkPlanCheckArtifacts({ dir: join(dir, ".planning"), plans: ["99-02-PLAN" + MD], summaries: ["99-02-SUMMARY" + MD], frontmatter: fmParse, supersededPhases: new Set() });
+  eqN(noConv.some((m) => m.includes("99-02: 已经开工却没有预审结论")), true, "rcv-5 无 phase 级收敛工件时,缺票级预审工件照样判红(门没被放空)");
+  const withConv = checkPlanCheckArtifacts({ dir: join(dir, ".planning"), plans: ["99-02-PLAN" + MD], summaries: ["99-02-SUMMARY" + MD], frontmatter: fmParse, supersededPhases: new Set(["99"]) });
+  eqN(withConv.some((m) => m.includes("99-02: 已经开工却没有预审结论")), false, "rcv-6 phase 级收敛工件在场 ⇒ 票级预审被取代(R-26),不再报缺票级工件");
+  writeFileSync(join(dir, ".planning", "99-03-PLAN" + MD), ["---", "phase: \"99\"", "---", "", "## T1"].join("\n"));
+  writeFileSync(join(dir, ".planning", "99-03-SUMMARY" + MD), ["---", "phase: \"99\"", "status: complete", "---", "", "夹具"].join("\n"));
+  writeFileSync(join(dir, ".planning", "99-03-PLAN-CHECK" + MD), fm({ status: "乱写", plan: "99-03", blockers: 0, warnings: 0 }));
+  const badShape = checkPlanCheckArtifacts({ dir: join(dir, ".planning"), plans: ["99-03-PLAN" + MD], summaries: ["99-03-SUMMARY" + MD], frontmatter: fmParse, supersededPhases: new Set(["99"]) });
+  eqN(badShape.some((m) => m.includes("99-03-PLAN-CHECK" + MD + ": status 非法或缺失")), true, "rcv-7 收敛取代只豁免「缺票级工件」,在场的票级工件形状非法照样判红");
+  const otherPhase = checkPlanCheckArtifacts({ dir: join(dir, ".planning"), plans: ["99-02-PLAN" + MD], summaries: ["99-02-SUMMARY" + MD], frontmatter: fmParse, supersededPhases: new Set(["98"]) });
+  eqN(otherPhase.some((m) => m.includes("99-02: 已经开工却没有预审结论")), true, "rcv-7b 取代按票自己的 phase 号判:别的 phase 的收敛工件不能免掉这张票的要求");
+  // rcv-8:形状不合的收敛工件不算在场 —— 否则一个空文件就能让整 phase 的「缺票级工件」不再报
+  const badConvDir = mkdtempSync(join(tmpdir(), "ar-conv-bad-"));
+  mkdirSync(join(badConvDir, ".planning"), { recursive: true });
+  writeFileSync(join(badConvDir, ".planning", "99-REVIEW-CONVERGENCE" + MD), fm({ status: "passed" }));
+  eqN(readPhaseConvergence(join(badConvDir, ".planning"), "99").present, false, "rcv-8 缺 round/new_judgment 的收敛工件不算在场(取代只免「缺」,不免「坏」)");
+  rmSync(badConvDir, { recursive: true, force: true });
+  // rcv-9:端到端 —— 接线也在内(目录、phase 号、取代信号),在真实 .planning 上跑检查器
+  const e2eDir = mkdtempSync(join(tmpdir(), "ar-conv-e2e-"));
+  const e2ePlan = join(e2eDir, ".planning");
+  mkdirSync(e2ePlan, { recursive: true });
+  // 不写 active_phase:root 布局这时圈全 phase(冷启动/兜底那条路)——
+  // 只有多 phase 同框,才测得出「取代按票自己的 phase 号判,不被别的 phase 的收敛工件顺带免掉」。
+  writeFileSync(join(e2ePlan, "STATE.md"), "---\nstatus: verifying\nactive_phase: \"\"\n---\n");
+  writeFileSync(join(e2ePlan, "29-CONTEXT.md"), "---\nphase: \"29\"\n---\n\n<domain>\n夹具\n</domain>\n");
+  writeFileSync(join(e2ePlan, "29-01-PLAN.md"), "---\nphase: \"29\"\nplan: \"01\"\n---\n\n## T1\n");
+  writeFileSync(join(e2ePlan, "29-01-SUMMARY.md"), "---\nphase: \"29\"\nstatus: complete\ncommits: 1\n---\n\n## One-liner\n\n夹具\n");
+  // 另一个 phase 的票(28-01):没有自己的收敛工件
+  writeFileSync(join(e2ePlan, "28-01-PLAN.md"), "---\nphase: \"28\"\nplan: \"01\"\n---\n\n## T1\n");
+  writeFileSync(join(e2ePlan, "28-01-SUMMARY.md"), "---\nphase: \"28\"\nstatus: complete\ncommits: 1\n---\n\n## One-liner\n\n夹具\n");
+  const checkerPath = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "gsd-state-check.mjs");
+  // 检查器有红项时退出码非 0 → execFileSync 抛错,stdout 得从 err 里取(丢了就变成假绿)
+  const runCheckerJson = (dir) => {
+    let out = "";
+    try {
+      out = execFileSync(process.execPath, [checkerPath, "--json"], { cwd: dir, encoding: "utf8", stdio: "pipe", env: { ...process.env, GSD_SANDBOX: "1", GSD_PROJECT_DIR: "", GSD_TELEMETRY_PATH: join(dir, "telemetry.jsonl") } });
+    } catch (e) { out = String(e.stdout || ""); }
+    try { return JSON.parse(out); } catch { return null; }
+  };
+  const noConvJson = runCheckerJson(e2eDir);
+  eqN(!!noConvJson, true, "rcv-9a 端到端:检查器跑完了并输出 JSON(崩了或没输出不算通过)");
+  eqN((noConvJson?.errors ?? []).some((e) => String(e.message).includes("已经开工却没有预审结论")), true, "rcv-9b 端到端:无收敛工件时检查器判「缺票级预审工件」");
+  writeFileSync(join(e2ePlan, "29-REVIEW-CONVERGENCE.md"), fm({ phase: "29", round: 1, new_judgment: 0, open_judgment: 0, status: "passed" }) + "\n# 29 收敛\n");
+  const convJson = runCheckerJson(e2eDir);
+  eqN(!!convJson, true, "rcv-9c 端到端:有收敛工件时检查器也跑完了");
+  eqN((convJson?.errors ?? []).some((e) => String(e.message).includes("29-01: 已经开工却没有预审结论")), false, "rcv-9d 端到端:有 phase 级收敛工件时,29 的票不再报「缺票级预审工件」");
+  eqN((convJson?.errors ?? []).some((e) => String(e.message).includes("28-01: 已经开工却没有预审结论")), true, "rcv-9e 端到端:别的 phase(28)的票仍判红 —— 取代按票自己的 phase 号,不按 active_phase");
+  rmSync(e2eDir, { recursive: true, force: true });
+  // rcv-10:phases 布局 —— 收敛工件落在 phase 目录里(.planning/phases/<NN>/),root 布局那条路覆盖不到
+  const phDir = mkdtempSync(join(tmpdir(), "ar-conv-phases-"));
+  const phPhase = join(phDir, ".planning", "phases", "29");
+  mkdirSync(phPhase, { recursive: true });
+  writeFileSync(join(phDir, ".planning", "STATE.md"), "---\nstatus: verifying\nactive_phase: \"29\"\n---\n");
+  writeFileSync(join(phPhase, "29-CONTEXT.md"), "---\nphase: \"29\"\n---\n\n<domain>\n夹具\n</domain>\n");
+  writeFileSync(join(phPhase, "29-01-PLAN.md"), "---\nphase: \"29\"\nplan: \"01\"\n---\n\n## T1\n");
+  writeFileSync(join(phPhase, "29-01-SUMMARY.md"), "---\nphase: \"29\"\nstatus: complete\ncommits: 1\n---\n\n## One-liner\n\n夹具\n");
+  writeFileSync(join(phPhase, "29-REVIEW-CONVERGENCE.md"), fm({ phase: "29", round: 1, new_judgment: 0, open_judgment: 0, status: "passed" }) + "\n# 29 收敛\n");
+  const phJson = runCheckerJson(phDir);
+  eqN(!!phJson, true, "rcv-10a phases 布局:检查器跑完了并输出 JSON");
+  eqN((phJson?.errors ?? []).some((e) => String(e.message).includes("已经开工却没有预审结论")), false, "rcv-10b phases 布局:收敛工件落在 phase 目录里时,票级「缺预审工件」不报 —— 两种布局同一口径");
+  rmSync(phDir, { recursive: true, force: true });
 }
 
 /** 可选包机制用例组(28-01,D-03/D-07/REQ-58):判定只认 packs.mjs 公开 API,夹具唯一来自 makePackFixture */

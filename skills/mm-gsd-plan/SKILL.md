@@ -63,6 +63,8 @@ CONTEXT 每条 D-NN 必须被本 phase **至少一张票认领**并精确实现;
 
 ## 完成后
 
-- 判据:PLAN 落盘 + `--plan-check` 退出码 0 + PLAN-CHECK `status: passed`。
+- 判据:PLAN 落盘 + `--plan-check` 退出码 0 + 预审结论 `status: passed` —— 票级工件
+  `.planning/<NN-MM>-PLAN-CHECK.md`,或本 phase 走了 phase 一次预审时的收敛工件
+  `<NN>-REVIEW-CONVERGENCE*.md`(同一 phase 目录;R-26:收敛工件在场票级预审被取代)。
 - **下一步:调用 `mm-gsd-exec`**,按四件套动手,别临场重解需求;预审没过不许进这一步。`--plan` 没转绿就进执行 = 拿执行者猜不出的契约开工。
 - 环的完整顺序只有 mm-gsd-loop 持有,这里只写自己这一步的出口。

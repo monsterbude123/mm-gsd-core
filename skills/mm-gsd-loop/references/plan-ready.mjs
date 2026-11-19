@@ -22,6 +22,10 @@ export const MACHINE_SIGNS = /(零匹配|自证|数错|二次解析|捕获邻接
 /**
  * phase 级预审收敛工件读取(R-26)。<NN>-REVIEW-CONVERGENCE*.md 按 round 排序,
  * 相邻两轮 new_judgment 不降(>=)即停滞 —— 计数不降说明本轮没有新事实,继续改稿就是重复审核。
+ *
+ * **形状不合的工件不算在场**(缺 round 或 new_judgment):否则一个空的或半截的文件
+ * 就能让整个 phase 的「缺票级预审工件」不再报 —— 取代只免「缺」,不免「坏」。
+ * 判据与 mmc 侧活检同口径(tools/mmc.mjs 的 check-review-convergence 也要求 round+new_judgment)。
  */
 export function readPhaseConvergence(planDir, phase) {
   const out = { present: false, rounds: [], stalled: false, latest: null };
@@ -32,11 +36,18 @@ export function readPhaseConvergence(planDir, phase) {
     return out;
   }
   for (const f of files) {
-    const fm = frontmatter(readFileSync(join(planDir, f), "utf8"));
+    const raw = readFileSync(join(planDir, f), "utf8");
+    const fm = frontmatter(raw);
+    // 形状判据逐字照抄 mmc 侧活检(tools/mmc.mjs 的 check-review-convergence):
+    // `^round:\s*(\d+)\s*$` / `^new_judgment:\s*(\d+)\s*$` —— 空值、带引号、带行尾注释都不算。
+    // 两边口径必须一样:库认它「在场」(免掉整 phase 的票级门)、活检不认它(不扫停滞),那就是两套尺子。
+    const fmRaw = raw.split(/^---$/m)[1] ?? "";
+    const rm = fmRaw.match(/^round:\s*(\d+)\s*$/m), nm = fmRaw.match(/^new_judgment:\s*(\d+)\s*$/m);
+    if (!rm || !nm) continue; // 形状不合 → 不算在场
     out.rounds.push({
       file: f,
-      round: Number(fm.round ?? 0) || 0,
-      new_judgment: Number(fm.new_judgment ?? 0) || 0,
+      round: Number(rm[1]),
+      new_judgment: Number(nm[1]),
       open_judgment: Number(fm.open_judgment ?? 0) || 0,
       status: String(fm.status ?? ""),
     });

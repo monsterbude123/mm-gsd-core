@@ -1059,8 +1059,19 @@ const artifactInfo = { context: null, plans: [], summaries: [], verification: nu
     for (const m of (await import("../references/verification-gates.mjs")).checkIssueLedger({ root }))
       err(m, "三选一:status 改 closed/fixed 销账;或全文挂 REQ-NN;或挂机器门名(check-…);或在 .planning/issues/LEDGER.md 登记一行");
     const { checkPlanCheckArtifacts } = await import("../references/ticket-alive.mjs");
-    // 预审工件契约(phase 09 D-08):形状要对;已经开工却没有预审结论 → 不许静默跳过
-    for (const m of checkPlanCheckArtifacts({ dir: base, plans: artifactInfo.plans, summaries: artifactInfo.summaries, frontmatter }))
+    // 预审工件契约(phase 09 D-08):形状要对;已经开工却没有预审结论 → 不许静默跳过。
+    // phase 级收敛工件在场 ⇒ 票级预审被取代(R-26)—— 与 checkPlanReady 同一口径。
+    // 两处口径不一致会让「29 起按 phase 一次预审」的新流程每张票都恒红(有收敛工件仍报缺票级工件)。
+    // 取代按**票自己的 phase 号**算(票文件名前缀),不用 STATE 的 active_phase ——
+    // active_phase 为空或跨 phase 时,两条路会得出相反结论。
+    const { readPhaseConvergence } = await import("../references/plan-ready.mjs");
+    const supersededPhases = new Set();
+    for (const pf of artifactInfo.plans) {
+      const ph = (pf.match(/^(\d+)/) || [])[1] ?? "";
+      if (!ph || supersededPhases.has(ph)) continue;
+      if (readPhaseConvergence(base, ph).present) supersededPhases.add(ph);
+    }
+    for (const m of checkPlanCheckArtifacts({ dir: base, plans: artifactInfo.plans, summaries: artifactInfo.summaries, frontmatter, supersededPhases }))
       err(m, "先派一个全新上下文的只读子代理做预审(见 mm-gsd-verify「执行前预审」),产出 .planning/<NN-MM>-PLAN-CHECK.md");
   }
   if (artifactInfo.verification) {

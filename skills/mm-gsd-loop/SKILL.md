@@ -46,7 +46,8 @@ description: "极简 GSD 主循环:discuss→plan→execute→verify→ship 五�
 ## 五步成环(是环不是线)
 
 1. **discuss** → 调用 mm-gsd-discuss。**灵魂环节**:执行期偏差的源头多半是讨论期没捕获的隐含期望;捕获标准是"下游不再需要追问用户"。纯基础设施/路径清晰/决策已全在 CONTEXT → 可跳过,不硬凑问题。
-2. **plan** → 调用 mm-gsd-plan。PLAN 落盘后必须 `--plan` 转绿;**预审门**:L3 重型计划或跨模块变动执行前由编排层调用 mm-gsd-plan-check(Judge 冷只读上下文),产出 PLAN-CHECK 工件,`status` 非 passed **不许进执行**;L2 常规迭代可走增量核对。也可手动跑 `node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --plan-check <PLAN>`;用户问「这份计划能开工吗」时调技能,别凭印象回答。**收敛判据与轮次上限见 mm-gsd-plan-check「收敛判据」节**(机器门绿 ∧ 零 BLOCKER ⇒ 开工;WARNING 归 Deferred;上限 2,到顶升级到人)。产品面变更的 PLAN 声明 `product_surface: REQ-N…`。
+2. **plan** → 调用 mm-gsd-plan。PLAN 落盘后必须 `--plan` 转绿;**预审门**:L3 重型计划或跨模块变动执行前由编排层调用 mm-gsd-plan-check(Judge 冷只读上下文),产出预审结论(`status` 非 passed **不许进执行**)—— 票级工件 `.planning/<NN-MM>-PLAN-CHECK.md`,
+或本 phase 走了 phase 一次预审时的收敛工件 `<NN>-REVIEW-CONVERGENCE*.md`(R-26:收敛在场票级预审被取代);L2 常规迭代可走增量核对。也可手动跑 `node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --plan-check <PLAN>`;用户问「这份计划能开工吗」时调技能,别凭印象回答。**收敛判据与轮次上限见 mm-gsd-plan-check「收敛判据」节**(机器门绿 ∧ 零 BLOCKER ⇒ 开工;WARNING 归 Deferred;上限 2,到顶升级到人)。产品面变更的 PLAN 声明 `product_surface: REQ-N…`。
 3. **execute** → 调用 mm-gsd-exec。**施工方,不是设计师**:照票施工,不重做调研、不重新理解项目、**不审批**(图纸对不对是 verify 的活)。
 4. **verify** → 调用 mm-gsd-verify。验证不过 → 回 execute 修(优先热 resume 原 Worker)→ 重 verify;每条 REQ 拿到证据才准进 ship。修复预算 2 次,超了升级到人。
 5. **ship** → 交付物**被消费**才算完成(PR 已开/合并/发布),落 `<NN>-MM-SHIP.md`(模板 templates/ship.md)。**验证通过不等于交付**:没有 SHIP,状态机停在 completed。STATE 勾 phase = SHIP 落盘之后;声明 product_surface 的批次在 req-ledger 落 delivered 行。

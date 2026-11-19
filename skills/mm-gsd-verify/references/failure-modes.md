@@ -12,7 +12,7 @@
 
 ## PLAN-CHECK 工件形状(预审产出;判据权威在 SKILL.md「执行前预审」)
 
-`.planning/<NN-MM>-PLAN-CHECK.md`,frontmatter:
+`.planning/<NN-MM>-PLAN-CHECK.md`(落在本 phase 的工件目录:根级布局 `.planning/`,phases 布局 `.planning/phases/<NN>/`),frontmatter:
 
 ```
 ---
