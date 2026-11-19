@@ -83,3 +83,27 @@ export function aggregateByDay(rows, root) {
     .map(([date, count]) => ({ date, count }));
   return { series, byTool, total, empty: total === 0 };
 }
+
+/**
+ * 渲染「过程摩擦概览」区块（纯函数，零值安全降级）。
+ * @param {{ totalCalls?: number, planningOps?: number, planningRatio?: number, grepCalls?: number, taskCalls?: number, consecutiveTaskDispatches?: number, maxConsecutiveTasks?: number }} [metrics]
+ * @returns {string[]}
+ */
+export function renderFrictionOverview(metrics) {
+  const m = metrics && typeof metrics === "object" ? metrics : {};
+  const totalCalls = Number(m.totalCalls) || 0;
+  const planningOps = Number(m.planningOps) || 0;
+  const planningRatio = Number.isFinite(Number(m.planningRatio)) && totalCalls > 0
+    ? Number(m.planningRatio)
+    : 0;
+  const grepCalls = Number(m.grepCalls) || 0;
+  const taskCalls = Number(m.taskCalls) || 0;
+  const consecutiveTaskDispatches = Number(m.consecutiveTaskDispatches) || 0;
+  const maxConsecutiveTasks = Number(m.maxConsecutiveTasks) || 0;
+  return [
+    "  过程摩擦概览（观测面，不判红）:",
+    `    · 过程工件操作次数占比: ${planningRatio}% (${planningOps}/${totalCalls})  [Read/Write/Edit .planning/]`,
+    `    · 同项目连续独立代理派发次数: ${consecutiveTaskDispatches} 次（单段最长连派 ${maxConsecutiveTasks} 次，共 Task ${taskCalls} / Grep ${grepCalls}）`,
+  ];
+}
+

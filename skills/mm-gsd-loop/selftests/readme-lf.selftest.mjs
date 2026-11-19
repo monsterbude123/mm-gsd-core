@@ -9,15 +9,16 @@
  * 判别力自证:每条关系配一份**只破坏这一条**的 README 变体(内存里改,不落盘),
  * 变体必须被判红 —— 变体判绿说明那条断言没牙。
  *
- * 只读 README.md,不写仓库任何文件;被 import 时不自己跑(main-guard)。
+ * 只读 docs/product/checking.md 与 README.md,不写仓库任何文件;被 import 时不自己跑(main-guard)。
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(HERE, '..', '..', '..');
 const README_PATH = join(REPO_ROOT, 'README.md');
+const CHECKING_PATH = join(REPO_ROOT, 'docs', 'product', 'checking.md');
 
 const RECOMMENDED_TIER = /core\.autocrlf\s+input/;
 const OTHER_TIER = /core\.autocrlf\s+false/;
@@ -79,12 +80,12 @@ function hasPrecondition(text) {
 
 /* ---------------- 断言 ---------------- */
 
-/** (a) 小节与顶部目录锚点都在 */
-function checkA(md) {
-  if (!sectionOf(md)) return false;
-  return lines(tocOf(md)).some((l) => {
-    const m = l.match(/\[([^\]]+)\]\((#[^)]*)\)/);
-    return !!m && /跨平台/.test(m[1]) && /换行/.test(m[1]) && /LF/i.test(m[1]) && m[2].length > 1;
+/** (a) checking.md 存在「跨平台:换行与 LF」小节且 README.md 对其直达链接可达 */
+function checkA(md, readmeMd = existsSync(README_PATH) ? readFileSync(README_PATH, 'utf8').replace(/\r\n/g, '\n') : '') {
+  if (!sectionOf(md) || !existsSync(CHECKING_PATH)) return false;
+  return lines(readmeMd).some((l) => {
+    const m = l.match(/\[([^\]]+)\]\((docs\/product\/checking\.md(?:#[^)]*)?)\)/);
+    return !!m && /跨平台/.test(m[1]) && /换行/.test(m[1]) && /LF/i.test(m[1]);
   });
 }
 
@@ -267,7 +268,7 @@ function checkL(md) {
 }
 
 const CHECKS = [
-  { id: 'a', name: '(a) 存在「跨平台:换行与 LF」小节与顶部目录锚点', run: checkA },
+  { id: 'a', name: '(a) 存在「跨平台:换行与 LF」小节与 README 跨文档直达链接', run: checkA },
   { id: 'b', name: '(b) 推荐档:git config 完整命令、实测正确档、只对本仓库生效', run: checkB },
   { id: 'c', name: '(c) 另一档必须出现,且只作为条件路径(前提:工作区已是 LF)', run: checkC },
   { id: 'd', name: '(d) 判据块有正面内容(自己的脚本按行比对出错)', run: checkD },
@@ -368,14 +369,15 @@ const MUTATIONS = [
 /* ---------------- 跑 ---------------- */
 
 function main() {
-  const md = readFileSync(README_PATH, 'utf8').replace(/\r\n/g, '\n');
+  const md = readFileSync(CHECKING_PATH, 'utf8').replace(/\r\n/g, '\n');
+  const readmeMd = readFileSync(README_PATH, 'utf8').replace(/\r\n/g, '\n');
   let failed = 0;
 
-  console.log('=== 现行 README:关系断言 ===');
+  console.log('=== 现行 docs/product/checking.md (+ README 入口):关系断言 ===');
   for (const c of CHECKS) {
     let ok = false;
     try {
-      ok = c.run(md) === true;
+      ok = c.run(md, readmeMd) === true;
     } catch (err) {
       ok = false;
     }

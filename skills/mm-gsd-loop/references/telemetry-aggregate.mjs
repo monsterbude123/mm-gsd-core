@@ -9,6 +9,7 @@
 
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { renderFrictionOverview } from "./telemetry-view.mjs";
 
 /** 读遥测文件;读不到返回空数组 */
 export function readRows(path) {
@@ -72,11 +73,79 @@ export function runStats({ path, scope, all, log = console.log }) {
  * 宿主无 PostToolUse/UserPromptSubmit 可作精确终止符);记录器只 append,推导只在聚合层。
  * 观测面:不判红不评分,也不与 runs.jsonl 的门禁分析混流(量级差一个数量级)。
  */
+const isPlanningToolOp = (r) => {
+  if (!r || typeof r !== "object") return false;
+  if (!["Read", "Write", "Edit", "MultiEdit"].includes(String(r.tool ?? ""))) return false;
+  const target = String(r.brief ?? r.path ?? r.file ?? "");
+  return /\.planning(?:[\\/]|$)/.test(target);
+};
+
+const isGrepToolOp = (r) =>
+  r?.tool === "Grep" || (r?.tool === "Bash" && /\b(?:grep|rg)\b/.test(String(r?.brief ?? "")));
+
+/**
+ * 计算过程摩擦指标（纯函数，空输入/零调用安全返回全 0）。
+ * - 过程工件操作次数占比: Read/Write/Edit 目标路径含 .planning/ 的调用占比
+ * - 同项目连续独立代理派发次数: 同 cwd 下连续触发 Task 的复派次数
+ */
+export function computeToolFriction(rows) {
+  const list = Array.isArray(rows) ? rows.filter((r) => r && typeof r === "object") : [];
+  if (!list.length) {
+    return {
+      totalCalls: 0,
+      planningOps: 0,
+      planningRatio: 0,
+      grepCalls: 0,
+      taskCalls: 0,
+      consecutiveTaskDispatches: 0,
+      maxConsecutiveTasks: 0,
+    };
+  }
+  let planningOps = 0;
+  let grepCalls = 0;
+  let taskCalls = 0;
+  const byCwd = new Map();
+  for (const r of list) {
+    if (isPlanningToolOp(r)) planningOps++;
+    if (isGrepToolOp(r)) grepCalls++;
+    if (r.tool === "Task") taskCalls++;
+    const k = String(r.cwd ?? "(未知项目)");
+    if (!byCwd.has(k)) byCwd.set(k, []);
+    byCwd.get(k).push(r);
+  }
+  let consecutiveTaskDispatches = 0;
+  let maxConsecutiveTasks = 0;
+  for (const rs of byCwd.values()) {
+    let streak = 0;
+    for (const r of rs) {
+      if (r.tool === "Task") {
+        streak++;
+        if (streak > maxConsecutiveTasks) maxConsecutiveTasks = streak;
+        if (streak >= 2) consecutiveTaskDispatches++;
+      } else {
+        streak = 0;
+      }
+    }
+  }
+  const totalCalls = list.length;
+  const planningRatio = totalCalls > 0 ? Math.round((planningOps / totalCalls) * 100) : 0;
+  return {
+    totalCalls,
+    planningOps,
+    planningRatio,
+    grepCalls,
+    taskCalls,
+    consecutiveTaskDispatches,
+    maxConsecutiveTasks,
+  };
+}
+
 export function runToolStats({ path, log = console.log }) {
   const rows = readRows(path);
   if (!rows.length) {
     log("尚无工具日志(" + path + ")。");
     log("  跑 install --hooks 装上工具遥测(PreToolUse 机械记录,零上下文污染)后自然积累,再回来看 --stats --tools。");
+    for (const line of renderFrictionOverview(computeToolFriction([]))) log(line);
     return 0;
   }
   const byCwd = new Map();
@@ -85,14 +154,13 @@ export function runToolStats({ path, log = console.log }) {
     if (!byCwd.has(k)) byCwd.set(k, []);
     byCwd.get(k).push(r);
   }
-  // grep 计数口径:Grep 工具行 + Bash 命令头含 grep/rg(词边界,免得 org/arge 误计)
-  const isGrep = (r) => r.tool === "Grep" || (r.tool === "Bash" && /\b(?:grep|rg)\b/.test(String(r.brief ?? "")));
   const L = [
     `\nmm-gsd 工具日志(${rows.length} 行,${byCwd.size} 个项目;日志 ${path})`,
     "  时长为近似值:窗口 = Task 行 → 该项目下一个 Task 行,末次派发标「进行中」(宿主无 PostToolUse) —— 观测面,不判红",
+    ...renderFrictionOverview(computeToolFriction(rows)),
   ];
   for (const [cwd, rs] of byCwd) {
-    const greps = rs.filter(isGrep).length;
+    const cf = computeToolFriction(rs);
     const tasks = rs.filter((r) => r.tool === "Task");
     const byType = {};
     for (const t of tasks) { const k = String(t.subagent_type ?? "(未标)"); byType[k] = (byType[k] ?? 0) + 1; }
@@ -106,8 +174,8 @@ export function runToolStats({ path, log = console.log }) {
       else open = m;
     });
     L.push(`\n  ${cwd}`);
-    L.push(`    grep ${greps} 次(Grep 行 + Bash 含 grep/rg)   派发 ${tasks.length} 次(${Object.entries(byType).map(([k, v]) => k + "×" + v).join(", ") || "无"})`);
-    L.push(`    近似时长 ${mins}m${open !== null ? ` + 末次进行中 ${open}m` : "(无进行中的派发)"}`);
+    L.push(`    grep ${cf.grepCalls} 次(Grep 行 + Bash 含 grep/rg)   派发 ${cf.taskCalls} 次(${Object.entries(byType).map(([k, v]) => k + "×" + v).join(", ") || "无"})`);
+    L.push(`    过程工件操作 ${cf.planningRatio}% (${cf.planningOps}/${cf.totalCalls})   连续派发 ${cf.consecutiveTaskDispatches} 次   近似时长 ${mins}m${open !== null ? ` + 末次进行中 ${open}m` : "(无进行中的派发)"}`);
   }
   log(L.join("\n"));
   log("");
@@ -158,13 +226,16 @@ export function render(a, logPath) {
   L.push(`\nmm-gsd 运行记录(${only.length} 次,${a.scopeName};日志 ${logPath})`);
   if (sandboxCount) L.push(`  (另有 ${sandboxCount} 次沙箱自测记录已排除 —— 那是在故意造失败,不算项目问题)`);
   L.push("  模式分布:   " + Object.entries(byMode).map(([k, v]) => k + "×" + v).join("  "));
-  L.push(`  门禁失败:   ${bad.length}/${only.length} 次 (${((bad.length / only.length) * 100).toFixed(0)}%)  —— 连续失败的位置就是它卡住的地方`);
+  const failRate = only.length ? ((bad.length / only.length) * 100).toFixed(0) : "0";
+  L.push(`  门禁失败:   ${bad.length}/${only.length} 次 (${failRate}%)  —— 连续失败的位置就是它卡住的地方`);
   for (const [cwd, c] of Object.entries(stuck).filter(([, c]) => c >= 3))
     L.push(`  ⚠ 反复失败: ${cwd} 连挂 ${c} 次 —— 大概率是门禁要的东西这一步做不到(死锁),不是内容质量问题`);
   const topList = Object.entries(top).sort((x, y) => y[1] - x[1]).slice(0, 5);
   if (topList.length) { L.push("  高频报错:"); for (const [m, c] of topList) L.push("    " + c + "×  " + m); }
-  if (silent.length)
-    L.push(`  ⚠ ${silent.length} 次失败没留下原因(占失败的 ${((silent.length / bad.length) * 100).toFixed(0)}%)—— 门禁失明,上面的排行已失真`);
+  if (silent.length) {
+    const silentRate = bad.length ? ((silent.length / bad.length) * 100).toFixed(0) : "0";
+    L.push(`  ⚠ ${silent.length} 次失败没留下原因(占失败的 ${silentRate}%)—— 门禁失明,上面的排行已失真`);
+  }
   const last = only[only.length - 1];
   if (last) L.push("  最近一次:   " + new Date(last.ts).toLocaleString() + " · " + last.mode + " · exit=" + last.exit + (last.derived ? " · 推导=" + last.derived : ""));
   return L.join("\n");

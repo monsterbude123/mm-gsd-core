@@ -467,6 +467,74 @@ const server = createServer(async (req, res) => {
     }
     return;
   }
+  if (req.method === "PATCH" && url.pathname === "/api/annotations") {
+    const pr = resolveProject(url);
+    if (!pr.ok) {
+      res.writeHead(400, { "content-type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({ ok: false, problems: ["project 不在注册名单:" + url.searchParams.get("project")] }));
+      return;
+    }
+    let body = null;
+    try { body = JSON.parse(await readBody(req) || "{}"); } catch {}
+    const id = String(body?.id ?? "").trim();
+    const target = String(body?.target ?? "").trim();
+    const type = String(body?.type ?? "").trim();
+    const text = String(body?.text ?? "").trim();
+    const hasActionField = body != null && Object.prototype.hasOwnProperty.call(body, "action");
+    const rawAction = hasActionField && body.action != null ? String(body.action).trim() : "";
+    const ACTIONS = ["diagnose", "repair", "requirement", "note"];
+    const hasStatusField = body != null && Object.prototype.hasOwnProperty.call(body, "status");
+    const rawStatus = hasStatusField && body.status != null ? String(body.status).trim() : "";
+    const hasNoteField = body != null && Object.prototype.hasOwnProperty.call(body, "note");
+    const rawNote = hasNoteField && body.note != null ? String(body.note).trim() : "";
+    const problems = [];
+    if (!id) problems.push("id 缺失");
+    if (!target) problems.push("target 缺失(REQ-N / phase:NN / ticket:NN-MM / debt:<键>)");
+    if (!TYPES.includes(type)) problems.push("type 必须是 " + TYPES.join("/"));
+    if (!text) problems.push("text 缺失");
+    if (rawAction && !ACTIONS.includes(rawAction)) problems.push("action 必须是 " + ACTIONS.join("/") + " 之一");
+    if (rawStatus && rawStatus !== "open" && rawStatus !== "digested") problems.push("status 必须是 open 或 digested");
+    if (problems.length) {
+      res.writeHead(400, { "content-type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({ ok: false, problems }));
+      return;
+    }
+    let list = [];
+    try { list = JSON.parse(readFileSync(P(pr.root, "annotations.json"), "utf8")); } catch {}
+    const idx = Array.isArray(list) ? list.findIndex((item) => item && item.id === id) : -1;
+    if (idx < 0) {
+      res.writeHead(404, { "content-type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({ ok: false, problems: ["找不到对应批注:" + id] }));
+      return;
+    }
+    const prev = list[idx];
+    const next = {
+      ...prev,
+      target,
+      type,
+      text,
+      status: rawStatus || prev.status || "open",
+      updatedAt: new Date().toISOString(),
+    };
+    if (hasActionField) {
+      if (rawAction) next.action = rawAction;
+      else delete next.action;
+    }
+    if (hasNoteField) {
+      if (rawNote) next.note = rawNote;
+      else delete next.note;
+    }
+    list[idx] = next;
+    try {
+      writeFileSync(P(pr.root, "annotations.json"), JSON.stringify(list, null, 2) + "\n");
+      res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({ ok: true, id: next.id, annotation: next }));
+    } catch (e) {
+      res.writeHead(500, { "content-type": "application/json; charset=utf-8" });
+      res.end(JSON.stringify({ ok: false, problems: ["落盘失败:" + e.message] }));
+    }
+    return;
+  }
   res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
   res.end("not found");
 });

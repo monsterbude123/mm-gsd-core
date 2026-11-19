@@ -12,7 +12,7 @@ description: "极简 GSD 验证:goal-backward 三层倒推(TRUE→EXIST→WIRED)
 
 ## 审计范围
 
-独立不等于无界 —— **翻的范围是收敛的**(D-05):票面 `files_modified` + 该票 scope 提交的 diff(提交主题 `(NN-MM):` scope)+ 相关测试文件。该翻的范围里逐条拿证据,不翻无界全仓。工具优先级(D-01):代码索引类工具(如 codegraph_explore)> 定向读文件 > ripgrep 定向 glob(排除 .worktrees/node_modules/dist/vendor)> 全目录 grep(禁)。**消费 `.planning/codebase-map.md`,不重建**(D-02):地图缺失或过期,注明后重做入口级一屏。
+独立不等于无界 —— **翻的范围是收敛的**:票面 `files_modified` + 该票 scope 提交的 diff(提交主题 `(NN-MM):` scope)+ 相关测试文件。该翻的范围里逐条拿证据,不翻无界全仓。工具优先级:代码索引类工具(如 codegraph_explore)> 定向读文件 > ripgrep 定向 glob(排除 .worktrees/node_modules/dist/vendor)> 全目录 grep(禁)。**消费 `.planning/codebase-map.md`,不重建**:地图缺失或过期,注明后重做入口级一屏。
 
 ## 三层倒推(goal-backward)
 
@@ -35,7 +35,7 @@ description: "极简 GSD 验证:goal-backward 三层倒推(TRUE→EXIST→WIRED)
 ## gap 闭环
 
 - 每个缺口编号 `G-{phase}-{N}`,修复计划引用 gap_id;修完对账标 resolved(附证据),不重新诊断已解决的问题。报告写清:这轮发现几条、修了几条、下一轮重验范围(只重验失败项)。
-- **「退役 + 承接」闭合**:判据与 resolved 同严——承接物必须 wired(imported AND used),no-op 承接 = 未闭合(#23:存在但空转的按钮被当成合同已履行);承接声明要指名等价锚点,锚点不存在就是不承接。
+- **「退役 + 承接」闭合**:判据与 resolved 同严——承接物必须 wired(imported AND used),no-op 承接 = 未闭合;承接声明要指名等价锚点,锚点不存在就是不承接。
 - **再验证模式**:只对失败项做全三层深验,已过项快速回归(存在 + 基本健全)。**重验模式(点修 R 票收口)**:只深验被重开的那条 truth;结论按钉死格式追加进 VERIFICATION「**## 重验记录**」:`- Rk: passed — 重验 <truth 名>`(未过写 failed)——全部 R 票 passed → phase 回 shipped(checker 推导,格式漂移推导就瞎)。
 - **批量修复**:全部缺口编号齐全后一轮一起修,修完统一重验一次(≤2 轮);**不做**「发现一条修一条验一条」——逐条闭环把同批检查重复跑 N 遍。修复→重验预算 2 轮,超了升级到人(复合失败指数级难诊断,第 3 次盲修大概率在错误方向上叠加)。
 - 延迟项(later/future)≠ 缺口:记 Deferred Follow-Ups,不生成修复计划。失效模式自查 7 条与 PLAN-CHECK 工件形状、有界修订细节 → `references/failure-modes.md`。
@@ -54,9 +54,9 @@ PLAN 每张票在这里都要拿到 verdict —— **不看 SUMMARY 自述**,自
 
 **你是审查方,不是作者。** 立场:先假设这份计划有缺陷,只认可**可验证的覆盖** —— 不认努力、不认意图。**任务存在 ≠ 目标被覆盖**:「加了 auth 端点」的票可以存在,「密码是安全的」仍未达成。**只看计划,不看实现**:不查代码写没写、不跑应用、不替 plan 做决策(拍板归 discuss)。
 
-### 预审只审判断题(28-11/28-12 与机器门分层)
+### 预审只审判断题
 
-机器可判的四维已下沉,预审不再重判:**需求覆盖与票完整性 → --plan 机器门**(checkReqCoverage/四件套门),**验收可跑 → 14 族门**(含 F16 捕获邻接,#24),**前提为真 → PATHY 门**;预审工件里的机器可判发现由 MACHINE_SIGNS 分类降级(R-25),不计入拦工。预审只审**判断四题**:
+需求覆盖与票完整性、验收命令可用性与路径前置已由 `--plan` / `--plan-check` 机器门兜底，预审工件里的机器可判发现会自动降级不拦工；预审只审**判断四题**：
 
 | 判断题 | 问什么 |
 |---|---|

@@ -78,22 +78,21 @@ description: "极简 GSD 执行:施工方身份 —— 照 PLAN 施工,不重做
 ## git 纪律
 
 - 逐文件 staging,**绝不 `git add .` / `git add -A`**;提交格式 `type(phase-plan): 描述`(feat/fix/test/refactor/docs/chore)。
-- **提交主题必须含 `(NN-MM):` scope** —— SUMMARY 的 commits 实测按它精确匹配,缺失 = 人工回填(issue #19 实测 2 票)。
+- **提交主题必须含 `(NN-MM):` scope** —— SUMMARY 的 commits 实测按它精确匹配,缺失无法自动核销。
 - 禁令:`git clean`(任何 flag)、`git stash` 全族、`git reset --hard`、对非自建分支 force push、动保护分支(main/master/develop)。
-- **被守卫/pre-commit 拦住时的唯一合法出口是 `mm-gsd commit --ticket <NN-MM>`**(红窗受控放行):先正常提交,失败项**全部**落在该票 red_windows 清单才 `--no-verify` 重试并标注受控放行,清单外失败 exit 2 停下 —— 细节指路 mm-gsd-loop 的「跨波红窗」节与工具 `--help`,不在此抄全文。
+- **被守卫/pre-commit 拦住时的唯一合法出口是 `mm-gsd commit --ticket <NN-MM>`**(红窗受控放行):先正常提交,失败项**全部**落在该票 red_windows 清单才 `--no-verify` 重试并标注受控放行,清单外失败 exit 2 停下 —— 细节见 mm-gsd-loop 与工具 `--help`。
 - 提交后检查:`git show --diff-filter=D --name-only` 查意外删除;不留未跟踪的生成文件(有意删除记入 SUMMARY,意外删除按 R1 回滚)。
-- **在 worktree 里执行**:只在自己的 worktree 里提交,绝不 `git checkout <branch>` 切到别人的 worktree 分支去提交(那会把两批变更搅进同一条历史,`files_modified` 契约当场作废);提交落在哪个 worktree 的分支上,就让它停在那里,由编排层合并——**执行者不负责合并**(见 mm-gsd-loop「多 worktree 并发」)。
+- **在 worktree 里执行**:只在自己的 worktree 里提交,绝不 `git checkout <branch>` 切到别人的 worktree 分支去提交;提交落在哪个 worktree 分支上就让它停在那里,由编排层合并——**执行者不负责合并**。
 
 ## 执行期工具(随包)
 
-自己手搓脚本前先看这里 —— 通用件已随包装好,统一走 `mm-gsd` bin 转发命令
-(源仓相对路径 `node skills/...` 在用户项目里不存在,照它写第一步就跑不通,D-09):
+自己手搓脚本前先看这里 —— 通用件已随包装好,统一走 `mm-gsd` bin 转发命令(源仓相对路径在用户项目里不存在):
 
 - `mm-gsd stage --ticket <NN-MM>` —— 按票面 files_modified 精确暂存(`:(literal)` pathspec,`[locale]` 不被当 glob;不存在的新文件跳过不报错)。
 - `mm-gsd summary --ticket <NN-MM>` —— 生成 `.planning/<NN-MM>-SUMMARY.md` 草稿,commits 按提交主题 `(NN-MM):` scope 实测(零命中前缀兜底并 WARN);已存在则拒绝覆盖。
 - `mm-gsd wave-check --phase <NN> --wave <N>` —— 生成并跑本波批闸脚本(cwd 头 + 逐票批闸);`--baseline <树>` 给差分摘要(只呈现,不归因)。
 
-细节看各自 `--help`。**工具边界**:exec 卡不带 WebSearch/WebFetch 类工具 —— 外部信息缺失**记 blocker 踢回 plan**,不自行调查(D-03:零调查靠工具面收窄,不靠散文禁令)。
+细节看各自 `--help`。**工具边界**:exec 卡不带 WebSearch/WebFetch 类工具 —— 外部信息缺失**记 blocker 踢回 plan**,不自行调查。
 
 ## TDD(适用时)
 
@@ -122,7 +121,7 @@ description: "极简 GSD 执行:施工方身份 —— 照 PLAN 施工,不重做
 ## 完成后
 
 - 这一步做完的判据:SUMMARY 落盘在 `.planning/`,每个提交都在当前分支的历史里(`git rev-list` 实测,不手填),且本任务的 `<verify>` 退出码 0;
-  整批落地后再跑一次批级检查(`batch_verify`)。**exec 只对本票结果负责:本票失败只修本票失败;非本票失败只记入 SUMMARY 交回编排层,由编排层开修复票派单 —— 不自行决定别的票怎么修。**(phase 11 D-03)
+  整批落地后再跑一次批级检查(`batch_verify`)。**exec 只对本票结果负责:本票失败只修本票失败;非本票失败只记入 SUMMARY 交回编排层,由编排层开修复票派单 —— 不自行决定别的票怎么修。**
 - **下一步:调用 `mm-gsd-verify`** —— 验证独立读证据,不接受 SUMMARY 的自述。
 - 例外:`status: halted` 就如实写 halted 并说明阻碍 —— 那是给下游看的信号,不是失败;受阻时**不要**停在「等我再想想」。
 - 环的完整顺序只有 mm-gsd-loop 持有,这里只写自己这一步的出口。

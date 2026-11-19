@@ -21,7 +21,7 @@ const PAGES = ["index", "install-update", "five-step-ring", "board", "checking",
 // 窄口径禁词(与决策一致):REQ-N 追溯记号 / NN-NN 工件号与日期 /
 // skills[/]mm-gsd 实现代码路径(~/.agents/skills 安装目的地不命中)/
 // .planning[/\] 工件路径引用(裸目录名「.planning」作数据目录说明允许)。
-const BANNED = /REQ-\d|\b\d{2}-\d{2}\b|skills[/\\]mm-gsd|\.planning[/\\]/;
+const BANNED = /REQ-\d|\b\d{2}-\d{2}\b|(?<!\.agents[/\\])skills[/\\]mm-gsd|\.planning[/\\]/;
 
 const results = [];
 
@@ -72,9 +72,12 @@ function main() {
   ok("telemetry 含『遥测』『关闭』", ["遥测", "关闭"].every((w) => texts.telemetry.includes(w)));
   ok("guards 含『拦截』", texts.guards.includes("拦截"));
 
-  // 5. README 含 docs/product 入口行
+  // 5. README 含 docs/product 入口行、Mermaid 总览图与禁词零命中
   const readme = readFileSync(resolve(ROOT, "README.md"), "utf8");
   ok("README 含 docs/product 入口行", readme.includes("docs/product"));
+  ok("README 含 Mermaid 总览图", /```mermaid\b/.test(readme));
+  const readmeHits = [...new Set(readme.match(new RegExp(BANNED.source, "g")) ?? [])];
+  ok("禁词零命中:README.md", readmeHits.length === 0, readmeHits.length ? readmeHits.join(", ") : "");
 
   // 6. package.json files 白名单不含 docs(仓库内不进 npm,现状钉死)
   const files = JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf8")).files ?? [];

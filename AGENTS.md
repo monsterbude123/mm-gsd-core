@@ -64,6 +64,9 @@ discuss → plan → exec → verify    observe / inbox → issue
 - **计划也要被复核**:写计划的人不自己审 —— 预审派一个**全新上下文的只读子代理**做(照 mm-gsd-verify 的
   「执行前预审」节),产出 `.planning/<NN-MM>-PLAN-CHECK.md`;`status` 不是 `passed` 就不许进执行。
   机械判据(`--plan`:前提存在性、载量、批图、决策核销)与判断层(预审)各管一半。
+  复核强度按规模分级(L1/L2/L3,见 mm-gsd-loop「规模」节):**L3 重型计划或跨模块变动**才启用
+  Judge 冷隔离(全新只读上下文);**L2 常规迭代**走机器门 + 增量销号核对,可复用熟悉本模块的 Worker。
+  机器判据对三档一视同仁 —— 分级减的是仪式,不是验证。
 - **想知道「这份计划现在能不能开工」,跑一条命令就行**:`node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --plan-check <PLAN>`
   (= `mm-gsd check --plan-check <路径>`)。它把机械判据与预审工件合成一个结论 + 退出码,
   预审没做时把该派的子代理提示词直接打印出来。别凭印象回答这种问题。

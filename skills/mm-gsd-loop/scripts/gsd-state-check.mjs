@@ -744,6 +744,10 @@ if (process.argv.includes("--route")) {
   if (b.kind === "ring") {
     L.push("=== mm-gsd 路由:各阶段的出口(阶段名 = 技能名去掉 mm-gsd- 前缀)===");
     for (const s of b.skills) L.push(`  ${s.skill.replace("mm-gsd-", "")}  →  ${s.exits.length ? s.exits.join(", ") : "(没写出口)"}`);
+    if ((b.tiers ?? []).length) {
+      L.push("\n  三级规模路由(按风险与复杂度选择通道):");
+      for (const t of b.tiers) L.push(`    ${t.label.padEnd(10)} ${t.scope} → ${t.artifacts}`);
+    }
     if ((b.packs ?? []).length) {
       // 可选包分栏(28-01,D-03):声明 entry 且 optional 的包不进环,另起一栏;没有可选包时不印(空态不占屏)
       L.push("\n  可选包(点缀,不参与环):");
@@ -757,6 +761,10 @@ if (process.argv.includes("--route")) {
     L.push(b.host.canSpawn
       ? `  宿主:${b.host.host}(agent 卡目录 ${b.host.agentsDir})—— 可以开子代理:开一个只读子代理,让它读下面的路径并照着做`
       : `  宿主:${b.host.note}`);
+    if ((b.tiers ?? []).length) {
+      L.push("  三级规模路由:");
+      for (const t of b.tiers) L.push(`    · ${t.label}: ${t.scope}（${t.agents}）`);
+    }
     L.push("  该读的路径(只传路径,别把文件内容抄进 prompt —— 主会话上下文 ≤15%):");
     for (const p of b.readPaths) L.push("    " + p);
     if (b.projectPaths.length) {
