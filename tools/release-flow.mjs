@@ -160,9 +160,12 @@ export function makeReleaseFlow({ log, ok, bad, warn, head, C, health, exec = ex
         version = bump === "major" ? ma + 1 + ".0.0" : bump === "minor" ? ma + "." + (mi + 1) + ".0" : ma + "." + mi + "." + (pa + 1);
       }
       if (version !== pkg.version) {
+        // 旧版本号要在改写前存下来 —— 改完再打日志会打成「0.7.11 → 0.7.11」,
+        // 读的人以为没升版本(2026-11-19 真发布过一次,日志就是这么骗人的)。
+        const prev = pkg.version;
         pkg.version = version;
         writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
-        log("  2/7 版本 " + pkg.version + " → " + version);
+        log("  2/7 版本 " + prev + " → " + version);
       } else log("  2/7 版本 " + version + "(未变)");
 
       // 3) 提交 + 打标签
@@ -227,23 +230,33 @@ export function makeReleaseFlow({ log, ok, bad, warn, head, C, health, exec = ex
       //    拿仓库副本装回来并写上 npm 来源,是这条注释曾经描述、代码却没做的假绿(T-07)。
       log("  7/7 从 npm 装回本机");
       const spec = pkg.name + "@" + version;
-      // npm 有传播延迟:实测 60-96 秒才可见。查一次就判失败,会让每次发布
-      // 都停在第 7 步,逼人手工补 —— 那等于把门禁写成了障碍。轮询到耗尽才判,
-      // 而耗尽之后还红,那才是真的没发出去。
-      let live = "";
-      for (let i = 0; i < 12; i++) {
-        try { live = execFileSync("npm.cmd", ["view", spec, "version"], { encoding: "utf8", shell: true, stdio: "pipe" }).trim(); }
-        catch { live = ""; /* 版本不存在时 npm 直接非零退出,不是返回空串 */ }
-        if (live === version) break;
-        if (i) log(`      registry 还没同步(第 ${i} 次)…… 再等 30s`);
-        else log("      registry 还没同步,等它生效(最长 6 分钟)");
-        try { execFileSync(process.execPath, ["-e", "setTimeout(()=>{},30000)"], { stdio: "ignore" }); } catch {}
-      }
-      if (live !== version) { bad(`registry 上 ${spec} 查不到(轮询 6 分钟仍未见)—— 发出去的没生效,别信 publish 那行 "+name@version"`); return 1; }
       const sb = join(tmpdir(), "mmc-release-inst");
-      rmSync(sb, { recursive: true, force: true });
+      // 判据是「能装」,不是「查得到」:npm 的 packument 与 tarball 传播不同步 ——
+      // 2026-11-19 实测 metadata 十几分钟内可见、tarball 还在 404,而 publish
+      // 那行早就报成功。用 npm view 判活会把「还没同步」误判成「没发出去」,
+      // 于是一次成功的发布停在第 7 步,逼人手工补 —— 假红比慢更坏。
+      // 轮询到能装为止(最长 12 分钟);装不上才是真的没发出去。
+      let installed = false;
+      let lastErr = "";
+      for (let i = 0; i < 12; i++) {
+        rmSync(sb, { recursive: true, force: true });
+        try {
+          execFileSync("npm.cmd", ["install", "--prefix", sb, "--no-audit", "--no-fund", "--prefer-online", spec], { encoding: "utf8", shell: true, stdio: "pipe", timeout: 180000 });
+          installed = true;
+          break;
+        } catch (e) {
+          lastErr = String(e.stderr || e.message || "").split("\n").find((l) => l.includes("npm error")) || "安装失败";
+          if (i) log(`      registry 还没同步(第 ${i + 1} 次)…… 再等 60s`);
+          else log("      registry 还没同步,等它生效(最长 12 分钟)");
+          try { execFileSync(process.execPath, ["-e", "setTimeout(()=>{},60000)"], { stdio: "ignore" }); } catch {}
+        }
+      }
+      if (!installed) {
+        bad(`registry 上 ${spec} 装不上(轮询 12 分钟仍未见)—— 发出去的没生效,别信 publish 那行 "+name+version"`);
+        log("      最后一次错误:" + lastErr);
+        return 1;
+      }
       try {
-        execFileSync("npm.cmd", ["install", "--prefix", sb, "--no-audit", "--no-fund", spec], { encoding: "utf8", shell: true, stdio: "pipe", timeout: 180000 });
         execFileSync(process.execPath, [join(sb, "node_modules", pkg.name, "bin", "mm-gsd.mjs"), "install"], { encoding: "utf8", stdio: "pipe" });
         const mf = JSON.parse(readFileSync(join(HOME_SKILLS, MANIFEST_NAME), "utf8"));
         if (mf.source !== "npm:" + spec) { bad(`装回来的来源是 ${mf.source},不是 npm —— 装错了东西`); return 1; }
