@@ -7,6 +7,7 @@
 
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { discoverPacks } from "./packs.mjs";
 
 /* ================= 一、技能路由门禁(每个技能要说清自己的下一步) ================= */
 
@@ -140,12 +141,18 @@ export function buildRouteBrief({ stage, skillsRoot, projectRoot, home, activePh
   if (!stage) {
     // 不知道要哪一步 → 把环摆出来让人挑。环的顺序由各技能的「完成后」小节持有,
     // 这里只转述,不另造一张表(D-01 的教训:第二真相源必然分叉)。
-    const ring = skills.map((s) => {
+    // 可选包分栏(28-01):声明 entry 且 optional 的不进 ring,进 packs 栏(点缀,不参与环)。
+    const allPacks = discoverPacks(skillsRoot);
+    const ring = [];
+    const packs = [];
+    for (const s of skills) {
       const f = join(skillsRoot, s, "SKILL.md");
       const exits = existsSync(f) ? namedSkills(routeSection(readFileSync(f, "utf8")) ?? "") : [];
-      return { skill: s, path: f, exits };
-    });
-    return { kind: "ring", stage: null, skills: ring, host, quick, readPaths: [], projectPaths: [] };
+      const pk = allPacks.find((p) => p.name === s);
+      if (pk && pk.optional) packs.push({ name: pk.name, display: pk.display, path: pk.dir, entry: pk.entry });
+      else ring.push({ skill: s, path: f, exits });
+    }
+    return { kind: "ring", stage: null, skills: ring, packs, host, quick, readPaths: [], projectPaths: [] };
   }
   const skill = "mm-gsd-" + stage;
   if (!skills.includes(skill))

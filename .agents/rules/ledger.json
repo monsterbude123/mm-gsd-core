@@ -196,6 +196,65 @@
       "check": "check-card-refresh",
       "_note": "2026-10-24 phase 07 收尾实测:安装器对已存在的卡一律跳过(「不接管用户的卡」),而 mm-gsd 自己发的卡也在跳过之列 —— exec 的 SKILL.md 修好了,~/.zcode/agents/mm-gsd-exec.md 还写着「写后即提交」(与正文相反)和一个本仓根本没有的机制「auth-as-gate」。卡是路由器与子代理读到的第一手描述:卡错了派发就错,而正文是对的,所以没有门禁会红。修法分两半:①安装器认出「自己的卡」(卡里有「别在本卡里找规则」+ frontmatter 同名),自己的卡刷新、用户自己的卡不动;②`mm-gsd-install.mjs --check` 体检时报过期并以退出码 1 报红。门禁跑真沙盒证明:装完卡在宿主目录里、改技能后卡跟着改、用户自己的卡一个字不动。",
       "_候选顾虑回应": "与 R-22 不重叠:R-22 判仓内「卡面描述 ↔ 技能正文」是否一致(卡面不许宣传正文没有的机制);R-23 判机内「已装指针卡 ↔ 技能」是否同步(卡不许比技能旧)。一个管说的对不对,一个管说的新不新。"
+    },
+    {
+      "id": "R-24",
+      "status": "active",
+      "since": "0.7.5",
+      "statement": "票面 wave 是 DAG 推导的缓存不是真相源:手写值与依赖推导不符 = 次序焦虑落进工件,执行端按错序开工。",
+      "check": "check-wave-from-dag",
+      "_note": "2026-11-18 phase 28-13 落地。用户裁定「次序不重要,只要 DAG 对应上」——agent 排计划时过度关注手写次序,错排一步就引发后续计划反复改写反复预审(三次复发:#13/#22/phase 28)。判据:wave = 1 + max(依赖的 wave),推导内核 worktree-view.mjs 的 deriveWaves;--plan 批图区与 mmc health 双端判红,报错给推导值。活违规输入:28-06 手写 wave=6、推导=5(其余八票全一致),28-13 顺手修正为 5 —— 门上线即有真牙。编号规范:研究文档原提案 R-27/28/29(只审判断题/phase 收敛/体量门)按台账顺次落为 R-25/26/27。"
+    },
+    {
+      "id": "R-25",
+      "status": "active",
+      "since": "0.7.5",
+      "statement": "预审只审判断题:预审工件里的机器可判发现由机器门判,分类降级不计入 blocker 拦工。",
+      "check": "check-review-scope",
+      "_note": "2026-11-19 phase 28-11 落地。33 条人报 BLOCKER 里 19 条(57.6%)机器可判(研究台 taxonomy)——把它们混进预审拦工,就是预审循环失控的第一台发动机(#13/#22/phase 28 三次复发)。机制:plan-ready.mjs 的 classifyArtifactBlockers 按 MACHINE_SIGNS 把预审工件里的机器可判 BLOCKER 行分类降级,拦工只数判断题;机器侧由 28-10 的 14 族门(--plan)当场判。运行期自证:runConvergenceCases 的 rcv-3(rcv 锚点)。"
+    },
+    {
+      "id": "R-26",
+      "status": "active",
+      "since": "0.7.5",
+      "statement": "收敛单位是 phase:收敛工件在场票级预审被取代,新增判断项计数不降即判停转人。",
+      "check": "check-review-convergence",
+      "_note": "2026-11-19 phase 28-11 落地。预审循环失控的第二台发动机是「轮次×票数」乘法(#13/#22/#25 实测:11 票 46 轮、工件行数是产品代码 5 倍)。机制:plan-ready.mjs 的 readPhaseConvergence 读 <NN>-REVIEW-CONVERGENCE*.md(round/new_judgment/open_judgment),相邻两轮 new_judgment 不降 ⇒ REVIEW-CONVERGENCE-STALLED 判停转人;收敛工件在场时票级预审被取代。在制 phase 祖父路径:PHASE_CONVERGENCE_REQUIRED_FROM=29,29 起新规划才强制 phase 工件(决定 #3:存量施工不判死)。运行期自证:rcv-1/2/4 锚点 + health 活检停滞序列。"
+    },
+    {
+      "id": "R-27",
+      "status": "active",
+      "since": "0.7.5",
+      "statement": "票据体量真门禁:正文 120 行、verify 30 行与 4000 字节;阈值只紧不松,要改必须造违规输入自证 + 记台账。",
+      "check": "check-ticket-size",
+      "_note": "2026-11-19 phase 28-10/28-11 落地(用户拍板决定 #1)。研究台时代 F6 只判行数——28-06..09 五张真实票的 verify 全是单行 4-29KB 巨串,行数门全部失明(§9.1)。机制:plan-review-gate.mjs 的 checkBudget 三口径(正文行数/verify 行数/verify 字节)判红行带 [TICKET-SIZE] 标记;SIZE_EXEMPT 票级名单豁免写于门落地前的存量票(28-01..09 + 28-10),不放宽阈值。health 活检:active phase 未收口未豁免票的 verify 字节超预算 → 判红。运行期自证:rgv-2/rgv-3 锚点。"
+    },
+    {
+      "id": "R-28",
+      "status": "active",
+      "since": "0.7.5",
+      "statement": "核心不许知道可选包:核心的 .md 不出现包的显示名,核心的任何文件不出现包的目录名或命令调用形(带 mm-gsd 前缀,裸词别名不查);可选包自己随便写;没有可选包时判 0 条。",
+      "check": "check-core-boundary",
+      "_note": "2026-11-19 phase 28-04 落地(用户拍板决定 #1 的机器化:做成点缀包,不要和核心流程强耦合)。判据口径三条:规则一只扫核心 .md 的显示名(readme-lf 的禁则词表是合法 .mjs 内容);规则二扫核心任何文件的目录名与命令调用形;规则三无包判 0 条。判定走 28-01 的 discoverPacks(包自声明),核心零硬编码。编号:28-04 票面原写 R-24(当时未占用),按台账顺次纪律落为 R-28(28-13 已占 R-24)。冻结基准快照与孪生(plan-review-fixtures/)是数据非活文案,扫描排除。",
+      "_候选顾虑回应": "与 R-16(模块登记)、R-21(研究消费)不重叠:那两条管登记与引用,这条管核心与可选包的边界;与 R-27(体量)不重叠。"
+    },
+    {
+      "id": "R-29",
+      "status": "active",
+      "since": "0.7.5",
+      "statement": "discuss 落 REQ 前必须先深挖:每条用户诉求先答出四问(真实需求/谁消费/什么时候会废/做完长什么样),答案写进 CONTEXT 的 <mining> 节,确认门连深挖结论一起复述;机器门 checkRequirementMining 在 --plan 时核对本 phase 票覆盖的每条 REQ 都有四问,缺一条判红。豁免:只有写了 <mining> 节的 CONTEXT 才判(老项目豁免);REQUIREMENTS.md 标 (baseline 的 REQ 与 req-ledger 已处置的 REQ 不判。",
+      "check": "check-requirement-mining",
+      "_note": "2026-11-19 phase 28-07 落地。用户当场指出「我没看见你深挖需求这个动作」—— 缺的是纪律这一步,不是执行者偷懒;phase 26 教训:纪律写了但没机器门等于没写。豁免两套口径照 verification-gates checkReqCoverage(baseline 行/req-ledger 已处置)。编号:28-07 票面原写 R-25(已被 28-11 的 check-review-scope 占用),按台账顺次落 R-29。",
+      "_候选顾虑回应": "与 R-21(研究消费)、R-25(预审分类)不重叠:那条管研究产物被引用,这条管需求深挖四问进 CONTEXT。"
+    },
+    {
+      "id": "R-30",
+      "status": "active",
+      "since": "0.7.7",
+      "statement": "模板里的脚本必须真能跑,不是「看着像对的」。三条判据:①内联 <script> 必须过 node --check;②CSS 必须有显式隐藏 [hidden] 的 display:none 规则;③先声明后引导 —— 顶层裸调用必须排在所有顶层 const/let/class 声明之后。机器门 check-web-template-js 扫 skills 下全部 .html(核心与可选包一视同仁,核心不认识任何包名)。",
+      "check": "check-web-template-js",
+      "_note": "2026-11-19 看板重做落地。三个真事故各对应一条判据:游离大括号让整页 JS 死掉,页面永远停在「连接中…」;作者样式(.view-fit{display:flex})压过 UA 的 [hidden]{display:none},被 hidden 的视图在每个视图里都显示,顶栏永远压在内容上;顶层调用早于 const 声明 → TDZ(ReferenceError: Cannot access 'reqdep' before initialization),直接以 #reqdep 打开看板必崩。旧的自测探针只测服务端与模板静态字符串,不测模板 JS 能否运行 —— 三个事故全从那里逃出去,所以补这条门。活违规输入:门上线时真判红过(顶层 setInterval 早于 const RD,已按判据三移到脚本底部)。编号:R-24..R-29 已占用,按台账顺次取 R-30。",
+      "_候选顾虑回应": "与 R-04(核心 .mjs 语法)不重叠:那条管 .mjs 源文件,这条管 HTML 模板里的内联脚本与 CSS 规则;与 R-28(核心边界)不重叠:那条管核心不许引用可选包,这条扫全部 .html 且不区分核心与包。"
     }
   ],
   "candidates": [
@@ -227,6 +286,13 @@
       "status": "candidate",
       "why-not-active": "要机器化得先有「判据的唯一机器可读出处」:现在判据是散文 + 多个正则(verification-gates.mjs / worktree-view.mjs / gsd-state-check.mjs 各管一半),教法是另一份散文,两边没法自动对账。phase 26 靠七轮独立验收(逐字读源码 + 实跑形态)抓到两处分叉,门禁自己抓不到。",
       "evidence": "docs/lessons/2026-11-15-assertion-gates.md"
+    },
+    {
+      "id": "C-06",
+      "claim": "预审的读取范围限定/同一张票复用同一代理/并发上限 4 —— 三条收敛纪律挂不上机器门(它们是编排层行为,没有工件可判)。",
+      "status": "candidate",
+      "why-not-active": "判据是过程性的:读取范围与代理复用发生在 agent 会话里,没有落盘工件可验;并发上限要宿主级编排器配合。落点见 28-REMEDIATION §3-B 与 28-09 原 C-06;若未来宿主 hook 能记录会话行为再升 R。",
+      "evidence": ".planning/28-REMEDIATION.md §3-B"
     }
   ]
 }

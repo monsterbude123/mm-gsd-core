@@ -19,7 +19,7 @@ GSD Core 的设计我很喜欢——五步成环、fresh-context 子代理、规
 - [安装](#安装)
 - [五步成环](#五步成环)
 - [施工方与验收方:一条分工线](#施工方与验收方一条分工线)
-- [过程看板(Web)](#过程看板web)
+- [过程看板(可选包)](#过程看板可选包)
 - [检查器](#检查器)
 - [遥测](#遥测)
 - [跨平台:换行与 LF](#跨平台换行与-lf)
@@ -65,13 +65,37 @@ npx mm-gsd-core doctor          # 体检宿主环境与已装状态(只读)
 npx mm-gsd-core check --plan    # 直接跑状态检查器
 ```
 
+### npx 还是 npm:什么时候用哪个
+
+两个入口干的是同一件事,区别只在**要不要在 PATH 上留一个常驻命令**:
+
+| | `npx mm-gsd-core <子命令>` | `npm i -g mm-gsd-core` → `mm-gsd <子命令>` |
+|---|---|---|
+| 包落在哪 | npx 缓存(临时;首次要联网取) | 全局 node_modules,PATH 上多一条 `mm-gsd` |
+| 每次跑 | 走缓存,基本瞬时 | 直接跑本地那份,零网络 |
+| 适合谁 | 首装、临时体检、CI 里跑一次 | 天天要敲 `mm-gsd web` / `mm-gsd check` 的人 |
+
+**默认走 npx 就够。** 大多数人只需要 `npx mm-gsd-core install` 装一次,
+之后在项目里让 agent 调技能 —— 技能装在 `~/.agents/skills/`,**不依赖 PATH 上有没有命令**。
+
+**什么时候才需要全局 npm**:`install` 只把技能拷进 `~/.agents/skills/`,
+**不会**在 PATH 上给你加 `mm-gsd` 命令。想自己敲 `mm-gsd web` 起看板、
+或跨项目反复跑 `mm-gsd check`,全局装一次最省事:
+
+```bash
+npm i -g mm-gsd-core     # 之后 mm-gsd web / mm-gsd check / mm-gsd doctor 直接敲
+```
+
+**全局装完注意版本对齐**:全局那份与 `~/.agents/skills/` 里那份是两个副本,会各走各的。
+`mm-gsd doctor` 比对两边指纹,报「装的是旧版」就 `mm-gsd update` 机械覆盖。
+
 两个命令的分工:**install 首装尊重已有内容** —— 同名技能已存在且内容相同就跳过;
 内容不同,先把原内容备份到 `~/.agents/backups/<技能名>-<时间戳>/` 再覆盖
 (备份不留在 skills 目录里 —— 留在里面会被宿主注册成第二个技能)。
 **update 机械覆盖**:不比对、不提问,已装技能与宿主卡直接盖成包里这份(零判断)。
 
-零依赖，Node ≥ 18，跨 Windows / macOS / Linux。装完 7 个技能就位：
-`mm-gsd-discuss` / `mm-gsd-plan` / `mm-gsd-exec` / `mm-gsd-verify` / `mm-gsd-plan-check` / `mm-gsd-diagnose` / `mm-gsd-loop`。
+零依赖，Node ≥ 18，跨 Windows / macOS / Linux。装完 8 个技能就位：
+`mm-gsd-discuss` / `mm-gsd-plan` / `mm-gsd-exec` / `mm-gsd-verify` / `mm-gsd-plan-check` / `mm-gsd-diagnose` / `mm-gsd-loop` / `mm-gsd-board`(过程看板,可选项,见下)。
 **角色边界有三层**(phase 11):① 构造期**工具白名单** —— 宿主发卡时按角色裁剪(discuss/plan
 无 Bash 无 Edit,物理上不能跑 git、跑构建、装依赖;计划复核子代理是纯只读专用卡
 `mm-gsd-plan-reviewer`,tools: Read/Grep/Glob);② 散文纪律(各 SKILL.md 的身份与红线);
@@ -295,14 +319,58 @@ node $CK --plan-check .planning/<NN-MM>-PLAN.md     # 或:mm-gsd check --plan-ch
 
 ---
 
-## 过程看板(Web)
+## 过程看板(可选包)
 
-`mm-gsd web` 起一个本机看板(零依赖,只绑 127.0.0.1,默认端口 4620,`--port` 可换),固定四区布局实时渲染 `.planning/` 的当前状态:
+**看板不是一个单独的 npm 包** —— 它是 `mm-gsd-core` 里装着的可选包
+(`skills/mm-gsd-board/`),`install` 时跟其他技能一起落到 `~/.agents/skills/`。
+**不存在「看板没装上」这回事**,除非你用的是自己裁剪过的安装。
 
-1. **状态条** —— 声明 / 推导 / 活跃 phase(推导判定单一来源仍是检查器,看板不含推导);
-2. **REQ 溯源链** —— 每条需求一行:原话一句话 → 认领票;非 baseline 无人认领的 REQ 标红(「落差在验收才暴露」的对症面);
-3. **phase 卡网格** —— 每个 phase 的 PLAN/SUMMARY/预审/VERIFICATION/SHIP 生命周期,「用户原话」按钮展开 CONTEXT domain 原文;
-4. **批注区** —— 用户在页面上对 REQ / phase 提交批注(需求遗漏 / 方向不对 / 验收不过 / 备注)。
+**核心五步环不依赖它** —— 删掉这个目录,discuss/plan/exec/verify/ship 一字不差地照跑。
+它服务于「看与管」:本机网页看板实时渲染 `.planning/` 的当前状态
+(零依赖,只用 node 内置 http;只绑 127.0.0.1,不对外发任何请求)。
+
+### 怎么起
+
+`mm-gsd board` 与 `mm-gsd web` 是同一个看板(两个命令名都落到同一个入口)。
+按你手上有什么选,三条路都到得了它:
+
+```bash
+# 1) 还没装过 —— 一次到位
+npx mm-gsd-core install && npx mm-gsd-core web
+
+# 2) 只起这一次,不想落盘 —— npx 直接跑
+npx mm-gsd-core web
+
+# 3) 想天天敲 —— 全局装一次,PATH 上多条 mm-gsd
+npm i -g mm-gsd-core && mm-gsd web
+```
+
+**装完了却打不出 `mm-gsd web`** —— 十有八九是这一条:
+`install` 只把技能拷进 `~/.agents/skills/`,**不会**在 PATH 上给你加 `mm-gsd` 命令。
+解法二选一:用 `npx mm-gsd-core web`,或者 `npm i -g mm-gsd-core` 之后直接敲。
+
+**起的时候记两件事**:
+
+```bash
+mm-gsd web --port 5000     # 默认 4620,端口被占就换
+mm-gsd web --add <目录>     # 把另一个项目目录追加进看板名单
+```
+
+启动即把当前目录注册进全局名单(`~/.agents/mm-gsd-board.json`);端口被别人占住时
+不崩 —— 注册完打印运行中的看板地址就退出,刷新已开的页面就能看到这个项目。
+
+### 看板上有什么
+
+左侧导航切换(地址栏 hash 路由,刷新不丢视图):
+
+1. **总览** —— phase 总览表 + 上方的依赖拓扑图 + 顶部筛选条;点行进详情(工件清单、认领的需求、相关批注、用户原话折叠块);
+2. **需求** —— 每条需求一行:原话一句话 → 认领票;新增需求无人认领标红(「落差在验收才暴露」的对症面);
+3. **REQ 依赖** —— 需求之间的依赖网(画布视图,带诊断标注与图例);
+4. **欠账** —— 未闭环的本地账问题 + 待消化批注 + 未清偿挂账;
+5. **遥测** —— 工具调用按天迷你图与分布排行(只读本机日志,不外发);
+6. **批注** —— 用户在页面上对 REQ / phase 提交批注(需求遗漏 / 方向不对 / 验收不过 / 备注)。
+
+细节见 [docs/product/board.md](docs/product/board.md)。
 
 **批注是唯一写通道**:看板对 `.planning/` 只读,POST /api/annotations 校验 schema 后落 `.planning/annotations.json`(status: open)。之后在 agent 会话里说「有新批注」——discuss/plan 开头消化(type→动作映射见各自 SKILL),消化后标 digested;type=验收不过 的 open 批注会让 checker 黄提醒走点修分流。已交付 phase 的单条细节没做好 → 走「点修」(R 票),不开新 phase。
 

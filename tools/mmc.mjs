@@ -20,6 +20,7 @@ import { collectFiles, countLines, collectScripts } from "./budget.mjs";
 import { fileURLToPath } from "node:url";
 import { makeInboxClose, clusterKey, readLocalIssues, findRecurrences, recurrenceRate } from "./gh-issues.mjs";
 import { makeReleaseFlow, checkTags } from "./release-flow.mjs";
+import { deriveWaves } from "../skills/mm-gsd-loop/references/worktree-view.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const R = (...s) => join(ROOT, ...s);
@@ -414,6 +415,142 @@ const CHECKS = {
   // 发版那一半:npm publish 默认落 latest —— 「发个版」会把正式通道一起带走,而 latest 的语义是「最稳那条」
   // (03-CONTEXT D-01)。2026-10-22 真发 0.4.1 时就是这么发生的:latest 从 0.4.0 跳到 0.4.1,收尾文案却写着「latest 未动」。
   // 断言的是命令本身(构造与调用是同一处),不是某句文案。
+  // R-24:票面 wave 是 DAG 推导的缓存不是真相源(28-13)。只判 active_phase 的活票(D-14:收口票退出全部门禁)。
+  "check-wave-from-dag"(report) {
+    let active = null;
+    try {
+      const m = readFileSync(R(".planning", "STATE.md"), "utf8").match(/^active_phase:\s*"?(\d+)"?/m);
+      if (m) active = m[1];
+    } catch { /* 无 STATE:判不了不猜 */ }
+    if (!active) { report.info("没有 active_phase —— wave 推导门不适用(冷启动前无票可判)"); return true; }
+    const dir = R(".planning");
+    const names = existsSync(dir) ? readdirSync(dir).filter((n) => new RegExp("^" + active + "-\\d+-PLAN\\.md$").test(n)) : [];
+    if (!names.length) { report.info("phase " + active + " 没有 PLAN —— wave 推导门不适用"); return true; }
+    const plans = [];
+    const coveredIds = new Set();
+    for (const n of names) {
+      const id = n.replace(/-PLAN\.md$/, "");
+      let covered = false;
+      try {
+        covered = /^status:\s*complete/m.test(readFileSync(R(".planning", id + "-SUMMARY.md"), "utf8"));
+      } catch { /* 无 SUMMARY = 未收口,照判 */ }
+      // 收口票进推导宇宙(它是别人依赖的图锚),只豁免判红(D-14:门只对活票判)
+      if (covered) coveredIds.add(id);
+      const fm = readFileSync(R(".planning", n), "utf8").split(/^---$/m)[1] ?? "";
+      const waveM = fm.match(/^wave:\s*(\d+)\s*$/m);
+      const depM = fm.match(/^depends_on:\s*(.+)$/m);
+      plans.push({ id, wave: waveM ? Number(waveM[1]) : null, depends: depM ? (depM[1].match(/\d+-\d+/g) ?? []) : [] });
+    }
+    const derived = deriveWaves(plans);
+    let pass = true;
+    for (const p of plans) {
+      if (coveredIds.has(p.id)) continue;
+      if (p.wave !== null && derived.get(p.id) !== p.wave) {
+        report.fail(p.id + ": wave 手写 " + p.wave + " ≠ DAG 推导 " + derived.get(p.id) + " —— 次序从 depends_on 推导;要改顺序就改 depends_on,不是改 wave");
+        pass = false;
+      }
+    }
+    if (pass) report.pass("wave 与 DAG 推导一致(" + (plans.length - coveredIds.size) + " 张活票)");
+    return pass;
+  },
+
+  // R-25:预审只审判断题(28-11)——分类降级的接线必须活着,剥掉即红
+  "check-review-scope"(report) {
+    const src = readFileSync(R("skills", "mm-gsd-loop", "references", "plan-ready.mjs"), "utf8");
+    let pass = true;
+    for (const mark of ["MACHINE-CLASSIFIABLE", "MACHINE_SIGNS", "classifyArtifactBlockers"]) {
+      if (!src.includes(mark)) { report.fail("plan-ready.mjs 丢了 " + mark + " —— 预审工件里的机器可判发现会重新混进拦工(R-25 被掏空)"); pass = false; }
+    }
+    if (pass) report.pass("机器可判发现分类降级接线在位(plan-ready.mjs)");
+    return pass;
+  },
+
+  // R-26:收敛单位是 phase,计数不降即停转人(28-11)
+  "check-review-convergence"(report) {
+    const src = readFileSync(R("skills", "mm-gsd-loop", "references", "plan-ready.mjs"), "utf8");
+    let pass = true;
+    for (const mark of ["readPhaseConvergence", "REVIEW-CONVERGENCE-STALLED", "PHASE_CONVERGENCE_REQUIRED_FROM"]) {
+      if (!src.includes(mark)) { report.fail("plan-ready.mjs 丢了 " + mark + " —— phase 级收敛被掏空"); pass = false; }
+    }
+    if (pass) {
+      let active = null;
+      try {
+        const m = readFileSync(R(".planning", "STATE.md"), "utf8").match(/^active_phase:\s*"?(\d+)"?/m);
+        if (m) active = m[1];
+      } catch { /* 无 STATE:活检不适用 */ }
+      if (active && existsSync(R(".planning"))) {
+        const conv = [];
+        for (const n of readdirSync(R(".planning"))) {
+          if (!n.startsWith(active + "-REVIEW-CONVERGENCE") || !n.endsWith(".md")) continue;
+          const fm = readFileSync(R(".planning", n), "utf8").split(/^---$/m)[1] ?? "";
+          const rm = fm.match(/^round:\s*(\d+)\s*$/m), nm = fm.match(/^new_judgment:\s*(\d+)\s*$/m);
+          if (rm && nm) conv.push({ round: Number(rm[1]), nj: Number(nm[1]) });
+        }
+        conv.sort((a, b) => a.round - b.round);
+        for (let i = 1; i < conv.length; i++) {
+          if (conv[i].nj >= conv[i - 1].nj) {
+            report.fail("phase " + active + " 的预审收敛停滞(round " + conv[i].round + " 的 new_judgment 未低于上一轮)—— 升级到人拍板,不要再开一轮");
+            pass = false;
+          }
+        }
+      }
+    }
+    if (pass) report.pass("phase 级收敛接线在位,无停滞序列");
+    return pass;
+  },
+
+  // R-27:票据体量真门禁(28-10 落地口径,此处对活票活检)
+  async "check-ticket-size"(report) {
+    const { parsePlan, BUDGET, SIZE_EXEMPT } = await import("../skills/mm-gsd-loop/references/plan-review-gate.mjs");
+    let active = null;
+    try {
+      const m = readFileSync(R(".planning", "STATE.md"), "utf8").match(/^active_phase:\s*"?(\d+)"?/m);
+      if (m) active = m[1];
+    } catch { /* 无 STATE:活检不适用 */ }
+    if (!active) { report.info("没有 active_phase —— 体量门活检不适用"); return true; }
+    const dir = R(".planning");
+    let pass = true, checked = 0;
+    if (existsSync(dir)) {
+      for (const n of readdirSync(dir)) {
+        if (!n.startsWith(active + "-") || !n.endsWith("-PLAN.md")) continue;
+        const id = n.replace(/-PLAN\.md$/, "");
+        if (SIZE_EXEMPT.has(id)) continue;
+        let covered = false;
+        try { covered = /^status:\s*complete/m.test(readFileSync(R(".planning", id + "-SUMMARY.md"), "utf8")); } catch { /* 未收口照判 */ }
+        if (covered) continue;
+        const { tasks } = parsePlan(readFileSync(R(".planning", n), "utf8"));
+        for (const t of tasks) {
+          const bytes = Buffer.byteLength(String(t.labels.verify ?? ""), "utf8");
+          if (bytes > BUDGET.verifyBytes) {
+            report.fail(id + " " + t.id + ": verify " + bytes + " 字节 > " + BUDGET.verifyBytes + " —— 夹具落自测,verify 只跑它");
+            pass = false;
+          }
+        }
+        checked++;
+      }
+    }
+    if (pass) report.pass("活票 verify 体量全部在预算内(" + checked + " 张)");
+    return pass;
+  },
+
+  // R-28:核心不许知道可选包(28-04,D-09/REQ-60)—— 判据权威在 references/core-boundary.mjs
+  async "check-core-boundary"(report) {
+    const { checkCoreBoundaryAll } = await import("../skills/mm-gsd-loop/references/core-boundary.mjs");
+    return checkCoreBoundaryAll({ root: ROOT, report });
+  },
+
+  // R-29:discuss 落 REQ 前必须深挖(28-07,D-13/REQ-63)—— 判据权威在 references/requirement-mining.mjs
+  async "check-requirement-mining"(report) {
+    const { checkRequirementMiningAll } = await import("../skills/mm-gsd-loop/references/requirement-mining.mjs");
+    return checkRequirementMiningAll({ root: ROOT, report });
+  },
+
+  // R-30:模板里的脚本必须真能跑 —— 判据权威在 references/web-template-gate.mjs
+  async "check-web-template-js"(report) {
+    const { checkWebTemplateJsAll } = await import("../skills/mm-gsd-loop/references/web-template-gate.mjs");
+    return checkWebTemplateJsAll({ root: ROOT, report });
+  },
+
   async "check-channel-safety"(report) {
     const { makeReleaseFlow, publishArgs } = await import("./release-flow.mjs");
     const calls = [];

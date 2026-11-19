@@ -38,6 +38,10 @@ node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --plan-check .plan
 - 这条命令对 `.planning/` **只读不写**:它不会替你生成预审工件。(检查器自己会把遥测写到家目录
   `~/.agents/`,与项目工件无关,`GSD_TELEMETRY=0` 可关。)工件缺失时它会把该派的提示词打印在输出里。
 
+### phase 一次预审(28-11 起,29 强制)
+
+收敛单位是 **phase 不是票**(R-26):一个 phase 一次预审、一个预算、一份发现清单。phase 收敛工件(`<NN>-REVIEW-CONVERGENCE.md`,frontmatter round/new_judgment/open_judgment)**在场时,票级预审被取代**——复核只读增量销号(上一轮判断项的销号结论),不重读全文。29 起新规划(未收口票 ≥2)缺 phase 工件 → 机器判红;28 及更早的在制 phase 走祖父路径(决定 #3:存量施工不判死)。
+
 ### 第 2 步:预审缺失或 blocked → 派独立复核(自己写自己审不算数)
 
 - **你能派子代理** → 派一个**全新上下文的只读子代理**。**宿主装了 `mm-gsd-plan-reviewer` 卡就用卡派
@@ -52,12 +56,12 @@ node ~/.agents/skills/mm-gsd-loop/scripts/gsd-state-check.mjs --plan-check .plan
 - **有界修订 ≤2 轮**:BLOCKER 交回 plan 修(要改决策才回 `mm-gsd-discuss`),修完重跑第 1 步;
   两轮 issue 数不降 → 停下升级到人,别再兜圈。INFO 照列但不挡。
 
-### 收敛判据(第 2 步的修复循环按此收口,issue #13)
+### 收敛判据(第 2 步的修复循环按此收口,issue #13;28-11 起与 R-26 同源)
 
 - `机器门禁绿 ∧ 一轮独立预审零 BLOCKER` ⇒ **允许开工**(进第 3 步拿退出码收口)。
 - 每条 WARNING:逐条**归 Deferred**(写进 SUMMARY 的 Deferred Issues)带进施工 —— 不为它开新一轮改稿。
-- **轮次硬上限 2**:第 3 轮仍报 BLOCKER → **停下升级**(改 scope,或判定该批不做),不继续改稿 ——
-  与 exec「同根因 ≤2 次」同一纪律;复审的价值是发现新事实,不是重复确认既有结论。
+- **计数不降即停(R-26)**:相邻两轮的新增判断项计数不降 ⇒ `[REVIEW-CONVERGENCE-STALLED]` 停下升级到人(拿清单拍板:归 Deferred 带进施工,或判定该批不做)——agent 不再开新一轮。
+- **轮次硬上限 2 只作兜底**:第 3 轮仍报 BLOCKER → 停下升级;复审的价值是发现新事实,不是重复确认既有结论。
 
 ### 第 3 步:重跑第 1 步,拿退出码收口
 

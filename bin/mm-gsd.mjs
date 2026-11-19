@@ -18,6 +18,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { homedir } from "node:os";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { discoverPacks, resolvePack, resolveEntry, skillsRootOr } from "../skills/mm-gsd-loop/references/packs.mjs";
 
 const PKG_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SKILLS_SRC = join(PKG_ROOT, "skills");
@@ -331,7 +332,17 @@ const cmd = argv[0];
 if (!cmd || cmd === "install") process.exit(install());
 if (cmd === "doctor" || cmd === "--check" && argv.length === 1) process.exit(doctor());
 if (cmd === "update") process.exit(await update());
-if (cmd === "web") process.exit(spawnSync(process.execPath, [join(PKG_ROOT, "skills", "mm-gsd-loop", "scripts", "mm-gsd-web.mjs"), ...argv.slice(1)], { stdio: "inherit" }).status ?? 0);
+// 可选包分派(28-01):包自己声明自己 —— 目录 mm-gsd-* + SKILL.md frontmatter entry:。
+// 命中包则入口被 spawn 且退出码原样传出;入口缺失一句人话(不抛栈);没命中落回旧逻辑(旧 web 分支/内置命令表)。
+{
+  const packs = discoverPacks(skillsRootOr(join(PKG_ROOT, "skills"), process.env));
+  const pack = resolvePack(packs, cmd);
+  if (pack) {
+    const en = resolveEntry(pack);
+    if (en.missing) { bad(en.message); process.exit(1); }
+    process.exit(spawnSync(process.execPath, [en.entryPath, ...argv.slice(1)], { stdio: "inherit" }).status ?? 0);
+  }
+}
 if (cmd === "check") process.exit(check());
 if (["stage", "summary", "commit", "wave-check"].includes(cmd)) {
   // 执行期工具转发(skills/mm-gsd-exec/scripts/,R-13:使用方手上只有 skills/)。

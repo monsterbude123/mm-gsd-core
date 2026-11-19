@@ -134,7 +134,7 @@ import { parseReqLedger, reqState, successorExists } from "./req-ledger.mjs";
  */
 export function checkTicketPremises(tickets, root) {
   const problems = [];
-  const PATHY = /[\w./\-]+\.(?:mjs|cjs|js|ts|mts|cts|jsx|tsx|json|md|ya?ml|py|sh|html|css)\b/g;
+  const PATHY = /[\w./\-\[\]]+\.(?:mjs|cjs|js|ts|mts|cts|jsx|tsx|json|md|ya?ml|py|sh|html|css)\b/g;
   for (const t of tickets) {
     const own = new Set((t.files ?? []).map((f) => String(f).replace(/^\.\//, "")));
     const seen = new Set();
@@ -144,7 +144,9 @@ export function checkTicketPremises(tickets, root) {
       const rel = String(p).replace(/^\.\//, "");
       if (own.has(rel) || seen.has(rel)) return;      // 这票自己产出 / 重复引用
       seen.add(rel);
-      if (!existsSync(join(root, rel))) {
+      // 绝对路径(盘符或 / 开头)按原样判,不 join(root) —— 拼了必然找不到(GitHub #25)
+      const isAbs = /^[A-Za-z]:[\\/]/.test(rel) || rel.startsWith("/");
+      if (!existsSync(isAbs ? rel : join(root, rel))) {
         const at = src.raw.indexOf(String(p));
         const ctx = at >= 0 ? src.raw.slice(Math.max(0, at - 20), at + String(p).length + 20).replace(/\s+/g, " ") : "";
         problems.push(`${t.id}: ${src.label} 引用的 "${rel}" 不存在(…${ctx}…) —— 票站在一个假前提上,执行者会照着编或反复找;豁免判定:不在本票 <files>,磁盘上也没有它`);

@@ -8,7 +8,7 @@
 const DEP_RE = /[（(]\s*depends_on\s*[:：]\s*([^）)]*)[）)]/i;
 const unquote = (s) => String(s ?? "").replace(/^["']|["']$/g, "").trim();
 
-/** 从 phase 行文本(标题 + 行尾注记)解析 depends_on;无注记/「无、none」→ [](正负路径见 board-probe 自测) */
+/** 从 phase 行文本(标题 + 行尾注记)解析 depends_on;无注记/「无、none」→ [](正负路径见看板自测) */
 export function parseDepends(text) {
   const raw = DEP_RE.exec(String(text ?? ""))?.[1] ?? "";
   return raw.split(/[,\s]+/).map(unquote)
@@ -36,7 +36,7 @@ function reaches(adj, start, target) {
 /**
  * 分层 = 最长路。入参 phases = [{id, depends_on}];出参 { levels: [[id,...],...], edges: [[from,to],...] }。
  * 边方向:from = 被依赖(先做,上层),to = 依赖方(后做,下层)—— 渲染端箭头自上而下,无回边。
- * 防御三则(行为级用例在 board-probe.selftest.mjs,24-01 T1a):
+ * 防御三则(行为级用例在看板自测,24-01 T1a):
  * ① 幽灵引用(指向不存在的 phase)的边直接丢弃,不悬空;
  * ② 环边确定性剪除:每轮丢「参与环的边里 (from,to) 最大者」(边已升序,自末位起找的第一条即最大),
  *    剪后重算直至无环 —— 每轮恰丢一条边,有穷且确定,渲染端不会挂死;

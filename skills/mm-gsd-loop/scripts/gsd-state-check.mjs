@@ -259,9 +259,28 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
     // 预审工件(只有 --plan-check 判):显式校验问的是「现在能不能开工」,不是「合不合规」。
     // 判定住在 references/plan-ready.mjs —— 主脚本只留接线。
     if (PLAN_CHECK) {
-      const { checkPlanReady } = await import("../references/plan-ready.mjs");
-      const rr = checkPlanReady({ planPath: path });
+      const pr = await import("../references/plan-ready.mjs");
+      // phaseNo 在本循环下游才声明(TDZ)——这里就地从文件名取 phase
+      const convPhase = (name.match(/^(\d+)/) || [])[1] ?? "";
+      const conv = pr.readPhaseConvergence(dirname(path), convPhase);
+      // 乘法只在多票时存在:同 phase 未收口票 ≥2 才要求 phase 级收敛(单票夹具/单票 phase 的票级预审即收敛)
+      let unclosedSamePhase = 0;
+      try {
+        for (const n of readdirSync(dirname(path))) {
+          if (!n.startsWith(convPhase + "-") || !n.endsWith("-PLAN.md")) continue;
+          try { if (!/^status:\s*complete/m.test(readFileSync(join(dirname(path), n.replace(/-PLAN\.md$/, "-SUMMARY.md")), "utf8"))) unclosedSamePhase++; } catch { unclosedSamePhase++; }
+        }
+      } catch { /* 目录读不到就按 1 计 */ }
+      const superseded = conv.present;
+      if (superseded) {
+        w(`[REVIEW-CONVERGENCE] phase ${convPhase} 预审收敛在位(round ${conv.latest.round},status ${conv.latest.status})—— 票级预审由 phase 收敛取代`);
+        if (conv.stalled) e(conv.stalledMsg + " 停滞,转人", "拿收敛清单拍板:Proceed(把判断项归 Deferred 带进施工)或 Manual review");
+      } else if (Number(convPhase) >= pr.PHASE_CONVERGENCE_REQUIRED_FROM && unclosedSamePhase >= 2) {
+        e(`[REVIEW-CONVERGENCE] phase ${convPhase} 缺 phase 级预审收敛工件(<${convPhase}-REVIEW-CONVERGENCE.md>)—— ${pr.PHASE_CONVERGENCE_REQUIRED_FROM} 起 ${unclosedSamePhase} 张未收口票按 phase 一次预审(一个预算一份清单)`, "预审结论落盘为 phase 级收敛工件(round/new_judgment/open_judgment)再跑本命令");
+      }
+      const rr = pr.checkPlanReady({ planPath: path }, { superseded, phaseDir: dirname(path), phase: convPhase });
       review.push({ name, state: rr.state });
+      for (const c of rr.classified ?? []) w(`(${name.replace(/-PLAN\.md$/, "")}) ${c}`, "机器可判发现已下沉机器层,不计入 blocker 拦工(R-25)");
       for (const p of rr.problems) reviewErrs.push({ message: p.msg, fix: p.fix });
     }
 
@@ -359,7 +378,9 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
 
     for (const t of tasks) {
       for (const key of ["files", "read_first", "action", "verify", "done"]) {
-        if (!field(t, key)) e(`${name} ${t.id}: 缺 <${key}> —— 四件套不完整`, "按 templates/plan.md 补全;执行者照着它动手,缺项就得临场猜");
+        // 完整性与内容判据用同一个取值口(fieldBlock,GitHub #25):field() 只取同行,
+        // 多行 verify 的票会被同时判「缺 verify」+ 内容红 —— 两张嘴必然自相矛盾。
+        if (!fieldBlock(t, key)) e(`${name} ${t.id}: 缺 <${key}> —— 四件套不完整`, "按 skills/mm-gsd-plan/templates/plan.md 补全;执行者照着它动手,缺项就得临场猜");
       }
       const act = field(t, "action") ?? "";
       if (/```/.test(act)) e(`${name} ${t.id}: action 里含代码块`, "action 写做什么与避免什么,代码留给执行者写 —— 照抄会掩盖真实工作量");
@@ -444,11 +465,37 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
     for (const p of vg.checkTicketPremises(tickets, root)) e(p, "把路径改成真实存在的;这张票要产出的新文件写进 <files>,别在 read_first 里凭空引一个");
     for (const p of vg.checkTicketLoad(tickets)) e(p, "砍掉真理来源文件或拆票 —— read_first 是执行前要全部读完的清单");
     for (const p of vg.checkReqClaims(tickets, root)) e(p, "covers 只写真有的 REQ;要新需求就回 discuss 补进 REQUIREMENTS.md");
+    // 14 族机器门(28-10):人报 BLOCKER 里机器可判的发现在规划期当场判红,预审只看机器判不了的。
+    // 判据权威在 references/plan-review-gate.mjs(本段只注入 ctx 与转发);基线按 §2.4 解析,
+    // 锚点缺失 ⇒ 空 Map ⇒ 基线族跳过(判不了不猜),绝不回落 HEAD。F6 对 SIZE_EXEMPT 票豁免(决定 #1)。
+    {
+      const { checkPlanQuality } = await import("../references/plan-review-gate.mjs");
+      const { resolveReviewBaseline } = await import("../references/worktree-view.mjs");
+      const planId = name.replace(/-PLAN\.md$/, "");
+      let contextText = "";
+      try { contextText = readFileSync(join(dirname(path), phaseNo + "-CONTEXT.md"), "utf8"); } catch { /* 双布局另一种落点 */ }
+      if (!contextText) { try { contextText = readFileSync(join(root, ".planning", phaseNo + "-CONTEXT.md"), "utf8"); } catch { /* 无 CONTEXT:F3 判不了不猜 */ } }
+      let reqText = "";
+      try { reqText = readFileSync(join(root, ".planning", "REQUIREMENTS.md"), "utf8"); } catch { /* 无 REQ 清单:F3 判不了 */ }
+      const baseline = resolveReviewBaseline(planId, root);
+      // 兄弟票文本(F15 生产者证据):同 phase 的其他 PLAN 全文,接线时现读
+      const siblings = [];
+      try {
+        for (const n of readdirSync(dirname(path))) {
+          if (n !== name && n.startsWith(phaseNo + "-") && n.endsWith("-PLAN.md")) siblings.push(readFileSync(join(dirname(path), n), "utf8"));
+        }
+      } catch { /* 目录读不到就没有兄弟证据 */ }
+      const gr = checkPlanQuality(txt, { contextText, reqText, baseline, planId, siblings });
+      for (const p of gr.problems)
+        p.severity === "advisory"
+          ? w("[" + p.family + "] (" + planId + ") " + p.msg, "advisory 不拦 —— 人判断题留给预审(F3 按设计)")
+          : e("[" + p.family + "] (" + planId + ") " + p.msg, "按族修票面;判据权威与口径见 references/plan-review-gate.mjs(28-REMEDIATION §2.4/§2.5)");
+    }
     // 批图(phase 08 D-02):同 phase 内可并行的票不许撞文件、依赖不许成环。
     // R 票不进批图(D-06):修复是原 phase 收尾后的串行补票,不是新的并行面 ——
     // 两张 R 票碰同一个被修文件是常态,卷进批图会误判「并行撞文件」。
     if (!isRepair)
-      batchPlans.push({ id: name.replace(/-PLAN\.md$/, ""), phase: phaseNo, files: parsed.files, depends: depList(fm.depends_on) });
+      batchPlans.push({ id: name.replace(/-PLAN\.md$/, ""), phase: phaseNo, files: parsed.files, depends: depList(fm.depends_on), wave: String(fm.wave ?? "").trim() === "" ? null : Number(fm.wave), dir: dirname(path) });
   }
   {
     const wv = await import("../references/worktree-view.mjs");
@@ -457,10 +504,49 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
       for (const p of wv.checkBatchGraph(batchPlans.filter((b) => b.phase === ph)))
         e(p, "同 phase 内互不依赖的票就是可并行的 —— 撞了文件就必须拆批或补依赖");
     }
+    // 波次推导门(R-24,28-13):wave 是 DAG 推导的缓存不是真相源 —— 手写值与依赖推导不符,
+    // 执行端就按错序开工;要改顺序就改 depends_on,不是改 wave(用户裁定:次序不重要,DAG 对应就行)。
+    // 推导宇宙 = 本 phase 全部票面的 frontmatter:显式传入的可能只是子集(单票 --plan),
+    // 按批内集合推导会让依赖全按 0 计、链上票的波次塌缩成 1(28-08 单票误红即此因)。
+    for (const ph of [...new Set(batchPlans.map((b) => b.phase))]) {
+      const universe = new Map();
+      for (const b of batchPlans.filter((x) => x.phase === ph)) {
+        if (!universe.has(b.id)) universe.set(b.id, { id: b.id, wave: b.wave, depends: b.depends });
+        try {
+          for (const n of readdirSync(b.dir)) {
+            if (n === b.id + "-PLAN.md" || !n.endsWith("-PLAN.md") || !n.startsWith(ph + "-")) continue;
+            const oid = n.replace(/-PLAN\.md$/, "");
+            if (universe.has(oid)) continue;
+            const fm2 = readFileSync(join(b.dir, n), "utf8").split(/^---$/m)[1] ?? "";
+            const wm = fm2.match(/^wave:\s*(\d+)\s*$/m);
+            const dm = fm2.match(/^depends_on:\s*(.+)$/m);
+            universe.set(oid, { id: oid, wave: wm ? Number(wm[1]) : null, depends: dm ? (dm[1].match(/\d+-\d+/g) ?? []) : [] });
+          }
+        } catch { /* 目录读不到就按批内集合推导 */ }
+      }
+      const derived = wv.deriveWaves([...universe.values()]);
+      for (const b of batchPlans.filter((x) => x.phase === ph)) {
+        if (b.wave !== null && derived.get(b.id) !== b.wave)
+          e(`${b.id}: wave 手写 ${b.wave} ≠ DAG 推导 ${derived.get(b.id)} —— 次序从 depends_on 推导;要改顺序就改 depends_on,不是改 wave`);
+      }
+    }
     // 需求覆盖门(phase 17 D-03,issue #21):checkReqClaims 的正方向 —— REQ 落盘了但无人认领。
     // 项目全量对账,整批一次;REQUIREMENTS.md 不存在 → 函数自己返回空,不猜。
     for (const p of checkReqCoverage({ root, plansDir: P(".") }))
       e(p, "给这条需求拆票并在 covers 认领 REQ-N;确认不做就回 discuss 从 REQUIREMENTS.md 移除或改写");
+  }
+  {
+    // 深挖门(28-07,D-13/REQ-63):discuss 落 REQ 前必须答四问,答案进 <mining> 节 —— 机器核对本 phase 票覆盖的每条 REQ。
+    // 判据权威在 references/requirement-mining.mjs(本段只注入 root/phase 与转发);豁免:无 <mining> 节的老 CONTEXT 不判。
+    const rm = await import("../references/requirement-mining.mjs");
+    for (const ph of [...new Set(batchPlans.map((b) => b.phase))]) {
+      const ctxText = existsSync(P(ph + "-CONTEXT.md")) ? readFileSync(P(ph + "-CONTEXT.md"), "utf8") : "";
+      if (!ctxText.includes("<mining>")) continue;
+      const reqs = rm.phaseReqs(root, ph);
+      for (const p of rm.checkRequirementMining({ ctxText, reqs: reqs.map((id) => ({ id })) }))
+        e(p.message, p.fix);
+    }
+    if (!batchPlans.length) { /* 单票 --plan 时批图为空也照跑票级门;深挖门是 phase 级,按存在与否判 */ }
   }
   {
     // 点修配额(D-08):同 phase R 票 ≥3 → 强制升级(防疤叠疤;#21 历史教训:诊断 3 次未矫正 = RC2 复发)
@@ -647,16 +733,22 @@ if (process.argv.includes("--routes")) {
 // 排版在这里,判定在 references/agent-routing.mjs:那里出数据,这里出文本。
 if (process.argv.includes("--route")) {
   const { buildRouteBrief } = await import("../references/agent-routing.mjs");
+  const { skillsRootOr } = await import("../references/packs.mjs");
   const at = process.argv.indexOf("--route"), arg = process.argv[at + 1];
   const b = buildRouteBrief({
     stage: arg && !arg.startsWith("--") ? arg : null,
-    skillsRoot: join(SKILL_DIR, ".."), projectRoot: root, home: homedir(),
+    skillsRoot: skillsRootOr(join(SKILL_DIR, ".."), process.env), projectRoot: root, home: homedir(),
     activePhase: unquote(frontmatter(P("STATE.md"))?.active_phase) ?? null,
   });
   const L = [];
   if (b.kind === "ring") {
     L.push("=== mm-gsd 路由:各阶段的出口(阶段名 = 技能名去掉 mm-gsd- 前缀)===");
     for (const s of b.skills) L.push(`  ${s.skill.replace("mm-gsd-", "")}  →  ${s.exits.length ? s.exits.join(", ") : "(没写出口)"}`);
+    if ((b.packs ?? []).length) {
+      // 可选包分栏(28-01,D-03):声明 entry 且 optional 的包不进环,另起一栏;没有可选包时不印(空态不占屏)
+      L.push("\n  可选包(点缀,不参与环):");
+      for (const p of b.packs) L.push("    " + p.display + "(" + p.name + ")");
+    }
     L.push("\n  要某一步的完整提示(该读什么 + 本项目门禁速查):--route <阶段>");
   } else if (b.kind === "unknown") {
     L.push("=== mm-gsd 路由 ===", "  " + b.message);
@@ -772,7 +864,7 @@ if (process.argv.includes("--init")) {
 {
   const { readAnnotations } = await import("../references/repair-gates.mjs");
   const openAnn = readAnnotations(root).filter((a) => a?.status === "open");
-  if (openAnn.length) warn(`${openAnn.length} 条用户批注待消化 —— mm-gsd web 查看,discuss/plan 开头消化`);
+  if (openAnn.length) warn(`${openAnn.length} 条用户批注待消化 —— 用批注工具查看,discuss/plan 开头消化`);
 }
 
 // ---- STATE ----

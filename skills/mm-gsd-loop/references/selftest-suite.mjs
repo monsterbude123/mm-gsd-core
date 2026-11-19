@@ -4,17 +4,24 @@
 // 三种断言:eq(正则)、eqN(单值)、eqArr(数组)。全部把失败计入 st.bad。
 
 import { classifyArtifact, parseAccounting, commitExists, checkArtifactLedger } from "./artifact-ledger.mjs";
-import { checkPlanReady, REVIEW_PROMPT } from "./plan-ready.mjs";
-import { checkPhaseCoverage } from "./decision-gates.mjs";
+import { checkPlanReady, readPhaseConvergence, classifyArtifactBlockers, REVIEW_PROMPT } from "./plan-ready.mjs";
+import { discoverPacks, resolvePack, resolveEntry, makePackFixture } from "./packs.mjs";
+import { checkCoreBoundary } from "./core-boundary.mjs";
+import { checkWebTemplateJs } from "./web-template-gate.mjs";
+import { checkRequirementMining, phaseReqs } from "./requirement-mining.mjs";
+import { checkPhaseCoverage, checkReversibility } from "./decision-gates.mjs";
 import { checkTicketPremises } from "./verification-gates.mjs";
 import { staleDecisions, coveredDecisions, phaseCovered, staleNote, planExists, runDecisionContracts, checkPlanCheckArtifacts } from "./ticket-alive.mjs";
 import { phaseHealth } from "./telemetry-aggregate.mjs";
-import { checkRoutes, routeSection, pointerCard, reviewerCard } from "./agent-routing.mjs";
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, rmSync, existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { join } from "node:path";
+import { checkRoutes, routeSection, pointerCard, reviewerCard, buildRouteBrief } from "./agent-routing.mjs";
+import { deriveWaves } from "./worktree-view.mjs";
+import { checkPlanQuality, SIZE_EXEMPT } from "./plan-review-gate.mjs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, rmSync, existsSync, readdirSync } from "node:fs";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
+import { aggregateByDay } from "./telemetry-view.mjs";
 
 /** 造一组断言。返回的 st.bad 是失败条数 —— 调用方自己决定怎么汇报 */
 export function mkAssert() {
@@ -35,6 +42,229 @@ export function mkAssert() {
     console.log(`  ${good ? "✓" : "✗"} ${why}: ${JSON.stringify(got)} → ${good ? "" : JSON.stringify(want)}`);
   };
   return { eq, eqN, eqArr, st };
+}
+
+/** 波次推导用例组(R-24,28-13):次序从 depends_on 推导,不从手写来 */
+export function runWaveFromDagCases({ eqN }) {
+  const chain = [{ id: "a", depends: [] }, { id: "b", depends: ["a"] }, { id: "c", depends: ["b"] }];
+  const w = deriveWaves(chain);
+  eqN(w.get("a"), 1, "wvd-1 无依赖推导 1");
+  eqN(`${w.get("a")}/${w.get("b")}/${w.get("c")}`, "1/2/3", "wvd-2 链式三票推导递增");
+  eqN(deriveWaves([{ id: "x", depends: ["外部-不在集合"] }]).get("x"), 1, "wvd-3 依赖不在集合内按 0 计");
+  const real06 = deriveWaves([
+    { id: "28-01", depends: [] }, { id: "28-02", depends: ["28-01"] }, { id: "28-03", depends: ["28-01", "28-02"] },
+    { id: "28-05", depends: ["28-02", "28-03"] }, { id: "28-06", depends: ["28-02", "28-05"] },
+  ]);
+  eqN(real06.get("28-06"), 5, "wvd-4 28-06 真实形态推导 5(手写 6 与之不符,门在 --plan 批图区判红)");
+}
+
+/** 14 族机器门用例组(28-10):真调 checkPlanQuality,判据掏空时这些锚点一起红 */
+export function runReviewGateCases({ eqN }) {
+  const mk = (verify) => [
+    "---", "phase: \"41\"", "plan: \"01\"", "goal: 夹具票", "files_modified:", "  - bin/x.mjs",
+    "depends_on: []", "cwd: .", "---", "", "## T1 夹具", "", "- **files**: bin/x.mjs",
+    "- **action**: 改 bin/x.mjs", "- **verify**: " + verify,
+  ].join("\n");
+  const r1 = checkPlanQuality(mk("f(){ false; local code; code=$?; }"), { baseline: new Map() });
+  eqN(r1.problems.some((p) => p.family === "F16-exit-code-capture-adjacency"), true, "rgv-1 F16 捕获邻接(local 后才捕 $? 必红)");
+  const big = "echo x;".repeat(600);
+  const r2 = checkPlanQuality(mk(big), { baseline: new Map() });
+  eqN(r2.problems.some((p) => p.family === "F6-budget" && p.msg.includes("[TICKET-SIZE]")), true, "rgv-2 单行巨串 verify 被 [TICKET-SIZE] 字节门判红");
+  const r3 = checkPlanQuality(mk(big), { baseline: new Map(), planId: "28-06" });
+  eqN(r3.problems.some((p) => p.family === "F6-budget"), false, "rgv-3 SIZE_EXEMPT 内票号豁免 F6(决定 #1)");
+  eqN(SIZE_EXEMPT.has("28-09"), true, "rgv-3b 豁免名单含退清单票 28-09");
+  const r4 = checkPlanQuality(mk('node -e "1"'), { baseline: new Map() });
+  eqN(r4.problems.some((p) => p.family === "F1-verify-blind"), true, "rgv-4 verify 不碰交付文件判 F1 盲验");
+}
+
+/** phase 级收敛用例组(28-11):收敛取代票级、停滞升级、machine 分类降级、祖父路径 */
+export function runConvergenceCases({ eqN }) {
+  const dir = mkdtempSync(join(tmpdir(), "ar-conv-"));
+  mkdirSync(join(dir, ".planning"), { recursive: true });
+  const MD = String.fromCharCode(46) + "md";
+  const fm = (o) => ["---", ...Object.entries(o).map(([k, v]) => k + ": " + v), "---"].join("\n");
+  writeFileSync(join(dir, ".planning", "99-REVIEW-CONVERGENCE-r1" + MD), fm({ round: 1, new_judgment: 3, open_judgment: 1, status: "blocked" }));
+  const c1 = readPhaseConvergence(join(dir, ".planning"), "99");
+  eqN(c1.present && !c1.stalled, true, "rcv-1 单轮收敛工件在场且不判停");
+  writeFileSync(join(dir, ".planning", "99-REVIEW-CONVERGENCE-r2" + MD), fm({ round: 2, new_judgment: 3, open_judgment: 2, status: "blocked" }));
+  eqN(readPhaseConvergence(join(dir, ".planning"), "99").stalled, true, "rcv-2 相邻两轮 new_judgment 不降判停");
+  writeFileSync(join(dir, ".planning", "99-01-PLAN-CHECK" + MD), fm({ status: "blocked", plan: "99-01", blockers: 2, warnings: 0 }) + "\n- [BLOCKER] cargo test -- no_case 零匹配假绿(零数据输入会绿)\n- [BLOCKER] 断言计数把表头算进表体,数错(自证类)");
+  const cls = classifyArtifactBlockers(join(dir, ".planning", "99-01-PLAN-CHECK" + MD));
+  eqN(cls.judgmentCount, 0, "rcv-3 两条机器可判 BLOCKER 全部分类降级");
+  writeFileSync(join(dir, ".planning", "99-01-PLAN" + MD), ["---", "phase: \"99\"", "plan: \"01\"", "goal: 夹具", "files_modified:", "  - x.md", "depends_on: []", "cwd: .", "---", "", "## T1", "", "- **files**: x.md", "- **action**: 改 x.md", "- **verify**: node -e \"0\"", "- **done**: 夹具即本行"].join("\n"));
+  const sup = checkPlanReady({ planPath: join(dir, ".planning", "99-01-PLAN" + MD) }, { superseded: true });
+  eqN(sup.state, "passed", "rcv-4 superseded 下全 machine 类降级不拦工");
+  const legacy = checkPlanReady({ planPath: join(dir, ".planning", "99-01-PLAN" + MD) });
+  eqN(legacy.state === "blocked" || legacy.state === "missing", true, "rcv-4b 祖父路径:无收敛工件时保持票级旧判");
+}
+
+/** 可选包机制用例组(28-01,D-03/D-07/REQ-58):判定只认 packs.mjs 公开 API,夹具唯一来自 makePackFixture */
+export function runPackCases({ eqN }) {
+  const fx = makePackFixture();
+  const packs = discoverPacks(fx.root);
+  const fake = packs.find((p) => p.name === fx.fake);
+  eqN(fake ? [fake.entry === fx.fakeEntry, fake.display === fx.display, (fake.aliases ?? []).join(",")].join(",") : "missing", "true,true,fk,version", "pack-1 声明 entry 的目录被认成包且 entry/display/aliases 读对");
+  eqN(packs.some((p) => p.name === fx.plain), false, "pack-2 没声明 entry 的目录不算包");
+  eqN(resolvePack(packs, "fake")?.name, fx.fake, "pack-3 resolvePack 按包名命中");
+  eqN([resolvePack(packs, "fk")?.name, resolvePack(packs, "nk")?.name].join(","), [fx.fake, fx.noopt].join(","), "pack-4 按 aliases 命中(无引号与带引号两种写法都认)");
+  eqN(resolvePack(packs, "nope") ?? null, null, "pack-5 不存在的命令返回空(不误命中)");
+  const ar = buildRouteBrief({ stage: null, skillsRoot: fx.root, projectRoot: ".", home: tmpdir(), activePhase: null });
+  eqN([ar.skills.some((s) => s.skill === fx.fake), ar.packs.some((p) => p.name === fx.fake), ar.skills.some((s) => s.skill === fx.noopt)].join(","), "false,true,true", "pack-6 optional 包不进环进 packs 栏;无 optional 的照旧在环里");
+  const en = resolveEntry(packs.find((p) => p.name === fx.broken));
+  eqN([String(en.missing), en.message.includes(fx.brokenEntry)].join(","), "true,true", "pack-7 入口缺失报 missing 并给带入口路径的人话");
+  rmSync(fx.root, { recursive: true, force: true });
+  rmSync(fx.plainRoot, { recursive: true, force: true });
+}
+
+/** 工具遥测视图纯函数用例组(28-02 T2 自核心 selftests 搬入):按本地日切桶/异 cwd 过滤/空态/import 无副作用。
+ *  服务层与模板断言在 包自测 board-probe(28-02 D-03)。 */
+export function runTelemetryViewCases({ eqN, eqArr }) {
+  const MODULE_PATH = fileURLToPath(new URL("./telemetry-view.mjs", import.meta.url));
+  const PROJECT_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
+  const localDay = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  const pathVariant = (p) => {
+    const seg = p.split(/[\\/]/);
+    seg[seg.length - 1] = seg[seg.length - 1].toUpperCase();
+    return seg.join("\\") + "\\";
+  };
+  // 夹具 instant:本地凌晨 02:00 与次日 02:00 —— 东八区宿主上落前一个 UTC 日,「本地日切桶」与「UTC 日切桶」可判别
+  const now = new Date();
+  const instantA = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 2, 0, 0);
+  const instantB = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 2, 0, 0);
+  const tsA = instantA.toISOString(), tsB = instantB.toISOString();
+  const dayA = localDay(new Date(tsA)), dayB = localDay(new Date(tsB));
+  const variant = pathVariant(PROJECT_ROOT);
+  const otherDir = PROJECT_ROOT + "-other";
+  const fixtureDir = mkdtempSync(join(tmpdir(), "mm-gsd-tel-fixture-"));
+  const fixtureFile = join(fixtureDir, "tools.jsonl");
+  const fixtureRows = [
+    { ts: tsA, cwd: variant, tool: "Bash" },
+    { ts: tsA, cwd: PROJECT_ROOT, tool: "Bash" },
+    { ts: tsB, cwd: PROJECT_ROOT, tool: "Read" },
+    { ts: tsB, cwd: otherDir, tool: "Write" },
+  ];
+  writeFileSync(fixtureFile, fixtureRows.map((r) => JSON.stringify(r)).join("\n") + "\n", "utf8");
+  const rows = readFileSync(fixtureFile, "utf8").split(/\r?\n/).filter(Boolean).map((l) => JSON.parse(l));
+  const tel = aggregateByDay(rows, PROJECT_ROOT);
+  eqN(dayA !== dayB, true, "遥测夹具自证:两个 instant 落在两个本地日(判别力前提)");
+  eqArr([...new Set(tel.series.map((s) => s.date))].sort(), [dayA, dayB].sort(), "遥测日切桶按本地日期");
+  eqN(tel.byTool.Write === undefined && tel.total === 3, true, "遥测异 cwd 不计入");
+  eqArr({ Bash: tel.byTool.Bash, Read: tel.byTool.Read, keys: Object.keys(tel.byTool).sort() }, { Bash: 2, Read: 1, keys: ["Bash", "Read"] }, "遥测硬编码期望:Bash 2 / Read 1");
+  eqN(tel.series.length, 2, "遥测序列长度 2");
+  const emptyTel = aggregateByDay([], PROJECT_ROOT);
+  eqN(emptyTel.series.length === 0 && emptyTel.empty === true, true, "遥测空夹具走空态");
+  // import 副作用探针(R-16 真导入 references/:顶层 exit 会让整场 health 假绿)
+  const marker = "TELEMETRY_VIEW_IMPORT_OK";
+  const emptyDir = mkdtempSync(join(tmpdir(), "telemetry-view-empty-"));
+  const url = pathToFileURL(MODULE_PATH).href;
+  const code = `await import(${JSON.stringify(url)});\nprocess.stdout.write(${JSON.stringify(marker)});`;
+  const res = spawnSync(process.execPath, ["--input-type=module", "-e", code], { cwd: emptyDir, encoding: "utf8" });
+  const left = readdirSync(emptyDir);
+  rmSync(emptyDir, { recursive: true, force: true });
+  eqN(res.status === 0 && res.stdout === marker && res.stderr === "" && left.length === 0, true, "遥测 import 无副作用");
+  rmSync(fixtureDir, { recursive: true, force: true });
+}
+
+/** 核心边界门用例组(28-04,R-28):脏树/净树/无包树/包内豁免真调 checkCoreBoundary;夹具只用假包名 */
+export function runCoreBoundaryCases({ eqN }) {
+  const tree = (files) => {
+    const root = mkdtempSync(join(tmpdir(), "mm-gsd-coreb-"));
+    for (const k of Object.keys(files)) {
+      const p = join(root, k);
+      mkdirSync(dirname(p), { recursive: true });
+      writeFileSync(p, files[k]);
+    }
+    return root;
+  };
+  const packSkill = '---\nname: "mm-gsd-fake"\nentry: scripts/entry.mjs\noptional: true\ndisplay: 假包\n---\n\n包自己的正文(显示名 假包 与目录名 mm-gsd-fake 在这里合法)';
+  const coreMd = "skills/mm-gsd-loop/references/doc.md";
+  const coreMjs = "skills/mm-gsd-loop/references/code.mjs";
+  const packMd = "skills/mm-gsd-fake/SKILL.md";
+  const packEntry = "skills/mm-gsd-fake/scripts/entry.mjs";
+  const rules = (root) => checkCoreBoundary({ skillsRoot: join(root, "skills"), binPath: join(root, "bin") }).map((p) => p.rule);
+  const r1 = rules(tree({ [coreMd]: "核心文档点了显示名:假包\n", [packMd]: packSkill, [packEntry]: "export const x = 1;\n" }));
+  eqN(r1.join(","), "1", "core-1 核心 .md 有包显示名 → 规则一");
+  const r2 = rules(tree({ [coreMjs]: "核心代码点了包目录名:mm-gsd-fake\n", [packMd]: packSkill, [packEntry]: "export const x = 1;\n" }));
+  eqN(r2.join(","), "2", "core-3 核心 .mjs 有包目录名 → 规则二");
+  const r4 = rules(tree({ [coreMd]: "核心文档不提包\n", [coreMjs]: "核心代码不提包\n", [packMd]: packSkill, [packEntry]: "export const x = 1;\n" }));
+  eqN(r4.length, 0, "core-2 干净的树 → 0 条");
+  const r5 = rules(tree({ [coreMd]: "没有可选包的树\n" }));
+  eqN(r5.length, 0, "core-5 没有可选包 → 0 条");
+  const r6 = rules(tree({ [packMd]: packSkill + "\n包自己的文件里写显示名与目录名 mm-gsd-fake", [packEntry]: "export const x = 1;\n" }));
+  eqN(r6.length, 0, "core-6 可选包自己的文件豁免");
+  const r7 = rules(tree({ [coreMd]: "核心文档点了命令调用形:mm-gsd fake\n", [packMd]: packSkill, [packEntry]: "export const x = 1;\n" }));
+  eqN(r7.join(","), "2", "core-4 核心文件有命令调用形 → 规则二");
+}
+
+/** 模板脚本门禁用例组(R-30):三条判据各造一个违规输入 —— 门真的会红才算数(AGENTS.md「造门禁的判据」) */
+export function runWebTemplateGateCases({ eqN }) {
+  const tree = (files) => {
+    const root = mkdtempSync(join(tmpdir(), "mm-gsd-webgate-"));
+    for (const k of Object.keys(files)) {
+      const p = join(root, k);
+      mkdirSync(dirname(p), { recursive: true });
+      writeFileSync(p, files[k]);
+    }
+    return root;
+  };
+  const rel = "skills/mm-gsd-fake/templates/page.html";
+  const rulesOf = (root) => checkWebTemplateJs({ skillsRoot: join(root, "skills") }).map((p) => p.rule);
+  const css = ".view{display:flex}\n.view[hidden]{display:none !important}\n";
+  const cleanJs = 'const a = 1;\nfunction boot() { return a; }\nboot();\n';
+  const r0 = rulesOf(tree({ [rel]: "<html><style>" + css + "</style><body><script>" + cleanJs + "</script></body></html>" }));
+  eqN(r0.length, 0, "webgate-1 干净模板 → 0 条");
+  const r1 = rulesOf(tree({ [rel]: "<html><style>" + css + "</style><body><script>const a = 1;\n}\n</script></body></html>" }));
+  eqN(r1.join(","), "1", "webgate-2 内联脚本有游离大括号 → 判据一(语法)");
+  const r2 = rulesOf(tree({ [rel]: "<html><style>.view{display:flex}\n</style><body><script>" + cleanJs + "</script></body></html>" }));
+  eqN(r2.join(","), "2", "webgate-3 CSS 没有显式隐藏 [hidden] → 判据二");
+  const r3 = rulesOf(tree({ [rel]: "<html><style>" + css + "</style><body><script>boot();\nconst a = 1;\nfunction boot() { return a; }\n</script></body></html>" }));
+  eqN(r3.join(","), "3", "webgate-4 顶层调用早于顶层声明 → 判据三(TDZ)");
+  const r4 = rulesOf(tree({ [rel]: "<html><style>" + css + "</style><body><script>" + cleanJs + "</script></body></html>" }));
+  eqN(r4.length, 0, "webgate-5 同一棵干净的树复跑 → 仍 0 条(门不是随机红)");
+}
+
+/** 决策声明口径用例组(28-08):只认带方括号的大写 ID,散文裸引用不算;三条契约同一把尺 */
+export function runDecisionScopeCases({ eqN }) {
+  const rev = (t) => {
+    const errs = [];
+    checkReversibility({ ctxName: "t", ctxText: t, e: (m) => errs.push(m) });
+    return errs;
+  };
+  const prose = "<decisions>\n### [D-01] reversible title\n</decisions>\n- D-04 要加 action 两个字段\n";
+  eqN(rev(prose).length, 0, "decscope-1 散文里的裸引用不算决策");
+  const missing = "<decisions>\n### [D-02] title\n</decisions>\n";
+  eqN(rev(missing).length > 0, true, "decscope-2 真决策缺可逆性标记仍判红");
+  const forms = ["### [D-01] title", "- [D-03] title", "**[D-04]** title", "[D-05] title"];
+  eqN(forms.filter((f) => rev("<decisions>\n" + f + "\n</decisions>\n").length > 0).length, 4, "decscope-3 四种前缀形态照旧被认");
+  const mixed = "<decisions>\n### [D-01] t1\n### [D-02] t2\n### [D-03] t3\n</decisions>\n- D-04 要加 action 两个字段\n";
+  const ids = [...mixed.matchAll(/\[(D-\d+)\]/g)].map((m) => m[1]);
+  eqN([new Set(ids).size, rev(mixed).length].join(","), "3,3", "decscope-4 三条契约同一口径(3 条决策各报一条缺标记,散文行不加第 4 条)");
+}
+
+/** 深挖需求门用例组(28-07,R-29):四问核对真调 checkRequirementMining,豁免两套口径各一条 */
+export function runRequirementMiningCases({ eqN }) {
+  const ctx = (rows) => ["<mining>", "### REQ-51 夹具"].concat(rows).concat(["</mining>"]).join("\n");
+  const full = ["- **真实需求**: 有人在动作", "- **谁消费**: 人看", "- **什么时候会废**: 没人用", "- **做完长什么样**: 看得到"];
+  const p1 = checkRequirementMining({ ctxText: ctx(full), reqs: [{ id: "REQ-51" }] });
+  eqN(p1.length, 0, "mining-1 四问齐全 → 0 条问题");
+  const p2 = checkRequirementMining({ ctxText: ctx(["- **真实需求**: 有人在动作", "- **什么时候会废**: 没人用", "- **做完长什么样**: 看得到"]), reqs: [{ id: "REQ-51" }] });
+  eqN(p2.length >= 1 && p2[0].message.includes("谁消费"), true, "mining-2 缺谁消费 → 判红且点名");
+  const p3 = checkRequirementMining({ ctxText: ctx(["- **真实需求**: 有人在动作"]), reqs: [{ id: "REQ-51" }, { id: "REQ-52" }] });
+  eqN(p3.some((p) => p.message.includes("REQ-52") && p.message.includes("没有深挖块")), true, "mining-3 缺整块 → 判红点名 REQ-52");
+  const p4 = checkRequirementMining({ ctxText: ctx(["- **真实需求**: ", "- **谁消费**: 人看", "- **什么时候会废**: 没人用", "- **做完长什么样**: 看得到"]), reqs: [{ id: "REQ-51" }] });
+  eqN(p4.some((p) => p.message.includes("真实需求")), true, "mining-4 答案为空 → 判红");
+  const p5 = checkRequirementMining({ ctxText: "没有 <mining> 节的旧 CONTEXT", reqs: [{ id: "REQ-51" }] });
+  eqN(p5.length, 0, "mining-5 无 <mining> 节 → 豁免");
+  const root = mkdtempSync(join(tmpdir(), "mm-gsd-mining-"));
+  mkdirSync(join(root, ".planning"), { recursive: true });
+  writeFileSync(join(root, ".planning", "REQUIREMENTS.md"), "- REQ-51: 活需求\n- REQ-52: baseline 已交付(baseline 0.7.0)\n");
+  writeFileSync(join(root, ".planning", "28-01-PLAN.md"), "### T1\n- **covers**: REQ-51");
+  writeFileSync(join(root, ".planning", "28-02-PLAN.md"), "### T1\n- **covers**: REQ-52");
+  writeFileSync(join(root, ".planning", "req-ledger.md"), "| REQ | 处置 | 指向 | 说明 |\n|---|---|---|---|\n");
+  eqN(phaseReqs(root, "28").join(","), "REQ-51", "mining-6 phaseReqs 剔 baseline 行的 REQ");
+  writeFileSync(join(root, ".planning", "req-ledger.md"), "| REQ | 处置 | 指向 | 说明 |\n|---|---|---|---|\n| REQ-51 | delivered | 0.7.5 | 已交付 |\n");
+  eqN(phaseReqs(root, "28").join(","), "", "mining-7 phaseReqs 剔 req-ledger 已处置的 REQ");
+  rmSync(root, { recursive: true, force: true });
 }
 
 /**

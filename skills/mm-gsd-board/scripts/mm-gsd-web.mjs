@@ -22,13 +22,13 @@ import { homedir } from "node:os";
 import { join, dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { buildDebt } from "../references/debt-panel.mjs";
-import { parseReqLedger, reqState } from "../references/req-ledger.mjs";
-import { readRows } from "../references/telemetry-aggregate.mjs";
-import { aggregateByDay } from "../references/telemetry-view.mjs";
+import { buildDebt } from "../../mm-gsd-loop/references/debt-panel.mjs";
+import { parseReqLedger, reqState } from "../../mm-gsd-loop/references/req-ledger.mjs";
+import { readRows } from "../../mm-gsd-loop/references/telemetry-aggregate.mjs";
+import { aggregateByDay } from "../../mm-gsd-loop/references/telemetry-view.mjs";
 // 拓扑口径(24-01 T1a,D-01):depends_on 解析逐字照抄 checker 基线、分层/剪环/幽灵边防御都在
 // references/phase-topo.mjs 一处 —— 同一份 STATE 行,--phases 与看板必须同答案(预审 W1/W2)。
-import { topoLevels, parseDepends } from "../references/phase-topo.mjs";
+import { topoLevels, parseDepends } from "../../mm-gsd-loop/references/phase-topo.mjs";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_PATH = join(SCRIPT_DIR, "..", "templates", "web.html");
@@ -176,6 +176,8 @@ function buildState(root) {
 
   const phases = new Map();
   const claimByReq = new Map(reqs.map((r) => [r.id, r]));
+  // 票级 depends_on 的唯一解析口径 —— 逐字照抄 gsd-state-check.mjs 的 depList(脚本不借,范式借)
+  const depList = (v) => String(v ?? "").replace(/[[\]"'\s]/g, "").split(/[,、]/).filter(Boolean);
   for (const pp of planPaths) {
     const txt = readFileSync(pp, "utf8");
     const f = fm(txt);
@@ -201,6 +203,7 @@ function buildState(root) {
       file: pp.split(/[\\/]/).pop(), plan: base, goal: f.goal ?? "",
       isRepair: /-R\d+$/.test(base), wave: f.wave ?? "",
       tickets, coversReq: covers.reqs, coversD: covers.decisions,
+      depends: depList(f.depends_on),
       check: (() => {
         const c = [...checkPaths].find((x) => x.split(/[\\/]/).pop().startsWith(base + "-") && x.endsWith("-PLAN-CHECK.md"));
         return c ? { file: c.split(/[\\/]/).pop(), status: fm(readFileSync(c, "utf8")).status ?? "?" } : null;
@@ -311,6 +314,47 @@ function buildState(root) {
     p.level = levelByPhase.get(p.phase) ?? 0;
   }
   const allPlans = [...phases.values()].flatMap((p) => p.plans);
+
+  // REQ 依赖网(28-06,D-02):边只从票级 depends_on 推导 —— 全号精确匹配,短号只在同一个 phase 内解析;
+  // phase 级 depends_on(STATE 行尾括号写法)一律不折边;指向不存在的票或 REQ 都不连边;不编边。
+  const planById = new Map(allPlans.map((p) => [p.plan, p]));
+  const edges = [];
+  for (const pb of allPlans) {
+    if (!pb.coversReq.length) continue;
+    for (const raw of pb.depends) {
+      let target = null;
+      if (planById.has(raw)) target = planById.get(raw);
+      else if (/^\d+$/.test(raw)) {
+        // 短号:只在同一个 phase 内解析(声明短号那票自己的 phase 前缀 + 短号);本 phase 没有就当没写
+        const shortId = pb.plan.slice(0, 2) + "-" + raw;
+        if (planById.has(shortId)) target = planById.get(shortId);
+      }
+      if (!target || !target.coversReq.length) continue;
+      for (const rb of pb.coversReq) {
+        for (const ra of target.coversReq) {
+          if (rb === ra) continue;
+          edges.push({ from: rb, to: ra, kind: "ticket-dep", via: [pb.plan, target.plan] });
+        }
+      }
+    }
+  }
+  const edgeIds = new Set();
+  for (const e of edges) { edgeIds.add(e.from); edgeIds.add(e.to); }
+  const reqPhase = new Map();
+  for (const p of allPlans) for (const rq of p.coversReq) {
+    if (!reqPhase.has(rq) || Number(p.plan.slice(0, 2)) < Number(reqPhase.get(rq).slice(0, 2))) reqPhase.set(rq, p.plan.slice(0, 2));
+  }
+  const reqGraphNodes = reqs.map((r) => {
+    const claimed = r.claimed.length > 0;
+    const phase = claimed ? (reqPhase.get(r.id) ?? null) : null;
+    return {
+      id: r.id, text: r.text, baseline: r.baseline, claimed: r.claimed,
+      phase, group: claimed ? phase : "unclaimed",
+      note: edgeIds.has(r.id) ? "" : (claimed ? "claimed-no-dep" : "unclaimed"),
+    };
+  });
+  const reqGraph = { nodes: reqGraphNodes, edges };
+
   return {
     generated: new Date().toISOString(),
     root: normPath(root),
@@ -332,6 +376,7 @@ function buildState(root) {
     productSurfaceWarn,
     debtWarn,
     telemetry: readTelemetry(root),
+    reqGraph,
   };
 }
 
@@ -390,10 +435,17 @@ const server = createServer(async (req, res) => {
     const target = String(body.target ?? "").trim();
     const type = String(body.type ?? "").trim();
     const text = String(body.text ?? "").trim();
+    // 作业语义(28-05,D-04):action 与 note 是可选新字段 —— 出现才校验/落盘,老批注读出来仍是老形状
+    const hasAction = body.action !== undefined && body.action !== null && String(body.action).trim() !== "";
+    const action = hasAction ? String(body.action).trim() : "";
+    const ACTIONS = ["diagnose", "repair", "requirement", "note"];
+    const hasNote = body.note !== undefined && body.note !== null && String(body.note).trim() !== "";
+    const note = hasNote ? String(body.note).trim() : "";
     const problems = [];
-    if (!target) problems.push("target 缺失(REQ-N / phase:NN / ticket:NN-MM)");
+    if (!target) problems.push("target 缺失(REQ-N / phase:NN / ticket:NN-MM / debt:<键>)");
     if (!TYPES.includes(type)) problems.push("type 必须是 " + TYPES.join("/"));
     if (!text) problems.push("text 缺失");
+    if (hasAction && !ACTIONS.includes(action)) problems.push("action 必须是 " + ACTIONS.join("/") + " 之一");
     if (problems.length) {
       res.writeHead(400, { "content-type": "application/json; charset=utf-8" });
       res.end(JSON.stringify({ ok: false, problems }));
@@ -402,6 +454,8 @@ const server = createServer(async (req, res) => {
     let list = [];
     try { list = JSON.parse(readFileSync(P(pr.root, "annotations.json"), "utf8")); } catch {}
     const ann = { id: "a-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 6), ts: new Date().toISOString(), target, type, text, status: "open" };
+    if (hasAction) ann.action = action;
+    if (hasNote) ann.note = note;
     list.push(ann);
     try {
       writeFileSync(P(pr.root, "annotations.json"), JSON.stringify(list, null, 2) + "\n");

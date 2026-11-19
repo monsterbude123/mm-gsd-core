@@ -1,6 +1,6 @@
 // REQ 处置台账解析模块 —— .planning/req-ledger.md 的四列表格(REQ / 处置 / 指向 / 说明)。
 //
-// 为什么单独成文件:覆盖门(verification-gates 的 checkReqCoverage)与看板(mm-gsd-web.mjs)
+// 为什么单独成文件:覆盖门(verification-gates 的 checkReqCoverage)与看板
 // 要用同一套台账口径,口径写在两处必然漂(同 debt-panel 拆出的理由)。
 //
 // 纯函数,顶层零 I/O:不读文件、不写文件、不 exit、不打日志。文件文本由调用方传进来。

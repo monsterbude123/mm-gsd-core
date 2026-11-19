@@ -170,6 +170,78 @@ export function checkTicketBudget(tasks) {
   return problems;
 }
 
+/**
+ * 波次推导(R-24,28-13):wave = 1 + max(依赖的波次),依赖不在集合内按 0 计,无依赖 = 1。
+ * 次序从 depends_on 推导,不从手写来 —— 手写 wave 与推导值不符 = 次序焦虑落进工件,
+ * 执行端按错序开工(用户裁定:次序不重要,只要 DAG 对应上)。
+ * 环交给批图门(checkBatchGraph);本函数假设无环,带环输入按 0 断链防死递归。
+ *
+ * @param plans [{id, depends}] 同 phase 的票
+ * @returns Map(id → 推导波次)
+ */
+export function deriveWaves(plans) {
+  const byId = new Map(plans.map((p) => [p.id, p]));
+  const wave = new Map();
+  const derive = (id, seen) => {
+    if (wave.has(id)) return wave.get(id);
+    if (seen.has(id)) return 0;
+    seen.add(id);
+    const p = byId.get(id);
+    let w = 1;
+    if (p) for (const d of p.depends ?? []) w = Math.max(w, (byId.has(d) ? derive(d, seen) : 0) + 1);
+    seen.delete(id);
+    wave.set(id, w);
+    return w;
+  };
+  for (const p of plans) derive(p.id, new Set());
+  return wave;
+}
+
+// 基线解析(28-10,§2.4):一张票对「上一张已落地票落地**之前**」的树判(oracle 97.1% 的口径)。
+// 锚点 = 提交主题带 (NN-MM): scope 的提交里、票号紧邻本票之前的那一个;基线 = 其父提交的树。
+// 锚点不存在(票尚未有实现提交,如 phase 28 功能票)⇒ 空 Map ⇒ 基线族(F2/F5/F12/F14)跳过,
+// **绝不回落 HEAD**(回落 = 时间旅行假红,研究里 4 条假红全部来自这一处)。结果按锚点缓存。
+const reviewBaseCache = new Map();
+export function resolveReviewBaseline(planId, root) {
+  const pm = String(planId ?? "").match(/^(\d+)-(\d+)$/);
+  if (!pm) return new Map();
+  let log = "";
+  try {
+    log = execSync("git log --reverse --format=%H%x20%s", { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+  } catch {
+    return new Map();
+  }
+  const landed = [];
+  for (const line of log.split(/\r?\n/)) {
+    const m = line.match(/^([0-9a-f]{7,40})\s+\w+\((\d+)-(\d+)\):/);
+    if (m) landed.push({ hash: m[1], phase: Number(m[2]), plan: Number(m[3]) });
+  }
+  const mine = { phase: Number(pm[1]), plan: Number(pm[2]) };
+  let prev = null;
+  for (const e of landed) {
+    // 同 phase 内取上一张已落地票(研究台口径):跨 phase 回退 = 拿老树判新票 = 时间旅行假红
+    // (实测:放宽到跨 phase 时 F2/F4/F5 对 phase 28 票打出 30 条假红)
+    if (e.phase === mine.phase && e.plan < mine.plan) prev = e;
+    if (e.phase >= mine.phase) break; // --reverse 最旧在前:到达本 phase 即停
+  }
+  if (!prev) return new Map();
+  const anchor = prev.hash + "^";
+  if (reviewBaseCache.has(anchor)) return reviewBaseCache.get(anchor);
+  const base = new Map();
+  try {
+    const files = execSync("git ls-tree -r --name-only " + anchor, { cwd: root, encoding: "utf8", maxBuffer: 1024 * 1024 * 8, stdio: ["ignore", "pipe", "ignore"] });
+    for (const rel of files.split(/\r?\n/).filter(Boolean)) {
+      try {
+        base.set(rel, execSync("git show " + anchor + ":" + rel, { cwd: root, encoding: "utf8", maxBuffer: 1024 * 1024 * 8, stdio: ["ignore", "pipe", "ignore"] }));
+      } catch { /* 二进制或已删除:读不到就跳过 */ }
+    }
+  } catch {
+    return new Map();
+  }
+  reviewBaseCache.set(anchor, base);
+  return base;
+}
+
 /** 看起来是「跑测试」的命令 */
 const TEST_CMD = /\b(npm\s+(?:run\s+)?test|node\s+--test|pytest|jest|vitest|go\s+test|cargo\s+test|mvn\s+test|gradle\s+test|make\s+test)\b/;
 

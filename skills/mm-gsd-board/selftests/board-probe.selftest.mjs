@@ -21,6 +21,14 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const WEB_MJS = join(HERE, "..", "scripts", "mm-gsd-web.mjs");
 const TEMPLATE = join(HERE, "..", "templates", "web.html");
 
+// 本地日与路径变体 helper(28-02 自核心 telemetry-view.selftest.mjs 搬入;服务层断言用)
+const localDay = (d) => d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+const pathVariant = (p) => {
+  const seg = p.split(/[\\/]/);
+  seg[seg.length - 1] = seg[seg.length - 1].toUpperCase();
+  return seg.join("\\") + "\\";
+};
+
 /** 极简 HTTP 客户端(零依赖):agent:false 免得 keep-alive 把进程吊住。 */
 function httpCall(port, method, path, body) {
   return new Promise((res, rej) => {
@@ -142,7 +150,7 @@ function startServer(cwd, opts = {}, cfgPath) {
   return new Promise((res, rej) => {
     const child = spawn(process.execPath, args, {
       cwd,
-      env: { ...process.env, GSD_BOARD_CONFIG_PATH: cfgPath },
+      env: { ...process.env, GSD_BOARD_CONFIG_PATH: cfgPath, ...(opts.telemetryPath ? { GSD_TOOL_TELEMETRY_PATH: opts.telemetryPath } : {}) },
       stdio: ["ignore", "pipe", "pipe"],
     });
     let out = "";
@@ -392,7 +400,8 @@ async function main() {
     // 裸临时 cwd 里跑,stdout 必须恰好是目标 JSON;spawnSync 带超时,模块死循环会被杀成非零退出 ——
     // 「不挂死」本身就是判据的一部分。
     const topoProbe = (code, timeoutMs = 10000) => {
-      const url = pathToFileURL(join(HERE, "..", "references", "phase-topo.mjs")).href;
+      // 包视角:phase-topo 留在核心(纯函数公共件),跨包相对路径与服务的 import 同构(28-02)
+      const url = pathToFileURL(join(HERE, "..", "..", "mm-gsd-loop", "references", "phase-topo.mjs")).href;
       const dir = mkdtempSync(join(tmpdir(), "mm-gsd-topo-"));
       try {
         return spawnSync(process.execPath, ["--input-type=module", "-e", `const m = await import(${JSON.stringify(url)});\n${code}`], { cwd: dir, encoding: "utf8", timeout: timeoutMs });
@@ -478,6 +487,37 @@ async function main() {
         Array.isArray(dw) && dw.length === 1 && dw[0].includes("未分类") && dw[0].includes("34") && dw[0].includes("30"),
         JSON.stringify(dw),
       );
+    }
+
+    // ㉕ 工具遥测视图(28-02 自核心 telemetry-view.selftest.mjs 搬入服务层与模板断言;纯函数半份在核心套件)
+    ok("模板含内联 <svg(零第三方图表库,守 R-06)", readFileSync(TEMPLATE, "utf8").includes("<svg"), "");
+    ok("模板含零命中文案「本项目暂无工具遥测记录」", readFileSync(TEMPLATE, "utf8").includes("本项目暂无工具遥测记录"), "");
+    {
+      const telRoot = mkdtempSync(join(tmpdir(), "mm-gsd-tel-web-"));
+      const oneFile = join(telRoot, "tools-one.jsonl");
+      const nowT = new Date();
+      const tsA = new Date(nowT.getFullYear(), nowT.getMonth(), nowT.getDate(), 2, 0, 0).toISOString();
+      writeFileSync(oneFile, JSON.stringify({ ts: tsA, cwd: pathVariant(telRoot), tool: "Bash" }) + "\n", "utf8");
+      const started = await startServer(telRoot, { telemetryPath: oneFile }, CFG_PATH);
+      const st2 = JSON.parse((await httpCall(started.port, "GET", "/api/state")).body);
+      ok("/api/state 含 telemetry 字段", !!st2.telemetry && Array.isArray(st2.telemetry.series) && !!st2.telemetry.byTool, JSON.stringify(Object.keys(st2.telemetry || {})));
+      ok(
+        "/api/state 的 telemetry.total === 1(注入文件只有一行,cwd 写成项目根变体;tsA 本地日=" + localDay(new Date(tsA)) + ")",
+        st2.telemetry.total === 1,
+        "total=" + st2.telemetry.total,
+      );
+      ok(
+        "/api/state 的 telemetry 自洽:total === series 之和且 empty 为假",
+        st2.telemetry.total === st2.telemetry.series.reduce((n, s) => n + s.count, 0) && st2.telemetry.empty === false,
+        JSON.stringify(st2.telemetry),
+      );
+      started.child.kill();
+      await new Promise((r) => {
+        if (started.child.exitCode !== null) return r();
+        started.child.once("exit", r);
+        setTimeout(r, 1500);
+      });
+      try { rmSync(telRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* 残留不算失败 */ }
     }
   } catch (e) {
     console.log(`✗ 探针异常:${e && e.stack ? e.stack : e}`);

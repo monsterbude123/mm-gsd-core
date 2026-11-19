@@ -57,8 +57,8 @@ const CONTRACTS = {
   },
   "context.md": {
     frontmatterFree: true,
-    tags: ["domain", "decisions", "specifics", "deferred"],
-    fixes: { tags: "四个标签一个都不能少:<domain>…</domain> <decisions>…</decisions> <specifics>…</specifics> <deferred>…</deferred>。deferred 空也要写上 —— 它是范围蔓延的兜底。" },
+    tags: ["domain", "decisions", "specifics", "deferred", "mining"],
+    fixes: { tags: "五个标签一个都不能少:<domain>…</domain> <decisions>…</decisions> <specifics>…</specifics> <deferred>…</deferred> <mining>…</mining>(28-07 起四问深挖;<mining> 是条件项:模板与判断认它,老项目实例没有这一节豁免)。deferred 空也要写上 —— 它是范围蔓延的兜底。" },
   },
   "summary.md": {
     keys: ["status", "commits"],
@@ -136,7 +136,18 @@ export function validateInstance(kind, name, text, fm) {
 
   if (kind === "context") {
     for (const tag of ["domain", "decisions", "specifics", "deferred"])
-      if (!has(text, new RegExp("<" + tag + ">"))) add(`缺 <${tag}> 节`, "四个标签一个都不能少;deferred 空也要写上");
+      if (!has(text, new RegExp("<" + tag + ">"))) add(`缺 <${tag}> 节`, "五个标签一个都不能少;deferred 空也要写上");
+    // <mining> 是条件项(28-07):有这一节就核四问,没有(老项目)豁免
+    if (has(text, new RegExp("<mining>"))) {
+      const blocks = text.split(/^###\s+/m).filter((b) => b.startsWith("REQ-"));
+      for (const b of blocks) {
+        const id = (b.match(/^REQ-[\w.-]+/) || ["?"])[0];
+        for (const q of ["真实需求", "谁消费", "什么时候会废", "做完长什么样"]) {
+          const re = new RegExp("^\\s*-\\s*\\*\\*" + q + "\\*\\*:\\s*\\S", "m");
+          if (!re.test(b)) add(`${id} 的 <mining> 缺 ${q} 或答案为空`, "补一行 - **" + q + "**: <答案>(四问逐条非空,D-13)");
+        }
+      }
+    }
   }
   if (kind === "summary") {
     if (!SUMMARY_STATUSES.includes(f.status)) add(`status "${f.status ?? "(缺)"}" 非法`, "改为 complete 或 halted");

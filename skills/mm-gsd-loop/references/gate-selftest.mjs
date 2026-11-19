@@ -6,7 +6,7 @@ import { validateVerification, checkTicketPremises, checkTicketLoad, checkReqCla
 import { checkDecisions, locateContexts, checkDrift, checkConclusionDrift } from "./decision-gates.mjs";
 import { ticketsCovered } from "./ticket-alive.mjs";
 import { mmGsdVersion, splitByVersion } from "./version.mjs";
-import { mkAssert, runArtifactCases, runCoverageCases, runLedgerGateCases, runPhaseHealthCases, runRouteCases, runPlanReadyCases, runPlanCheckE2ECases, runBoundaryCases, runPremiseLocateCases } from "./selftest-suite.mjs";
+import { mkAssert, runArtifactCases, runCoverageCases, runLedgerGateCases, runPhaseHealthCases, runRouteCases, runPlanReadyCases, runPlanCheckE2ECases, runBoundaryCases, runPremiseLocateCases, runWaveFromDagCases, runReviewGateCases, runConvergenceCases, runPackCases, runTelemetryViewCases, runCoreBoundaryCases, runRequirementMiningCases, runDecisionScopeCases, runWebTemplateGateCases } from "./selftest-suite.mjs";
 import { researchRequired, researchCompliant, checkResearchConsumed, checkResearchSummary } from "./research-gates.mjs";
 import { checkBatchGraph, checkTicketBudget, isFullSuite } from "./worktree-view.mjs";
 import { buildRouteBrief, pointerCard, listSkills } from "./agent-routing.mjs";
@@ -80,7 +80,7 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   eqN(dc("<decisions>\n### [D-01] reversible — 用 JWT\n### [D-02] costly — 引入 X,撤销需要 migration\n</decisions>", ["D-01", "D-02"]), 0, "标记齐全不该误伤");
   // 02-03:四种书写形态都要被「认出」—— 认不出的决策既不核销也不过可逆性门
   eqN(dc("<decisions>\n**[D-01]** 用 JWT\n</decisions>", ["D-01"]), 1, "粗体 ** 决策也要被认");
-  eqN(dc("<decisions>\n### [d-01] 用 JWT\n</decisions>", ["D-01"]), 1, "小写 ID 也要被认");
+  eqN(dc("<decisions>\n### [d-01] 用 JWT\n</decisions>", ["D-01"]), 0, "小写 ID 不算决策(28-08:只认大写方括号)");
   eqN(dc("<decisions>\n- [D-01] 用 JWT\n</decisions>", ["D-01"]), 1, "列表项决策也要被认");
   // 02-03:否定句不是举证。「不改 X」恰恰说明这条决策可逆,当成举证就把 D-03 变成仪式
   eqN(dc("<decisions>\n### [D-01] one-way — 本次不改 contract,保持现有 schema 不变\n</decisions>", ["D-01"]), 1, "「不改 contract」不算不可逆举证");
@@ -185,6 +185,15 @@ export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
   runLedgerGateCases({ eqN });
   runPhaseHealthCases({ eqN });
   runRouteCases({ eqN });
+  runWaveFromDagCases({ eqN });
+  runReviewGateCases({ eqN });
+  runConvergenceCases({ eqN });
+  runPackCases({ eqN });
+  runTelemetryViewCases({ eqN, eqArr });
+  runCoreBoundaryCases({ eqN });
+  runRequirementMiningCases({ eqN });
+  runDecisionScopeCases({ eqN });
+  runWebTemplateGateCases({ eqN });
   // 模板块必须认 CRLF:Git for Windows 的系统级 core.autocrlf=true(不在仓库里)让新克隆全是 CRLF
   // —— 只认 \n 的正则会让六份模板在每个 Windows 用户机器上一起假红。
   eqN(extractTemplateBlock("```markdown\r\nx\r\n```") !== null, true, "CRLF 模板也抽得出 ```markdown 块");

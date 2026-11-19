@@ -25,10 +25,14 @@ description: "极简 GSD 讨论(决策捕获,灵魂环节):思考伙伴而非采
 
 ## 需求全量落盘
 
-- 用户本次提的**每一条需求(含隐含的)**都要落成 REQ-N 条目,**追加**进 `.planning/REQUIREMENTS.md`(不覆盖已有条目),格式:`- REQ-N: <需求一句话>`,一行一条。没有 REQUIREMENTS.md 时由 discuss 创建。
+- **每条诉求都要有归宿**:**落成 REQ-N 条目**(归宿是需求的)、**进候选纪律**(归宿是纪律的)、**记 deferred**(明确暂不做的)三者选一,不许无归宿。归宿是 REQ 的**追加**进 `.planning/REQUIREMENTS.md`(不覆盖已有条目),格式:`- REQ-N: <需求一句话>`,一行一条。没有 REQUIREMENTS.md 时由 discuss 创建。
 - 分工:**REQ = 要达成什么**(用户说的,REQUIREMENTS.md 承载);**D-NN = 怎么定**(拍板定的,CONTEXT 承载)。不要把 REQ 写进 CONTEXT,也不要把「要不要拍板」的事项写成 REQ —— 那是 D-NN 的活。
 - 漏落的代价:REQ 不在清单里,后面整条链路(票 covers 认领 → checkReqCoverage 覆盖门 → verify 预审)都对不上它。落盘时自检一遍:还有没有"用户提了、REQ 清单里没有"的口子。
 - REQ-N 落盘后进确认门复述清单(见下「确认门」)—— 复述以 REQUIREMENTS.md 落盘内容为准,不在会话里另存一份。
+
+## 深挖需求(落 REQ 前必做,28-07/D-13)
+
+每条用户诉求写成 REQ 之前先答**四问** —— ①真实需求:背后那个用户动作是什么;②谁消费:谁在什么时候看它或用它;③什么时候会废:什么情况下这东西没人用;④做完长什么样:可观察的结果。答案写进 `.planning/<NN>-CONTEXT.md` 的 `<mining>` 节,每条 REQ 一块,四个标签行:`- **真实需求**: ` / `- **谁消费**: ` / `- **什么时候会废**: ` / `- **做完长什么样**: `,逐条非空。机器门 `checkRequirementMining` 在 `--plan` 时核对,缺一问判红;豁免:没有 `<mining>` 节的老项目照旧(baseline 与 req-ledger 已处置的 REQ 不判)。
 
 ## 产出 `.planning/<NN>-CONTEXT.md`(模板见 mm-gsd-plan/templates/context.md;本地不入库)
 
@@ -51,16 +55,28 @@ description: "极简 GSD 讨论(决策捕获,灵魂环节):思考伙伴而非采
 
 ## 用户批注消化(开头必做)
 
-讨论开始前先读 `.planning/annotations.json`(Web 看板落盘的用户审核):**status=open 的批注按 type 消化**,消化后把该条 status 改 digested —— 不消化,检查器默认模式会一直黄提醒「N 条用户批注待消化」。
+讨论开始前先读 `.planning/annotations.json`(用户落盘的审核意见);`.planning/annotations.json` 不存在 = 没有待消化批注，直接继续。**status=open 的批注按 type 消化**,消化后把该条 status 改 digested —— 不消化,检查器默认模式会一直黄提醒「N 条用户批注待消化」。
 
 - **需求遗漏** → 按批注内容草拟 REQ 追加进 REQUIREMENTS.md,走下面的确认门复述;
 - **方向不对** → 作为本次讨论的输入重开对应决策,推翻的 D-NN 在 CONTEXT 里改写并注明日期;
 - **备注** → 记录参考(进 CONTEXT 的 specifics),不改决策;
 - **验收不过** → 不在讨论期修,走 mm-gsd-loop 的「点修」分流(不新增 REQ + 不改 D-NN + ≤5 文件 → R 票)。
 
+## 批注分流表(diagnose / repair / requirement / note)
+
+一键批注(作业型)带 action 字段,消费端按 action 分流到四条去处:
+
+- **diagnose** → 诊断(未收口 phase 的排查;已交付 phase 的细节走 repair);
+- **repair** → 点修 R 票(照 mm-gsd-loop 的「点修」节);
+- **requirement** → 补 REQ(草拟后走确认门);
+- **note** → 记参考(进 CONTEXT 的 specifics)。
+
+没有 action 的老批注仍按 type 消化:需求遗漏→补 REQ / 方向不对→重开决策 / 验收不过→点修分流 / 备注→记参考。
+消化完把结论摘要回填到该批注的 note 字段,并把 status 改成 digested。
+
 ## 确认门
 
-- REQUIREMENTS.md(REQ 清单)与 `<NN>-CONTEXT.md`(D-NN)两份工件**都落盘后**,把 **REQ 清单(每条一行)+ 每条决策一句话**复述给用户;**用户确认后才准调用 mm-gsd-plan**(D-06)。不复述全文 —— REQ 一行 + 决策一句话,长文用户不读。
+- REQUIREMENTS.md(REQ 清单)与 `<NN>-CONTEXT.md`(D-NN)两份工件**都落盘后**,把 **REQ 清单(每条一行)+ 每条决策一句话**复述给用户;**用户确认后才准调用 mm-gsd-plan**(D-06)。复述时要把**深挖结论一起复述**(四问答案跟着 REQ 走),只复述需求原话不算过。不复述全文 —— REQ 一行 + 决策一句话,长文用户不读。
 - 用户纠正 → 修订工件后再确认;确认没过,收尾不算完成。
 - fast 通道(不建 REQ/CONTEXT)免确认 —— 没有工件就没有要确认的账。
 
