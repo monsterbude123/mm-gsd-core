@@ -12,335 +12,406 @@
 <meta name="color-scheme" content="dark light">
 <title>mm-gsd 过程看板</title>
 <style>
+/* ═══ 设计令牌 ═══
+     一屏一件事:层级靠「标题线 + 面板边框」,不靠卡片堆叠。
+     颜色只标状态(绿=达成 琥珀=待办 红=欠账 蓝=信息),其余全是灰阶。 */
   :root {
-    --bg: #000000; --bg-glow: rgba(34, 197, 94, .06);
-    --card: #0A1018; --card2: #0E1724; --muted: #131D2B; --inset: #0A1220;
-    --border: #1E2A3E; --border-2: #2E3D57;
-    --fg: #F1F5F9; --fg-mut: #A9B6CC; --fg-dim: #78879F;
-    --acc: #22C55E; --acc-ink: #052E16; --acc-bg: rgba(34, 197, 94, .13);
-    --amb: #FBBF24; --amb-bg: rgba(251, 191, 36, .12);
-    --red: #F87171; --red-bg: rgba(248, 113, 113, .12);
-    --ink: #60A5FA; --ink-bg: rgba(96, 165, 250, .13);
-    --ring: #22C55E; --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
-    --r: 16px; --r-sm: 10px;
-    --shadow: 0 10px 30px rgb(0 0 0 / .6);
-    --rail-w: 76px;
+    color-scheme: dark;
+    --bg: #05070C;
+    --panel: #0B111B;
+    --panel-2: #0E1622;
+    --inset: #070B12;
+    --line: #1A2331;
+    --line-2: #2A3749;
+    --fg: #E9EFF7;
+    --fg-2: #A3B2C6;
+    --fg-3: #6E7E93;
+    --acc: #3DD68C;
+    --acc-ink: #052A14;
+    --acc-soft: rgba(61, 214, 140, .14);
+    --amb: #F0B23E;
+    --amb-soft: rgba(240, 178, 62, .14);
+    --red: #F2726B;
+    --red-soft: rgba(242, 114, 107, .14);
+    --blue: #6BA8F5;
+    --blue-soft: rgba(107, 168, 245, .14);
+    --ring: #3DD68C;
+    --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+    --r: 10px;
+    --rail: 92px;
+    --shadow: 0 16px 44px rgb(0 0 0 / .55);
   }
   @media (prefers-color-scheme: light) {
     :root:not([data-theme="dark"]) {
-      --bg: #EEF2F7; --bg-glow: rgba(34, 197, 94, .06);
-      --card: #FFFFFF; --card2: #F7FAFD; --muted: #E8EEF5; --inset: #EDF2F8;
-      --border: #D7DFEA; --border-2: #B9C6D8;
-      --fg: #0F172A; --fg-mut: #3D4C63; --fg-dim: #64748B;
-      --acc: #16A34A; --acc-ink: #FFFFFF; --acc-bg: rgba(22, 163, 74, .12);
-      --amb: #B45309; --amb-bg: rgba(180, 83, 9, .1);
-      --red: #DC2626; --red-bg: rgba(220, 38, 38, .09);
-      --ink: #2563EB; --ink-bg: rgba(37, 99, 235, .1);
-      --shadow: 0 8px 22px rgb(15 23 42 / .08);
+      color-scheme: light;
+      --bg: #F3F6FA; --panel: #FFFFFF; --panel-2: #F7F9FC; --inset: #EFF3F8;
+      --line: #E1E8F0; --line-2: #C6D2E0;
+      --fg: #0F172A; --fg-2: #475569; --fg-3: #7B8A9E;
+      --acc: #16A34A; --acc-ink: #FFFFFF; --acc-soft: rgba(22, 163, 74, .10);
+      --amb: #B45309; --amb-soft: rgba(180, 83, 9, .10);
+      --red: #DC2626; --red-soft: rgba(220, 38, 38, .08);
+      --blue: #2563EB; --blue-soft: rgba(37, 99, 235, .09);
+      --shadow: 0 12px 32px rgb(15 23 42 / .10);
     }
   }
   :root[data-theme="light"] {
-    --bg: #EEF2F7; --bg-glow: rgba(34, 197, 94, .06);
-    --card: #FFFFFF; --card2: #F7FAFD; --muted: #E8EEF5; --inset: #EDF2F8;
-    --border: #D7DFEA; --border-2: #B9C6D8;
-    --fg: #0F172A; --fg-mut: #3D4C63; --fg-dim: #64748B;
-    --acc: #16A34A; --acc-ink: #FFFFFF; --acc-bg: rgba(22, 163, 74, .12);
-    --amb: #B45309; --amb-bg: rgba(180, 83, 9, .1);
-    --red: #DC2626; --red-bg: rgba(220, 38, 38, .09);
-    --ink: #2563EB; --ink-bg: rgba(37, 99, 235, .1);
-    --shadow: 0 8px 22px rgb(15 23 42 / .08);
+    color-scheme: light;
+    --bg: #F3F6FA; --panel: #FFFFFF; --panel-2: #F7F9FC; --inset: #EFF3F8;
+    --line: #E1E8F0; --line-2: #C6D2E0;
+    --fg: #0F172A; --fg-2: #475569; --fg-3: #7B8A9E;
+    --acc: #16A34A; --acc-ink: #FFFFFF; --acc-soft: rgba(22, 163, 74, .10);
+    --amb: #B45309; --amb-soft: rgba(180, 83, 9, .10);
+    --red: #DC2626; --red-soft: rgba(220, 38, 38, .08);
+    --blue: #2563EB; --blue-soft: rgba(37, 99, 235, .09);
+    --shadow: 0 12px 32px rgb(15 23 42 / .10);
   }
   * { box-sizing: border-box; }
-  /* 应用壳:整页不滚,框架恒定 */
   html, body { height: 100%; height: 100dvh; }
   body {
     margin: 0; overflow: hidden; display: flex;
-    background:
-      radial-gradient(900px 500px at 85% -10%, var(--bg-glow), transparent 60%),
-      radial-gradient(700px 420px at -10% 110%, var(--ink-bg), transparent 55%),
-      var(--bg);
-    color: var(--fg); font: 13.5px/1.55 "Segoe UI", system-ui, "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--fg);
+    font: 13px/1.55 "Segoe UI", system-ui, "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
   button, select, input, textarea { font: inherit; color: inherit; }
   button { cursor: pointer; }
   :is(button, select, input, textarea, summary, a):focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; border-radius: 6px; }
   @media (prefers-reduced-motion: no-preference) {
-    .tile, .kpi, .railbtn { transition: border-color .18s ease, background-color .18s ease, transform .18s ease, box-shadow .18s ease; }
-    .pill, .dot, .chip { transition: background-color .15s ease, color .15s ease; }
-    .dpanel { animation: dslide .2s cubic-bezier(.2, .8, .2, 1); }
-    @keyframes dslide { from { transform: translateX(32px); opacity: .4; } }
+    .railbtn, .ghost, .primary, .kpibar { transition: background-color .15s ease, border-color .15s ease, color .15s ease; }
   }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .spacer { flex: 1; }
 
-  /* ── 左侧图标导航 rail ── */
-  .rail { flex: none; width: var(--rail-w); display: flex; flex-direction: column; align-items: center;
-    gap: 6px; padding: 14px 0 12px; border-right: 1px solid var(--border);
-    background: color-mix(in srgb, var(--card) 55%, transparent); }
-  .rail-logo { width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center;
-    background: var(--acc-bg); color: var(--acc); font-family: var(--mono); font-weight: 700; font-size: 15px;
-    border: 1px solid color-mix(in srgb, var(--acc) 35%, transparent); margin-bottom: 10px; }
-  .railnav { display: flex; flex-direction: column; gap: 4px; }
-  .railbtn { width: 58px; padding: 7px 0 6px; border: 1px solid transparent; border-radius: 12px;
-    background: transparent; color: var(--fg-dim); display: grid; justify-items: center; gap: 3px; }
-  .railbtn svg { width: 20px; height: 20px; }
-  .railbtn span { font-size: 10.5px; letter-spacing: .04em; }
-  .railbtn:hover { color: var(--fg); background: var(--muted); }
-  .railbtn.active { color: var(--acc); background: var(--acc-bg); border-color: color-mix(in srgb, var(--acc) 30%, transparent); }
+  /* ═══ 左侧导航 rail ═══ */
+  .rail { flex: none; width: var(--rail); display: flex; flex-direction: column; align-items: center;
+    gap: 2px; padding: 16px 0 14px; border-right: 1px solid var(--line); background: var(--panel); }
+  .rail-logo { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center;
+    background: var(--acc-soft); color: var(--acc); font-family: var(--mono); font-weight: 700; font-size: 14px;
+    margin-bottom: 16px; }
+  .railnav { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .railbtn { width: 76px; padding: 8px 0 7px; border: 1px solid transparent; border-radius: var(--r);
+    background: transparent; color: var(--fg-3); display: grid; justify-items: center; gap: 4px; }
+  .railbtn svg { width: 19px; height: 19px; }
+  .railbtn span { font-size: 11px; }
+  .railbtn:hover { color: var(--fg-2); background: var(--panel-2); }
+  .railbtn.active { color: var(--acc); background: var(--acc-soft); box-shadow: inset 2px 0 0 var(--acc); }
   .rail-sp { flex: 1; }
   .railbtn[aria-pressed="true"] { color: var(--amb); }
 
-  /* ── 右侧框架:顶栏 + 内容区 ── */
+  /* ═══ 顶栏 ═══ */
   .frame { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-  .topbar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px;
-    padding: 12px 22px; border-bottom: 1px solid var(--border);
-    background: color-mix(in srgb, var(--card) 72%, transparent); backdrop-filter: blur(10px); }
-  .brand { font-weight: 650; font-size: 15px; letter-spacing: .02em; display: flex; align-items: baseline; gap: 8px; margin-right: 6px; }
-  .brand .sub { color: var(--fg-dim); font-weight: 400; font-size: 12.5px; }
-  .chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border);
-    border-radius: 999px; padding: 3px 11px; font-size: 12px; background: color-mix(in srgb, var(--muted) 70%, transparent); white-space: nowrap; }
-  .chip b { font-weight: 600; font-family: var(--mono); }
-  .chip.warn { color: var(--amb); border-color: color-mix(in srgb, var(--amb) 45%, var(--border)); background: var(--amb-bg); }
-  .chip.warn:hover { border-color: var(--amb); }
-  .spacer { flex: 1; }
-  #live { font-family: var(--mono); font-size: 12px; color: var(--fg-dim); display: inline-flex; align-items: center; gap: 6px; }
-  #live .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--acc); }
+  .topbar { flex: none; height: 52px; display: flex; align-items: center; gap: 8px;
+    padding: 0 24px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  .brand { font-weight: 600; font-size: 14px; display: flex; align-items: baseline; gap: 8px; margin-right: 6px; }
+  .brand .sub { color: var(--fg-3); font-weight: 400; font-size: 12.5px; }
+  .chip { display: inline-flex; align-items: baseline; gap: 6px; border: 1px solid var(--line);
+    border-radius: 7px; padding: 3px 9px; font-size: 12px; color: var(--fg-3); background: var(--panel-2); white-space: nowrap; }
+  .chip b { color: var(--fg); font-weight: 600; font-family: var(--mono); font-size: 12px; }
+  .chip.warn { color: var(--amb); border-color: color-mix(in srgb, var(--amb) 38%, var(--line)); background: var(--amb-soft); }
+  .chip.warn b { color: var(--amb); }
+  .sel { background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; padding: 4px 9px; font-size: 12px; max-width: 200px; color: var(--fg-2); }
+  #live { font-family: var(--mono); font-size: 11.5px; color: var(--fg-3); display: inline-flex; align-items: center; gap: 6px; }
+  #live .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--acc); }
   #live.stale .dot { background: var(--amb); }
-  .sel { background: color-mix(in srgb, var(--muted) 70%, transparent); border: 1px solid var(--border);
-    border-radius: 999px; padding: 3px 11px; font-size: 12px; max-width: 210px; }
 
-  /* ── 内容区(唯一内部滚动面;总览视图下锁死,画布撑满一屏)── */
+  /* ═══ 内容区与视图骨架 ═══ */
   .content { flex: 1; min-height: 0; display: flex; flex-direction: column;
-    overflow-y: auto; overscroll-behavior: contain; padding: 18px 22px 26px; }
+    overflow-y: auto; overscroll-behavior: contain; padding: 20px 24px 24px; }
+  .view { width: 100%; max-width: 1480px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+  /* 作者样式会压过 UA 的 [hidden]{display:none} —— 视图隐藏必须显式写死,否则每个视图都顶着总览(B2) */
+  .view[hidden] { display: none !important; }
+  .view-fit { flex: 1 1 auto; min-height: 0; max-width: none; }
   .content:has(#view-overview:not([hidden])) { overflow: hidden; }
-  .view { max-width: 1360px; margin: 0 auto; }
-  h2 { font-size: 12px; font-weight: 650; letter-spacing: .1em; text-transform: uppercase;
-    color: var(--fg-dim); margin: 4px 0 10px; display: flex; align-items: baseline; gap: 10px; }
-  h2 small { font-size: 12px; letter-spacing: 0; text-transform: none; font-weight: 400; }
 
-  /* ── Bento 网格 ── */
-  .bento { display: grid; grid-template-columns: repeat(12, 1fr); gap: 12px; }
-  .tile { background: linear-gradient(180deg, var(--card), var(--card2)); border: 1px solid var(--border);
-    border-radius: var(--r); padding: 14px 16px; min-width: 0; }
-  .tile-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
-  .tile-head h3 { margin: 0; font-size: 12px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; color: var(--fg-dim); }
-  .tile-head .stat { font-size: 12px; color: var(--fg-dim); font-family: var(--mono); }
-  @media (prefers-reduced-motion: no-preference) {
-    .tile:hover, .kpi:hover { transform: translateY(-1px); }
-  }
-  .s2 { grid-column: span 2; } .s3 { grid-column: span 3; } .s4 { grid-column: span 4; } .s6 { grid-column: span 6; } .s12 { grid-column: span 12; }
-  @media (max-width: 1240px) { .s2 { grid-column: span 3; } .s3 { grid-column: span 6; } .s4 { grid-column: span 6; } .s6 { grid-column: span 12; } }
-  @media (max-width: 760px) { .bento { grid-template-columns: repeat(2, 1fr); }
-    .s2, .s3, .s4, .s6, .s12 { grid-column: span 2; } }
-  .kpi .n { white-space: nowrap; }
+  /* 每个视图统一的头部:标题 + 职责说明 + 右侧动作;下面一条线把头部和内容分开 */
+  .vhead { flex: none; display: flex; align-items: flex-end; gap: 16px; padding-bottom: 12px;
+    border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 6;
+    background: var(--bg); padding-top: 20px; margin-top: -20px; }
+  .vhead h1 { margin: 0; font-size: 17px; font-weight: 600; line-height: 1.25; }
+  .vsub { margin: 3px 0 0; font-size: 12.5px; color: var(--fg-3); }
+  .vtitles { min-width: 0; }
+  .vactions { display: flex; align-items: center; gap: 8px; flex: none; }
+  .vbody { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 16px; }
+  .split { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; flex: 1 1 auto; min-height: 0; }
+  .split > * { min-width: 0; min-height: 0; }
+  .split.wide-side { grid-template-columns: minmax(0, 1fr) 380px; }
+  /* 表单短、记录长 —— 批注视图反过来:窄栏放表单,宽栏放记录 */
+  .split.narrow-side { grid-template-columns: 340px minmax(0, 1fr); }
 
-  /* ── KPI 卡 ── */
-  .kpi { text-align: left; display: block; width: 100%; position: relative; overflow: hidden; }
-  .kpi .n, .kpi .t, .kpi .bar { display: block; }
-  .kpi .n { font-family: var(--mono); font-size: 27px; font-weight: 600; line-height: 1.15; letter-spacing: -.02em; }
-  .kpi .n small { font-size: 13px; color: var(--fg-dim); font-weight: 400; letter-spacing: 0; }
-  .kpi .t { font-size: 11.5px; color: var(--fg-mut); margin-top: 3px; }
-  .kpi.warn .n { color: var(--amb); } .kpi.bad .n { color: var(--red); }
-  .kpi .bar { height: 4px; border-radius: 2px; background: var(--muted); margin-top: 9px; overflow: hidden; }
-  .kpi .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--acc), color-mix(in srgb, var(--acc) 55%, var(--ink))); }
-  .kpi:hover { border-color: color-mix(in srgb, var(--acc) 40%, var(--border)); }
+  /* 面板:整个视图只留一个主面板,其余用线分隔 */
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; }
+  .panel.flush { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+  /* 遥测两块面板要撑满视图高度,否则页面下半截空一大片 */
+  #view-telemetry { flex: 1 1 auto; min-height: 0; }
+  #tel-chart, #tel-tools { display: flex; flex-direction: column; min-height: 0; }
+  #telChart { flex: 1 1 auto; min-height: 0; display: flex; align-items: flex-start; }
+  #telTools { flex: 1 1 auto; overflow: auto; }
+  .side { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r);
+    padding: 16px; overflow: auto; }
+  .sechead { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+  .sechead h3 { margin: 0; font-size: 12.5px; font-weight: 600; color: var(--fg-2); }
+  .sechead .cnt { font-family: var(--mono); font-size: 11.5px; color: var(--fg-3); }
+  .hr { height: 1px; background: var(--line); margin: 16px 0; }
+  .empty { color: var(--fg-3); font-size: 12.5px; padding: 14px 2px; }
+  .hint { font-size: 12px; color: var(--fg-3); }
 
-  /* ── pill / 徽标 ── */
-  .pill { display: inline-block; border-radius: 999px; padding: 1px 9px; font-size: 11.5px; font-weight: 550; }
-  .pill.ship { background: var(--acc-bg); color: var(--acc); }
-  .pill.warn { background: var(--amb-bg); color: var(--amb); }
-  .pill.rep  { background: var(--red-bg); color: var(--red); }
-  .pill.info { background: var(--ink-bg); color: var(--ink); }
-  .pill.mut  { background: var(--muted); color: var(--fg-dim); }
-  .tk { font-family: var(--mono); font-size: 11.5px; background: var(--muted); border: 1px solid var(--border);
-    border-radius: 6px; padding: 1px 7px; margin-right: 4px; color: var(--fg-mut); }
-  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; }
-  .dot.ok { background: var(--acc); } .dot.miss { background: var(--red); } .dot.base { background: var(--fg-dim); }
-  .reqtext { color: var(--fg-mut); }
-
-  /* ── 表格 ── */
-  .tblwrap { background: color-mix(in srgb, var(--card) 80%, transparent); border: 1px solid var(--border);
-    border-radius: 14px; overflow: auto; max-height: 44vh; overscroll-behavior: contain; }
-  .tblwrap table { border: 0; border-radius: 0; background: transparent; }
-  .tblwrap thead th { position: sticky; top: 0; z-index: 1; background: var(--card2); }
-  table { width: 100%; border-collapse: collapse; }
-  th, td { text-align: left; padding: 8px 14px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: top; }
-  th { font-size: 11.5px; color: var(--fg-dim); font-weight: 600; letter-spacing: .04em; }
-  tr:last-child td { border-bottom: 0; }
-  tbody tr:hover { background: color-mix(in srgb, var(--muted) 55%, transparent); }
-  tr.miss { background: color-mix(in srgb, var(--red-bg) 45%, transparent); }
-  #phOverview tbody tr { cursor: pointer; }
-  .sdot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--fg-dim); margin-right: 4px; }
+  /* ═══ 按钮 / 徽标 / 标记 ═══ */
+  .ghost { border: 1px solid var(--line-2); background: var(--panel-2); color: var(--fg-2);
+    border-radius: 7px; padding: 4px 11px; font-size: 12px; white-space: nowrap; }
+  .ghost:hover { color: var(--fg); border-color: var(--fg-3); }
+  .primary { background: var(--acc); color: var(--acc-ink); border: 0; border-radius: 7px;
+    padding: 6px 16px; font-weight: 600; font-size: 12.5px; }
+  .primary:hover { filter: brightness(1.06); }
+  .copybtn.copied { color: var(--acc); border-color: var(--acc); }
+  .pill { display: inline-block; border-radius: 5px; padding: 1px 7px; font-size: 11px; font-weight: 600; }
+  .pill.ship { background: var(--acc-soft); color: var(--acc); }
+  .pill.warn { background: var(--amb-soft); color: var(--amb); }
+  .pill.rep { background: var(--red-soft); color: var(--red); }
+  .pill.info { background: var(--blue-soft); color: var(--blue); }
+  .pill.mut { background: var(--panel-2); color: var(--fg-3); }
+  .tk { font-family: var(--mono); font-size: 11px; background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 5px; padding: 1px 6px; margin: 0 4px 3px 0; color: var(--fg-2); display: inline-block; }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; }
+  .dot.ok { background: var(--acc); } .dot.miss { background: var(--red); } .dot.base { background: var(--fg-3); }
+  .sdot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--fg-3); margin-right: 4px; }
   .sdot.on { background: var(--acc); border-color: var(--acc); }
   .sdot.warn { background: var(--amb); border-color: var(--amb); }
-  .tools { display: flex; gap: 8px; margin-bottom: 8px; }
-  .tools input { flex: 1; max-width: 340px; background: var(--inset); border: 1px solid var(--border);
-    border-radius: 10px; padding: 6px 12px; }
-  .hint { font-size: 12px; color: var(--fg-dim); }
-  .fbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
-  .fbar select, .annform select { background: var(--inset); border: 1px solid var(--border); border-radius: 9px; padding: 4px 9px; font-size: 12.5px; }
-  .empty { color: var(--fg-dim); font-size: 13px; padding: 12px 4px; }
-  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .reqtext { color: var(--fg-2); }
 
-  /* ── 生命周期五步 ── */
-  .steps { display: flex; align-items: center; gap: 4px; margin: 12px 0 8px; }
-  .step { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1; }
-  .step i { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--fg-dim); }
-  .step.on i { background: var(--acc); border-color: var(--acc); }
-  .step.warn i { background: var(--amb); border-color: var(--amb); }
-  .step span { font-size: 11px; color: var(--fg-dim); }
-  .step.on span, .step.warn span { color: var(--fg-mut); }
-  .steps .ln { flex: 1; height: 1px; background: var(--border); margin-bottom: 16px; }
-  .meta { font-size: 12px; color: var(--fg-dim); display: flex; flex-wrap: wrap; gap: 4px 12px; }
-  details { margin-top: 8px; }
-  summary { cursor: pointer; font-size: 12px; color: var(--fg-mut); }
-  summary:hover { color: var(--fg); }
-  .ctx { white-space: pre-wrap; font-size: 12px; color: var(--fg-mut); background: var(--inset);
-    border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin: 8px 0; max-height: 240px; overflow: auto; }
-  .cardfoot { display: flex; justify-content: flex-end; margin-top: 8px; }
-  /* 排查提示词:按 phase 当前状态现生成的一段指令,点复制直接丢给 agent */
-  .promptbox { margin-top: 12px; border: 1px solid var(--border); border-radius: var(--r);
-    background: var(--inset); overflow: hidden; }
-  .promptbox .ph-head { display: flex; align-items: center; justify-content: space-between; gap: 10px;
-    padding: 8px 12px; border-bottom: 1px solid var(--border); }
-  .promptbox .ph-head span { font-size: 11.5px; color: var(--fg-dim); font-weight: 600; letter-spacing: .04em; }
-  .prompttext { margin: 0; padding: 10px 12px; font-family: var(--mono); font-size: 11.5px;
-    line-height: 1.55; color: var(--fg-mut); white-space: pre-wrap; word-break: break-word;
-    max-height: 260px; overflow: auto; }
-  .copybtn.copied { color: var(--acc); border-color: var(--acc); }
-  .ghost { border: 1px solid var(--border); background: transparent; border-radius: 9px; padding: 3px 12px;
-    font-size: 12px; color: var(--fg-mut); white-space: nowrap; }
-  .ghost:hover { color: var(--fg); border-color: var(--fg-dim); }
-  .primary { background: var(--acc); color: var(--acc-ink); border: 0; border-radius: 10px; padding: 6px 18px; font-weight: 600; }
-  .primary:hover { filter: brightness(1.08); }
+  /* ═══ 表格 ═══ */
+  .tblwrap { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); overflow: auto; }
+  .tblwrap table { border: 0; background: transparent; }
+  table { width: 100%; border-collapse: collapse; }
+  thead th { position: sticky; top: 0; z-index: 1; background: var(--panel-2); color: var(--fg-3);
+    font-size: 11.5px; font-weight: 600; text-align: left; padding: 8px 14px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  td { padding: 9px 14px; border-bottom: 1px solid var(--line); font-size: 13px; vertical-align: top; }
+  tbody tr:hover { background: var(--panel-2); }
+  tr:last-child td { border-bottom: 0; }
+  tr.miss { background: var(--red-soft); }
+  tr.pick { background: var(--acc-soft); }
+  tr.pick td { border-bottom-color: color-mix(in srgb, var(--acc) 25%, var(--line)); }
+  #phOverview tbody tr { cursor: pointer; }
 
-  /* ── 欠账 / 面板族 ── */
-  .debt { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; align-items: start; }
-  .debtsec { background: linear-gradient(180deg, var(--card), var(--card2)); border: 1px solid var(--border);
-    border-radius: var(--r); padding: 14px 16px; }
-  .debtsec > h3 { margin: 0 0 10px; font-size: 12px; color: var(--fg-dim); font-weight: 650;
-    letter-spacing: .08em; text-transform: uppercase; display: flex; align-items: baseline; gap: 8px; }
-  .debtsec > h3 .cnt { font-family: var(--mono); font-size: 12px; color: var(--fg-mut); font-weight: 400; }
-  .debtsec.wide { grid-column: 1 / -1; }
-  .debtsum { display: grid; gap: 7px; }
-  .drow { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
-  .drow .dtxt { flex: 1 1 160px; min-width: 0; font-size: 13px; }
-  .drow .dmut { font-family: var(--mono); font-size: 11px; color: var(--fg-dim); text-align: right; }
-  #debt-deferred .dscroll { max-height: 320px; overflow: auto; }
-  #debt-deferred table { table-layout: fixed; }
-  #debt-deferred thead th { position: sticky; top: 0; z-index: 1; background: var(--card2); }
-  #debt-deferred th, #debt-deferred td { font-size: 12px; padding: 5px 10px; }
-  #debt-deferred th:nth-child(1), #debt-deferred td:nth-child(1) { width: 34%; }
-  #debt-deferred th:nth-child(2), #debt-deferred td:nth-child(2) { width: 8%; }
-  #debt-deferred th:nth-child(3), #debt-deferred td:nth-child(3) { width: 30%; }
-  #debt-deferred th:nth-child(4), #debt-deferred td:nth-child(4) { width: 14%; }
-  #debt-deferred th:nth-child(5), #debt-deferred td:nth-child(5) { width: 14%; }
-  #debt-deferred td:last-child { font-family: var(--mono); font-size: 11px; color: var(--fg-dim); }
-  #debt-deferred .clip { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
-  #debt-parked summary { font-size: 12px; color: var(--fg-dim); font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
-  #debt-parked[open] > summary { margin-bottom: 8px; }
-  .isslist { display: grid; gap: 8px; max-height: 46vh; overflow: auto; overscroll-behavior: contain; }
-  .iss { display: flex; gap: 10px; align-items: center; padding: 9px 14px; }
-  .iss .itxt { flex: 1; font-size: 13px; }
-  .iss .mutd { font-family: var(--mono); font-size: 11px; color: var(--fg-dim); }
+  /* REQ 清单:四列固定宽 —— 自动列宽会把「认领票」挤成一列竖排,行高涨到 170px */
+  #reqs { table-layout: fixed; }
+  #reqs th:nth-child(1), #reqs td:nth-child(1) { width: 156px; }
+  #reqs th:nth-child(2), #reqs td:nth-child(2) { width: auto; }
+  #reqs th:nth-child(3), #reqs td:nth-child(3) { width: 232px; }
+  #reqs th:nth-child(4), #reqs td:nth-child(4) { width: 156px; }
+  #reqs td { vertical-align: middle; }
+  #reqs td:first-child { white-space: nowrap; }
+  #reqs .claimed { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; }
+  #reqs .rowbtns { display: flex; gap: 6px; }
+  .tools { display: flex; gap: 8px; align-items: center; }
+  .tools input, .fbar select, .annform select { background: var(--inset); border: 1px solid var(--line);
+    border-radius: 7px; padding: 5px 10px; font-size: 12.5px; color: var(--fg); }
+  .tools input { width: 260px; }
+  .fbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 
-  /* ── 批注 ── */
-  .annbox { background: linear-gradient(180deg, var(--card), var(--card2)); border: 1px solid var(--border);
-    border-radius: var(--r); padding: 16px; }
-  .annform { display: grid; gap: 9px; }
-  .annform .row { display: flex; gap: 8px; flex-wrap: wrap; }
-  .annform textarea { width: 100%; min-height: 64px; resize: vertical; background: var(--inset);
-    border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; }
-  .annform .go { display: flex; align-items: center; gap: 12px; }
-  .annform .msg { font-size: 12px; color: var(--fg-dim); min-height: 1em; }
-  .annform .msg.err { color: var(--red); }
-  .annlist { margin-top: 14px; display: grid; gap: 7px; max-height: 46vh; overflow: auto; overscroll-behavior: contain; }
-  .ann { display: flex; gap: 10px; align-items: flex-start; background: var(--inset); border-left: 3px solid var(--border);
-    border-radius: 10px; padding: 8px 12px; }
-  .ann.open { border-left-color: var(--amb); }
-  .ann.digested { border-left-color: var(--acc); opacity: .74; }
-  .ann .who { font-size: 12px; white-space: nowrap; }
-  .ann .txt { flex: 1; font-size: 13px; }
-  .ann .when { font-family: var(--mono); font-size: 11px; color: var(--fg-dim); white-space: nowrap; }
-
-  /* ── 遥测迷你图 ── */
-  .telsvg { display: block; width: 100%; height: auto; }
-  .telsvg .tbar { fill: var(--ink); }
-  .telsvg .tbar:hover { fill: var(--acc); }
-  .telsvg .taxis { stroke: var(--border); stroke-width: 1; }
-  .telsvg .tlbl { fill: var(--fg-dim); font-size: 10px; }
-  .tprog { flex: 1; height: 6px; border-radius: 3px; background: var(--muted); overflow: hidden; }
-  .tprog i { display: block; height: 100%; background: var(--ink); }
-
-  /* ── 依赖拓扑:canvas 主导(蛇形布局 + 鼠标照亮 + 选中边缘流光),画布撑满不滚 ── */
-  .topo { position: relative; flex: 1; min-height: 0; }
-  .topo canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-  .board-hint { flex: none; font-size: 11.5px; color: var(--fg-dim); margin-top: 9px; }
-
-  /* ── 总览一屏:KPI 行固定 + 画布板撑满;phases 表收进底部抽屉(整页无滚动)── */
-  .view { flex: none; width: 100%; max-width: 1360px; margin: 0 auto; }
-  .view-fit { flex: 1 1 auto; min-height: 0; max-width: none; display: flex; flex-direction: column; gap: 12px; }
-  .content:has(#view-overview:not([hidden])) { overflow: hidden; }
-  .kpis6 { flex: none; display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-top: 10px; }
-  .kpis6[hidden] { display: none; }
-  /* 指标条:折叠态只占一行,展开才见六张大卡(用户:这几个很占用视线) */
+  /* ═══ 指标条(折叠一行)/ 六张卡(展开) ═══ */
   .kpiwrap { flex: none; }
-  .kpibar { width: 100%; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-    background: var(--card); border: 1px solid var(--border-2); border-radius: var(--r-sm);
-    padding: 8px 12px; font: inherit; color: var(--fg-mut); text-align: left; }
-  .kpibar:hover { border-color: color-mix(in srgb, var(--acc) 35%, var(--border-2)); }
-  .kpibar .kl { flex: none; font-size: 10.5px; font-weight: 700; letter-spacing: .1em;
-    text-transform: uppercase; color: var(--fg-dim); }
-  .kpibar .kchips { flex: 1; min-width: 0; display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-  .kpibar .kc { font-size: 12px; color: var(--fg-dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .kpibar .kc b { color: var(--fg-mut); font-weight: 600; font-family: var(--mono); }
+  .kpibar { width: 100%; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--r);
+    padding: 9px 14px; font: inherit; color: var(--fg-2); text-align: left; }
+  .kpibar:hover { border-color: var(--line-2); }
+  .kpibar .kl { font-size: 11.5px; font-weight: 600; color: var(--fg-3); flex: none; }
+  .kpibar .kchips { flex: 1; min-width: 0; display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+  .kpibar .kc { font-size: 12.5px; color: var(--fg-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .kpibar .kc b { color: var(--fg); font-weight: 600; font-family: var(--mono); }
   .kpibar .kc.ok b { color: var(--acc); }
   .kpibar .kc.warn b { color: var(--amb); }
   .kpibar .kc.bad b { color: var(--red); }
-  .kpibar .chev { flex: none; color: var(--fg-dim); }
+  .kpibar .chev { flex: none; color: var(--fg-3); }
   @media (prefers-reduced-motion: no-preference) {
-    .kpibar { transition: border-color .18s ease; }
-    .kpibar .chev { transition: transform .18s ease; }
+    .kpibar .chev { transition: transform .15s ease; }
     .kpibar[aria-expanded="true"] .chev { transform: rotate(180deg); }
   }
-  .board-tile { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
-  .sheet { position: fixed; z-index: 30; left: var(--rail-w); right: 0; bottom: 0;
-    height: min(54vh, 580px); background: color-mix(in srgb, var(--card) 96%, transparent);
-    border-top: 1px solid var(--border-2); border-radius: 18px 18px 0 0; box-shadow: var(--shadow);
-    display: flex; flex-direction: column; padding: 12px 20px 14px; }
+  .kpis6 { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+  .kpis6[hidden] { display: none; }
+  .kpi { text-align: left; display: block; width: 100%; background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--r); padding: 12px 14px; }
+  .kpi .n { display: block; font-family: var(--mono); font-size: 24px; font-weight: 600; line-height: 1.2; }
+  .kpi .n small { font-size: 12.5px; color: var(--fg-3); font-weight: 400; }
+  .kpi .t { display: block; font-size: 11.5px; color: var(--fg-3); margin-top: 3px; }
+  .kpi .bar { display: block; height: 3px; border-radius: 2px; background: var(--line); margin-top: 10px; overflow: hidden; }
+  .kpi .bar i { display: block; height: 100%; background: var(--acc); }
+  .kpi.warn .n { color: var(--amb); } .kpi.bad .n { color: var(--red); }
+  .kpi:hover { border-color: var(--line-2); }
+
+  /* ═══ 拓扑画布(总览唯一主模块) ═══ */
+  .board-tile { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column;
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+  .topo { position: relative; flex: 1; min-height: 0; background: var(--inset); }
+  .topo canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .board-hint { flex: none; font-size: 11.5px; color: var(--fg-3); padding: 9px 14px; border-top: 1px solid var(--line);
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .board-hint .lg { display: inline-flex; align-items: center; gap: 6px; }
+  .board-hint .lgsep { color: var(--line-2); }
+  .board-hint .lgd { width: 9px; height: 9px; border-radius: 3px; border: 1.5px solid var(--fg-3); }
+  .board-hint .lgd.shipped { border-color: var(--acc); }
+  .board-hint .lgd.active { border-color: var(--blue); }
+  .board-hint .lgd.debt { border-color: var(--amb); }
+
+  /* ═══ 生命周期五步 ═══ */
+  .steps { display: flex; align-items: center; gap: 4px; margin: 10px 0 8px; }
+  .step { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1; }
+  .step i { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--fg-3); }
+  .step.on i { background: var(--acc); border-color: var(--acc); }
+  .step.warn i { background: var(--amb); border-color: var(--amb); }
+  .step span { font-size: 11px; color: var(--fg-3); }
+  .step.on span, .step.warn span { color: var(--fg-2); }
+  .steps .ln { flex: 1; height: 1px; background: var(--line); margin-bottom: 15px; }
+  .meta { font-size: 12px; color: var(--fg-3); display: flex; flex-wrap: wrap; gap: 4px 12px; }
+  details { margin-top: 8px; }
+  summary { cursor: pointer; font-size: 12.5px; color: var(--fg-2); }
+  summary:hover { color: var(--fg); }
+  .ctx { white-space: pre-wrap; font-size: 12px; color: var(--fg-2); background: var(--inset);
+    border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; margin: 8px 0; max-height: 240px; overflow: auto; }
+  .cardfoot { display: flex; justify-content: flex-end; margin-top: 8px; }
+  .promptbox { margin-top: 12px; border: 1px solid var(--line); border-radius: var(--r);
+    background: var(--inset); overflow: hidden; }
+  .promptbox .ph-head { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 8px 12px; border-bottom: 1px solid var(--line); }
+  .promptbox .ph-head span { font-size: 11.5px; color: var(--fg-3); font-weight: 600; }
+  .prompttext { margin: 0; padding: 10px 12px; font-family: var(--mono); font-size: 11.5px;
+    line-height: 1.6; color: var(--fg-2); white-space: pre-wrap; word-break: break-word;
+    max-height: 260px; overflow: auto; }
+
+  /* ═══ 欠账 ═══ */
+  .statrow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .statcard { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px; }
+  .statcard .n { display: block; font-family: var(--mono); font-size: 26px; font-weight: 600; line-height: 1.15; }
+  .statcard .t { display: block; font-size: 12px; color: var(--fg-3); margin-top: 3px; }
+  .statcard.warn .n { color: var(--amb); }
+  .statcard.bad .n { color: var(--red); }
+  .statcard.ok .n { color: var(--acc); }
+  .debtcols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .debtsum { display: grid; gap: 6px; align-content: start; }
+  .drow { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap;
+    padding: 7px 10px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; }
+  .drow .dtxt { flex: 1 1 160px; min-width: 0; font-size: 12.5px; color: var(--fg-2); }
+  .drow .dmut { font-family: var(--mono); font-size: 11px; color: var(--fg-3); text-align: right; }
+  .dscroll { max-height: 300px; overflow: auto; border: 1px solid var(--line); border-radius: var(--r); }
+  #debt-deferred table { table-layout: fixed; }
+  #debt-deferred th, #debt-deferred td { font-size: 12px; padding: 6px 10px; }
+  #debt-deferred th:nth-child(1), #debt-deferred td:nth-child(1) { width: 30%; }
+  #debt-deferred th:nth-child(2), #debt-deferred td:nth-child(2) { width: 9%; }
+  #debt-deferred th:nth-child(3), #debt-deferred td:nth-child(3) { width: 28%; }
+  #debt-deferred th:nth-child(4), #debt-deferred td:nth-child(4) { width: 15%; }
+  #debt-deferred th:nth-child(5), #debt-deferred td:nth-child(5) { width: 18%; }
+  #debt-deferred td:last-child { font-family: var(--mono); font-size: 11px; color: var(--fg-3); }
+  #debt-deferred .clip { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .isslist { display: grid; gap: 8px; }
+  .iss { display: flex; gap: 10px; align-items: center; padding: 9px 12px;
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; }
+  .iss .itxt { flex: 1; font-size: 12.5px; }
+
+  /* ═══ 批注 ═══ */
+  .annbox { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; }
+  .annform { display: grid; gap: 9px; }
+  .annform .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .annform textarea { width: 100%; min-height: 90px; resize: vertical; background: var(--inset);
+    border: 1px solid var(--line); border-radius: 7px; padding: 9px 12px; font-size: 12.5px; }
+  .annform .go { display: flex; align-items: center; gap: 12px; }
+  .annform .msg { font-size: 12px; color: var(--fg-3); min-height: 1em; }
+  .annform .msg.err { color: var(--red); }
+  .annlist { display: grid; gap: 8px; align-content: start; }
+  /* 批注卡改成两行:头一行放类型/目标/时间,正文独占一行 ——
+     原来五块挤在一行 flex 里,正文被压成一字一行 */
+  .ann { display: grid; gap: 6px; background: var(--panel-2);
+    border: 1px solid var(--line); border-left: 3px solid var(--line-2); border-radius: 7px; padding: 10px 12px; }
+  .ann.open { border-left-color: var(--amb); }
+  .ann.digested { border-left-color: var(--acc); }
+  .annhead { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .annhead .who { font-size: 11.5px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .annhead .when { font-family: var(--mono); font-size: 11px; color: var(--fg-3); white-space: nowrap; margin-left: auto; }
+  .annbody { font-size: 12.5px; color: var(--fg-2); line-height: 1.55; }
+  .annbody .txt { color: var(--fg-2); }
+  .annbody .mutd { color: var(--fg-3); }
+  .mutd { color: var(--fg-3); }
+
+  /* ═══ 遥测 ═══ */
+  .telsvg { display: block; max-width: 100%; }
+  .telsvg .tbar { fill: var(--blue); fill-opacity: .45; transition: fill-opacity .12s; }
+  .telsvg .tbar:hover { fill: var(--acc); fill-opacity: .95; }
+  .telsvg .taxis { stroke: var(--line); stroke-width: 1; }
+  .telsvg .tlbl { fill: var(--fg-3); font-size: 10.5px; }
+  .tprog { flex: 1; height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .tprog i { display: block; height: 100%; background: var(--blue); }
+
+  /* ═══ 检视栏(右栏详情) ═══ */
+  .side h2 { margin: 0 0 2px; font-size: 15px; font-weight: 600; }
+  .side .sub2 { font-size: 12px; color: var(--fg-3); margin: 0 0 12px; }
+  .sideh { font-size: 12.5px; color: var(--fg-3); font-weight: 600; margin: 0 0 8px; }
+  .kv { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 7px 12px; font-size: 12.5px; margin: 0 0 14px; }
+  .kv dt { color: var(--fg-3); }
+  .kv dd { margin: 0; color: var(--fg-2); min-width: 0; word-break: break-word; }
+  .reqline { font-size: 13px; color: var(--fg); line-height: 1.6; }
+  .sidebtns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+  .legend { display: grid; gap: 6px; font-size: 11.5px; color: var(--fg-3); }
+  .legend b { color: var(--fg-2); font-weight: 600; }
+
+  /* ═══ Phases 抽屉 / 披露浮层 / hover 摘要 ═══ */
+  .sheet { position: fixed; z-index: 30; left: var(--rail); right: 0; bottom: 0;
+    height: min(56vh, 620px); background: var(--panel); border-top: 1px solid var(--line-2);
+    display: flex; flex-direction: column; padding: 14px 24px 16px; box-shadow: var(--shadow); }
   .sheet[hidden] { display: none; }
   .sheet-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
-  .sheet-head h3 { margin: 0; font-size: 12px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; color: var(--fg-dim); }
-  .sheet .tblwrap { flex: 1; min-height: 0; max-height: none; }
-  @media (max-width: 1240px) { .kpis6 { grid-template-columns: repeat(3, 1fr); } }
-  @media (max-width: 760px) { .kpis6 { grid-template-columns: repeat(2, 1fr); } .sheet { left: 0; height: 68vh; } }
-
-  /* ── 披露浮层(玻璃拟态只在浮层)+ hover 摘要单例 ── */
-  .tip { position: fixed; z-index: 60; max-width: 340px; background: color-mix(in srgb, var(--card2) 88%, transparent);
-    backdrop-filter: blur(10px); border: 1px solid var(--border-2); border-radius: 12px; padding: 8px 11px;
-    font-size: 12px; line-height: 1.55; color: var(--fg-mut); box-shadow: var(--shadow);
-    pointer-events: none; white-space: normal; display: none; }
+  .sheet-head h3 { margin: 0; font-size: 13px; font-weight: 600; }
+  .sheet .tblwrap { flex: 1; min-height: 0; }
+  .tip { position: fixed; z-index: 60; max-width: 320px; background: var(--panel-2);
+    border: 1px solid var(--line-2); border-radius: 8px; padding: 8px 11px;
+    font-size: 12px; line-height: 1.55; color: var(--fg-2); box-shadow: var(--shadow);
+    pointer-events: none; display: none; }
   .tip b { color: var(--fg); }
-  .tip .tmut { color: var(--fg-dim); }
-  .dmask { position: fixed; inset: 0; z-index: 50; background: rgb(2 6 23 / .55); backdrop-filter: blur(3px);
+  .tip .tmut { color: var(--fg-3); }
+  .dmask { position: fixed; inset: 0; z-index: 50; background: rgb(2 6 14 / .62);
     display: flex; justify-content: flex-end; }
   .dmask[hidden] { display: none; }
-  .dpanel { width: min(560px, 94vw); height: 100%; background: color-mix(in srgb, var(--card) 92%, transparent);
-    backdrop-filter: blur(14px); border-left: 1px solid var(--border-2); box-shadow: var(--shadow);
-    display: flex; flex-direction: column; }
-  .dpanel .dhead { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
-  .dpanel .dhead h3 { margin: 0; font-size: 15px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dpanel { width: min(560px, 94vw); height: 100%; background: var(--panel);
+    border-left: 1px solid var(--line-2); box-shadow: var(--shadow); display: flex; flex-direction: column; }
+  .dpanel .dhead { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+  .dpanel .dhead h3 { margin: 0; font-size: 14px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dpanel .dbody { overflow: auto; padding: 16px 18px 22px; }
-  .dpanel .dbody h4 { font-size: 11.5px; color: var(--fg-dim); font-weight: 650; letter-spacing: .08em;
-    text-transform: uppercase; margin: 16px 0 8px; }
+  .dpanel .dbody h4 { font-size: 12px; color: var(--fg-3); font-weight: 600; margin: 16px 0 8px; }
 
-  /* ── 窄屏 ── */
-  @media (max-width: 1240px) { .topbar { padding: 10px 14px; } .content { padding: 14px 14px 20px; } }
-  @media (max-width: 760px) {
-    .rail { width: 62px; }
-    .topbar { padding: 10px 12px; }
-    .content { padding: 12px 12px 18px; }
-    .tblwrap { max-height: none; }
-    .kpi .n { font-size: 23px; }
+  /* ═══ 窄屏 ═══ */
+  @media (max-width: 1240px) {
+    .kpis6 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .split, .split.wide-side { grid-template-columns: minmax(0, 1fr); }
+    .statrow { grid-template-columns: minmax(0, 1fr); }
+    .debtcols { grid-template-columns: minmax(0, 1fr); }
   }
+  @media (max-width: 760px) {
+    :root { --rail: 66px; }
+    .topbar { padding: 0 12px; gap: 6px; }
+    .content { padding: 14px 12px 18px; }
+    .railbtn { width: 58px; }
+    .kpis6 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  /* ── 重做补丁:骨架细节 ── */
+  .boardhead { padding: 12px 14px 0; }
+  .stat { font-size: 12px; color: var(--fg-3); font-family: var(--mono); }
+  .view-fit { max-width: 1480px; }
+  #reqs tbody tr { cursor: pointer; }
+  #reqdep-cv { position: relative; }
+  #reqdep-cv { position: relative; overflow: auto; }
+  #reqdep-cv canvas { display: block; }
+  #reqdep-hover { position: absolute; z-index: 5; max-width: 300px; background: var(--panel-2);
+    border: 1px solid var(--line-2); border-radius: 8px; padding: 8px 11px; font-size: 12px;
+    line-height: 1.55; color: var(--fg-2); box-shadow: var(--shadow); pointer-events: none; }
+  #reqdep-hover[hidden] { display: none; }
+  #reqdep-hover b { color: var(--fg); }
+  .dscroll table { table-layout: fixed; }
+  .dscroll th, .dscroll td { font-size: 12px; padding: 6px 10px; }
+  .dscroll .clip { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .dscroll td:last-child { font-family: var(--mono); font-size: 11px; color: var(--fg-3); }
+  #debt-parked .dscroll td:last-child, #debt-deferred .dscroll td:last-child { font-family: var(--mono); font-size: 11px; color: var(--fg-3); }
+  .reqgrid { display: grid; gap: 6px; margin: 0 0 14px; }
+  .reqgrid .rg { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap;
+    padding: 7px 10px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; }
+  .reqgrid .rg .dtxt { flex: 1 1 120px; min-width: 0; font-size: 12.5px; color: var(--fg-2); }
+
 </style>
 </head>
 <body>
@@ -388,45 +459,124 @@
   </header>
   <main class="content">
 
+  <!-- 总览:指标条 + 拓扑画布(唯一主模块) -->
   <section id="view-overview" class="view view-fit" aria-label="总览视图">
-    <div class="kpiwrap">
-      <button type="button" id="kpiToggle" class="kpibar" aria-expanded="false" aria-controls="kpiGrid">
-        <span class="kl">指标</span>
-        <span class="kchips" id="kpiSum">—</span>
-        <svg class="chev" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 6l4.5 4.5L12.5 6"/></svg>
-      </button>
-      <div class="kpis6" id="kpiGrid" hidden>
-      <button class="kpi tile s2" id="kReq" type="button" title="分母只算新增需求(baseline 是已交付的基线能力,不参与认领)"><span class="n" id="nReq">—</span><span class="t">REQ 已认领 / 新增</span><span class="bar"><i id="barReq" style="width:0%"></i></span></button>
-      <button class="kpi tile s2" id="kPh" type="button"><span class="n" id="nPh">—</span><span class="t">phase 已交付 / 总数</span><span class="bar"><i id="barPh" style="width:0%"></i></span></button>
-      <button class="kpi tile s2" id="kAnn" type="button"><span class="n" id="nAnn">—</span><span class="t">open 批注待消化</span></button>
-      <button class="kpi tile s2" id="kIss" type="button"><span class="n" id="nIss">—</span><span class="t">open 本地账问题</span></button>
-      <button class="kpi tile s2" id="kRep" type="button"><span class="n" id="nRep">—</span><span class="t">点修票挂起(R 票)</span></button>
-      <button class="kpi tile s2" id="kDebt" type="button"><span class="n" id="nDebt">—</span><span class="t">欠账合计</span></button>
+    <header class="vhead">
+      <div class="vtitles">
+        <h1>总览</h1>
+        <p class="vsub">这个项目现在走到哪一步 · phase 依赖拓扑</p>
       </div>
+      <span class="spacer"></span>
+      <div class="vactions">
+        <button type="button" class="ghost" id="phBtn">Phases 总览</button>
+      </div>
+    </header>
+    <div class="vbody">
+      <div class="kpiwrap">
+        <button type="button" id="kpiToggle" class="kpibar" aria-expanded="false" aria-controls="kpiGrid">
+          <span class="kl">指标</span>
+          <span class="kchips" id="kpiSum">—</span>
+          <svg class="chev" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 6l4.5 4.5L12.5 6"/></svg>
+        </button>
+        <div class="kpis6" id="kpiGrid" hidden>
+          <button class="kpi" id="kReq" type="button" title="分母只算新增需求(baseline 是已交付的基线能力,不参与认领)"><span class="n" id="nReq">—</span><span class="t">REQ 已认领 / 新增</span><span class="bar"><i id="barReq" style="width:0%"></i></span></button>
+          <button class="kpi" id="kPh" type="button"><span class="n" id="nPh">—</span><span class="t">phase 已交付 / 总数</span><span class="bar"><i id="barPh" style="width:0%"></i></span></button>
+          <button class="kpi" id="kAnn" type="button"><span class="n" id="nAnn">—</span><span class="t">open 批注待消化</span></button>
+          <button class="kpi" id="kIss" type="button"><span class="n" id="nIss">—</span><span class="t">open 本地账问题</span></button>
+          <button class="kpi" id="kRep" type="button"><span class="n" id="nRep">—</span><span class="t">点修票挂起(R 票)</span></button>
+          <button class="kpi" id="kDebt" type="button"><span class="n" id="nDebt">—</span><span class="t">欠账合计</span></button>
+        </div>
+      </div>
+      <section class="board-tile" aria-label="phase 依赖拓扑画布">
+        <div class="sechead boardhead">
+          <h3>依赖拓扑</h3><span class="stat" id="topoSummary">—</span>
+        </div>
+        <div id="phase-topo" class="topo"></div>
+        <div class="board-hint"><span class="lg"><i class="lgd shipped"></i>已发布</span><span class="lg"><i class="lgd active"></i>进行中</span><span class="lg"><i class="lgd pending"></i>未发布</span><span class="lg"><i class="lgd debt"></i>有欠账</span><span class="lgsep">·</span>悬停看摘要 · 单击选中并展开明细 · 点空白处或 Esc 取消选中</div>
+      </section>
     </div>
-    <section class="tile board-tile" aria-label="phase 依赖拓扑画布">
-      <div class="tile-head"><h3>依赖拓扑</h3><span class="stat" id="topoSummary">—</span>
-        <span class="spacer"></span>
-        <button type="button" class="ghost" id="phBtn">Phases 总览 ▴</button>
-      </div>
-      <div id="phase-topo" class="topo"></div>
-      <div class="board-hint">悬停看一句话摘要 · 单击选中(边缘流光)并展开明细 · 空白处点击 / Esc 取消选中</div>
-    </section>
   </section>
 
+  <!-- 需求:左清单 + 右详情 -->
+  <section id="view-reqs" class="view view-fit" aria-label="REQ 视图" hidden>
+    <header class="vhead">
+      <div class="vtitles">
+        <h1>需求</h1>
+        <p class="vsub">原话一句话 → 认领票;红点 = 无人认领(需求遗漏)</p>
+      </div>
+      <span class="spacer"></span>
+      <div class="vactions">
+        <div class="tools">
+          <input id="q" type="search" placeholder="过滤 REQ / 原话 / 票号…" aria-label="过滤需求清单">
+          <span id="qCount" class="hint" role="status"></span>
+        </div>
+      </div>
+    </header>
+    <div class="vbody">
+      <div class="split wide-side">
+        <div class="tblwrap">
+          <table id="reqs">
+            <thead><tr><th scope="col">REQ</th><th scope="col">原话一句话</th><th scope="col">认领票</th><th scope="col"><span class="sr">操作</span></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <aside class="side" id="reqSide">
+          <h2>选中一条需求</h2>
+          <p class="sub2">点左表任意一行,这里看原话全文、认领票与一键批注。</p>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <!-- REQ 依赖:左画布 + 右检视栏 -->
+  <section id="view-reqdep" class="view view-fit" aria-label="REQ 依赖视图" hidden>
+    <header class="vhead">
+      <div class="vtitles">
+        <h1>REQ 依赖</h1>
+        <p class="vsub">边只来自票级 depends_on;图是只读的,数据由服务端推导</p>
+      </div>
+    </header>
+    <div class="vbody">
+      <div id="reqdep-empty" class="empty" hidden>还没人写票级依赖(这不是「这些需求彼此无关」)。</div>
+      <div class="split wide-side" id="reqdep-wrap">
+        <div class="panel flush">
+          <div id="reqdep-cv" role="img" aria-label="REQ 依赖网状图:每列一个 phase,列内是需求;细线 = 票级依赖" style="flex:1;min-height:440px"></div>
+          <div id="reqdep-hover" hidden></div>
+        </div>
+        <aside class="side" id="reqdepSide">
+          <h2>检视</h2>
+          <p class="sub2">点任一节点,看这条需求的认领与依赖。</p>
+        </aside>
+      </div>
+    </div>
+  </section>
+
+  <!-- 欠账:三个数字 + 三块清单 -->
   <section id="view-debt" class="view" aria-label="欠账视图" hidden>
-    <h2>欠账 <small>未闭环本地账 + 待消化批注 + 未清偿挂账;口径以台账处置为准</small></h2>
-    <div id="debt" class="debt">
-      <section class="debtsec" id="debt-issues">
-        <h3>本地账未闭环 <span class="cnt" id="cntDebtIssues">—</span></h3>
-        <div class="debtsum" id="listDebtIssues"></div>
-      </section>
-      <section class="debtsec" id="debt-anns">
-        <h3>待消化批注 <span class="cnt" id="cntDebtAnns">—</span></h3>
-        <div class="debtsum" id="listDebtAnns"></div>
-      </section>
-      <section class="debtsec wide" id="debt-deferred">
-        <h3>未清偿挂账 <span class="cnt" id="cntDebtDeferred">—</span></h3>
+    <header class="vhead">
+      <div class="vtitles">
+        <h1>欠账</h1>
+        <p class="vsub">未闭环本地账 + 待消化批注 + 未清偿挂账;口径以台账处置为准</p>
+      </div>
+    </header>
+    <div class="vbody" id="debt">
+      <div class="statrow">
+        <div class="statcard" id="cardDebtIssues"><span class="n" id="cntDebtIssues">—</span><span class="t">本地账未闭环</span></div>
+        <div class="statcard" id="cardDebtAnns"><span class="n" id="cntDebtAnns">—</span><span class="t">待消化批注</span></div>
+        <div class="statcard" id="cardDebtDeferred"><span class="n" id="cntDebtDeferred">—</span><span class="t">未清偿挂账</span></div>
+      </div>
+      <div class="debtcols">
+        <section id="debt-issues">
+          <div class="sechead"><h3>本地账未闭环</h3></div>
+          <div class="debtsum" id="listDebtIssues"></div>
+        </section>
+        <section id="debt-anns">
+          <div class="sechead"><h3>待消化批注</h3></div>
+          <div class="debtsum" id="listDebtAnns"></div>
+        </section>
+      </div>
+      <section id="debt-deferred">
+        <div class="sechead"><h3>未清偿挂账</h3></div>
         <div class="dscroll">
           <table>
             <thead><tr><th scope="col">项</th><th scope="col">分类</th><th scope="col">触发条件或关闭理由</th><th scope="col">归属</th><th scope="col">来源文件</th></tr></thead>
@@ -434,77 +584,76 @@
           </table>
         </div>
       </section>
+      <details id="debt-parked">
+        <summary>挂条件 / 关闭 <span class="cnt" id="cntDebtParked">—</span> <span class="hint">已有触发条件 / 关闭理由的项,不计入欠账合计</span></summary>
+        <div class="dscroll" style="margin-top:8px">
+          <table>
+            <thead><tr><th scope="col">项</th><th scope="col">分类</th><th scope="col">触发条件或关闭理由</th><th scope="col">归属</th><th scope="col">来源文件</th></tr></thead>
+            <tbody id="tblDebtParked"></tbody>
+          </table>
+        </div>
+      </details>
+      <section id="debt-issues-list">
+        <div class="sechead"><h3>本地账问题</h3><span class="cnt" id="cntIssues">—</span><span class="hint">agent 记下但还没闭环的问题;闭环后本区自动清空</span></div>
+        <div id="issues" class="isslist"></div>
+      </section>
     </div>
-    <details id="debt-parked" class="debtsec wide">
-      <summary>挂条件 / 关闭 <span class="cnt" id="cntDebtParked">—</span> <small>已有触发条件 / 关闭理由的项,不计入欠账合计(D-03)</small></summary>
-      <div class="dscroll">
-        <table>
-          <thead><tr><th scope="col">项</th><th scope="col">分类</th><th scope="col">触发条件或关闭理由</th><th scope="col">归属</th><th scope="col">来源文件</th></tr></thead>
-          <tbody id="tblDebtParked"></tbody>
-        </table>
-      </div>
-    </details>
-    <h2>本地账问题 <small>agent 记下但还没闭环的问题;闭环后本区自动清空</small></h2>
-    <div id="issues" class="isslist"></div>
   </section>
 
+  <!-- 遥测:按天图 + 工具分布 -->
   <section id="view-telemetry" class="view" aria-label="遥测视图" hidden>
-    <h2>工具遥测 <small>本机工具调用按天计数(本地日);数据源 ~/.agents/mm-gsd-tools.jsonl,只读</small></h2>
-    <div id="telemetry" class="debt">
-      <section class="debtsec wide" id="tel-chart">
-        <h3>按天调用 <span class="cnt" id="cntTelDays">—</span></h3>
-        <div id="telChart"></div>
-      </section>
-      <section class="debtsec" id="tel-tools">
-        <h3>工具分布 <span class="cnt" id="cntTelTools">—</span></h3>
-        <div class="debtsum" id="telTools"></div>
-      </section>
-    </div>
-  </section>
-
-  <section id="view-reqs" class="view" aria-label="REQ 视图" hidden>
-    <h2>REQ 溯源链 <small>原话一句话 → 认领票;红点 = 无人认领(需求遗漏)</small></h2>
-    <div class="tools"><input id="q" type="search" placeholder="过滤 REQ / 原话 / 票号…" aria-label="过滤需求清单"></div><span id="qCount" class="hint" role="status"></span>
-    <div class="tblwrap"><table id="reqs">
-      <thead><tr><th scope="col">REQ</th><th scope="col">原话一句话</th><th scope="col">认领票</th><th scope="col"><span class="sr">操作</span></th></tr></thead>
-      <tbody></tbody>
-    </table></div>
-  </section>
-
-  <section id="view-reqdep" class="view" aria-label="REQ 依赖视图" hidden>
-    <h2>REQ 依赖 <small>边只来自票级 depends_on;图是只读的,数据由服务端推导</small></h2>
-    <div id="reqdep-empty" class="empty" hidden>还没人写票级依赖(这不是『这些需求彼此无关』)。</div>
-    <div id="reqdep-wrap" style="position:relative">
-      <div id="reqdep-cv" role="img" aria-label="REQ 依赖网状图:实线 = 票级依赖;同组 = 同一个 phase 的需求" style="min-height:420px"></div>
-      <div id="reqdep-hover" hidden style="position:absolute;pointer-events:none"></div>
-    </div>
-    <div class="hint">实线 = 票级依赖 · 同组 = 同一个 phase 的需求 · hover 看摘要,点开看全文,Esc 关闭</div>
-    <div id="reqdep-detail" hidden style="position:fixed;inset:0;background:var(--bg,#111);z-index:60">
-      <div style="position:absolute;top:8vh;left:10vw;right:10vw;bottom:8vh;overflow:auto">
-        <button type="button" class="ghost" id="reqdep-close">关闭(Esc)</button>
-        <div id="reqdep-detail-body"></div>
+    <header class="vhead">
+      <div class="vtitles">
+        <h1>工具遥测</h1>
+        <p class="vsub">本机工具调用按天计数(本地日);数据源 ~/.agents/mm-gsd-tools.jsonl,只读</p>
+      </div>
+    </header>
+    <div class="vbody">
+      <div class="split wide-side">
+        <section class="panel" id="tel-chart">
+          <div class="sechead"><h3>按天调用</h3><span class="cnt" id="cntTelDays">—</span></div>
+          <div id="telChart"></div>
+        </section>
+        <section class="panel" id="tel-tools">
+          <div class="sechead"><h3>工具分布</h3><span class="cnt" id="cntTelTools">—</span></div>
+          <div class="debtsum" id="telTools"></div>
+        </section>
       </div>
     </div>
   </section>
 
+  <!-- 批注:左表单 + 右记录 -->
   <section id="view-annotations" class="view" aria-label="批注视图" hidden>
-    <h2>批注 <small>用户审核 → agent 消化;验收不过会触发点修分流</small></h2>
-    <div class="annbox">
-      <form class="annform" id="annForm">
-        <div class="row">
-          <select id="a-target" aria-label="批注目标"><option value="">目标…</option></select>
-          <select id="a-type" aria-label="批注类型">
-            <option>备注</option><option>需求遗漏</option><option>方向不对</option><option>验收不过</option>
-          </select>
+    <header class="vhead">
+      <div class="vtitles">
+        <h1>批注</h1>
+        <p class="vsub">用户审核 → agent 消化;验收不过会触发点修分流</p>
+      </div>
+    </header>
+    <div class="vbody">
+      <div class="split narrow-side">
+        <div class="annbox">
+          <div class="sechead"><h3>新建批注</h3></div>
+          <form class="annform" id="annForm">
+            <div class="row">
+              <select id="a-target" aria-label="批注目标"><option value="">目标…</option></select>
+              <select id="a-type" aria-label="批注类型">
+                <option>备注</option><option>需求遗漏</option><option>方向不对</option><option>验收不过</option>
+              </select>
+            </div>
+            <textarea id="a-text" placeholder="批注内容…(验收不过 → 触发点修分流)" aria-label="批注内容"></textarea>
+            <div class="hint">类型怎么选:需求遗漏 → 补 REQ 走确认门 · 方向不对 → 回讨论重开决策 · 验收不过 → 点修分流 · 备注 → 记录参考</div>
+            <div class="go">
+              <button type="submit" class="primary">提交批注</button>
+              <span id="a-msg" class="msg" role="status"></span>
+            </div>
+          </form>
         </div>
-        <textarea id="a-text" placeholder="批注内容…(验收不过 → 触发点修分流)" aria-label="批注内容"></textarea>
-        <div class="hint">类型怎么选:需求遗漏 → 补 REQ 走确认门 · 方向不对 → 回讨论重开决策 · 验收不过 → 点修分流 · 备注 → 记录参考</div>
-        <div class="go">
-          <button type="submit" class="primary">提交批注</button>
-          <span id="a-msg" class="msg" role="status"></span>
+        <div class="side" style="padding:0">
+          <div class="sechead" style="padding:14px 16px 10px"><h3>批注记录</h3></div>
+          <div class="annlist" id="anns" style="padding:0 16px 16px"></div>
         </div>
-      </form>
-      <div class="annlist" id="anns"></div>
+      </div>
     </div>
   </section>
 
@@ -537,8 +686,6 @@
 <script>
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const $ = (id) => document.getElementById(id);
-const MONO_ID = (s) => '<span class="tk">' + esc(s) + "</span>";
-
 /* 主题:跟随系统 + 手动切换(localStorage 记忆) */
 (() => {
   const root = document.documentElement;
@@ -556,6 +703,10 @@ const MONO_ID = (s) => '<span class="tk">' + esc(s) + "</span>";
 
 /* ── 视图路由(D-05):hash 路由,刷新保持视图 ── */
 const VIEWS = ["overview", "reqs", "reqdep", "debt", "telemetry", "annotations"];
+/* REQ 依赖画布状态。必须声明在 showView 之前 ——
+   showView 在脚本解析时就跑(按 URL hash 选视图),const 声明晚了就是 TDZ 崩,
+   整个脚本死掉,页面永远停在「连接中…」。 */
+const reqdep = { cv: null, ctx: null, raf: 0, dpr: 1, hover: null, hoverId: null, sel: null, mouse: null };
 function showView(v) {
   const cur = VIEWS.includes(v) ? v : "overview";
   for (const name of VIEWS) {
@@ -564,13 +715,25 @@ function showView(v) {
   }
   for (const b of document.querySelectorAll("#views button[data-view]"))
     b.classList.toggle("active", b.dataset.view === cur);
+  /* 换视图要回到顶部 —— 上个视图滚到一半的位置会留在新视图里,看起来像「布局错乱」 */
+  const content = document.querySelector(".content");
+  if (content) content.scrollTop = 0;
+  resetInnerScrolls();
   if (cur === "reqdep") reqdepStart();
 }
+/* 表格自带滚动区也会留着旧位置(刷新时浏览器会还原嵌套滚动容器的位置) */
+function resetInnerScrolls() {
+  const c = document.querySelector(".content");
+  if (c) c.scrollTop = 0;
+  for (const s of document.querySelectorAll(".view:not([hidden]) .dscroll")) s.scrollTop = 0;
+}
+/* 浏览器默认会在返回/刷新时还原滚动位置(含嵌套滚动容器)—— 看板每次都从头看,关掉它 */
+if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+window.addEventListener("load", resetInnerScrolls);
 const routeFromHash = () => (location.hash || "#overview").slice(1);
 window.addEventListener("hashchange", () => showView(routeFromHash()));
 for (const b of document.querySelectorAll("#views button[data-view]"))
   b.addEventListener("click", () => { location.hash = "#" + b.dataset.view; });
-showView(routeFromHash());
 
 /* 当前项目(D-04):?project= 跟随页面;批注提交与状态拉取都带上 */
 const projQuery = () => {
@@ -616,15 +779,17 @@ function reqDepModel(graph) {
       if (n.note === "unclaimed") mark = "无人认领";
       else if ((n.claimed || []).length) mark = "已被认领(还没有票级依赖)";
     }
-    return { id: n.id, label: n.id + " " + n.text, mark, phase: n.phase, group: n.group, isolated };
+    return { id: n.id, label: n.id + " " + n.text, text: n.text || "", claimed: n.claimed || [],
+      note: n.note || "", mark, phase: n.phase, group: n.group, isolated };
   });
-  const edges = edgesSrc.map((e) => ({ from: e.from, to: e.to, label: "票级依赖" }));
+  const edges = edgesSrc.map((e) => ({ from: e.from, to: e.to, label: "票级依赖", via: e.via || [] }));
   const groups = [];
   const seenGroup = {};
   for (const n of nodes) {
-    if (n.group === "unclaimed" || n.group == null || seenGroup[n.group]) continue;
-    seenGroup[n.group] = true;
-    groups.push({ key: n.group, label: "同组 · phase " + n.group });
+    const key = n.group == null ? "unclaimed" : String(n.group);
+    if (seenGroup[key]) continue;
+    seenGroup[key] = true;
+    groups.push({ key, label: key === "unclaimed" ? "未认领" : "phase " + key });
   }
   return { nodes, edges, groups, empty: edges.length === 0 };
 }
@@ -636,25 +801,42 @@ const relTime = (iso) => { const d = new Date(iso); if (isNaN(d)) return esc(iso
   return d.toLocaleDateString("zh-CN"); };
 
 /* 工具遥测迷你图:按天柱状,纯内联 SVG(零第三方图表库,守 R-06 零外部请求)。 */
-function telChartSvg(series) {
-  const W = 640, H = 120, padL = 4, padR = 4, padT = 8, padB = 18;
+/* 画布按容器的真实像素画 —— 固定 viewBox 再被 width:100% 拉大,字和柱子都会跟着虚胖 */
+function telChartSvg(series, W, H) {
+  W = Math.max(320, W || 640);
+  H = Math.max(140, H || 220);
+  const padL = 8, padR = 8, padT = 14, padB = 24;
   const max = Math.max(1, ...series.map((s) => s.count));
-  const gap = series.length > 1 ? 2 : 0;
-  const bw = Math.max(2, (W - padL - padR - gap * (series.length - 1)) / series.length);
+  /* 柱子太宽就成了色块 —— 限宽并居中,才像一张图 */
+  const slot = (W - padL - padR) / Math.max(1, series.length);
+  const bw = Math.max(6, Math.min(56, slot * 0.42));
+  const gap = Math.max(4, slot - bw);
+  const x0 = padL + (W - padL - padR - (bw * series.length + gap * (series.length - 1))) / 2;
   const innerH = H - padT - padB;
   const bars = series.map((s, i) => {
-    const h = Math.max(1, Math.round((s.count / max) * innerH));
-    const x = padL + i * (bw + gap);
+    const h = Math.max(2, Math.round((s.count / max) * innerH));
+    const x = x0 + i * (bw + gap);
     const y = padT + innerH - h;
-    return '<rect class="tbar" x="' + x.toFixed(1) + '" y="' + y + '" width="' + bw.toFixed(1) + '" height="' + h + '"><title>' + esc(s.date + " · " + s.count + " 次") + "</title></rect>";
+    return '<rect class="tbar" x="' + x.toFixed(1) + '" y="' + y + '" width="' + bw.toFixed(1) + '" height="' + h + '" rx="3"><title>' + esc(s.date + " · " + s.count + " 次") + "</title></rect>";
   }).join("");
   const axis = '<line class="taxis" x1="' + padL + '" y1="' + (padT + innerH) + '" x2="' + (W - padR) + '" y2="' + (padT + innerH) + '"/>';
-  const first = series[0], last = series[series.length - 1];
-  const labels =
-    '<text class="tlbl" x="' + padL + '" y="' + (H - 5) + '">' + esc(first.date) + "</text>" +
-    (last.date !== first.date ? '<text class="tlbl" x="' + (W - padR) + '" y="' + (H - 5) + '" text-anchor="end">' + esc(last.date) + "</text>" : "");
-  return '<svg class="telsvg" viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="工具调用按天计数迷你图,共 ' + series.length + ' 天">' +
+  const labels = series.map((s, i) => {
+    const x = x0 + i * (bw + gap) + bw / 2;
+    return '<text class="tlbl" x="' + x.toFixed(1) + '" y="' + (H - 6) + '" text-anchor="middle">' + esc(s.date.slice(5)) + "</text>";
+  }).join("");
+  return '<svg class="telsvg" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + " " + H + '" role="img" aria-label="工具调用按天计数迷你图,共 ' + series.length + ' 天">' +
     axis + bars + labels + "</svg>";
+}
+function renderTelemetryChart() {
+  const tel = last && last.telemetry;
+  const host = $("telChart");
+  if (!host || !tel) return;
+  if (tel.empty) {
+    host.innerHTML = '<div class="empty">本项目暂无工具遥测记录</div>';
+    return;
+  }
+  const h = Math.max(180, (host.clientHeight || 0) - 8);
+  host.innerHTML = telChartSvg(tel.series, host.clientWidth || 640, h);
 }
 
 /* hover 摘要单例(知识表面第 2 级):一个 div 跟随目标;原生 <title> 慢且不可样式化 */
@@ -703,17 +885,50 @@ const board = { phases: [], pos: new Map(), edges: [], W: 0, H: 0,
   cv: null, ctx: null, dpr: 1, cw: 0, ch: 0, fit: 1, ox: 0, oy: 0,
   mouse: null, hover: null, sel: null, raf: 0 };
 const RM = matchMedia("(prefers-reduced-motion: reduce)");
+const TOPO_NODEW = 124, TOPO_NODEH = 46, TOPO_GAPX = 16, TOPO_GAPY = 34, TOPO_PADX = 26, TOPO_PADY = 24;
 
 function boardXY(p) { return { x: board.ox + p.x * board.fit, y: board.oy + p.y * board.fit }; }
-/* 每行放几个:窄画布少放 —— 位置随 fit 缩、标签字号有下限,列多了必叠字 */
-function topoCols(n, cw) {
-  return cw < 560 ? Math.max(2, Math.min(3, Math.round(Math.sqrt(n) + 1)))
-    : Math.min(7, Math.max(4, Math.round(Math.sqrt(n) + 1)));
+/* 布局:列数与卡间距一起解,让蛇形正好填满画布。
+   只按宽度切列会一头空一头挤 —— 27 个节点排成 3 行时画布上下空掉一大半。
+   做法:每种列数算一次「行数 → 需要的高度 → 缩放 → 能塞下的间距」,
+   间距卡在 [min,max] 里,再在缩放接近最优的几档里挑间距最像目标的那一档。 */
+const TOPO_GAP_MIN = 14, TOPO_GAP_MAX = 90, TOPO_GAP_TARGET = 36;
+const TOPO_GAPY_MIN = 18, TOPO_GAPY_MAX = 110;
+const TOPO_FIT_MAX = 1.75, TOPO_FIT_MIN = 0.4, TOPO_PAD = 30;
+function topoLayout(cw, ch, n) {
+  const aw = Math.max(80, (cw || 1200) - TOPO_PAD * 2);
+  const ah = Math.max(80, (ch || 600) - TOPO_PAD * 2);
+  const cands = [];
+  for (let C = 1; C <= 12; C++) {
+    const rows = Math.max(1, Math.ceil(n / C));
+    const boardH = TOPO_PADY * 2 + rows * (TOPO_NODEH + TOPO_GAPY) - TOPO_GAPY;
+    const fitH = Math.min(ah / boardH, TOPO_FIT_MAX);
+    if (fitH < TOPO_FIT_MIN) continue;
+    const want = (aw / fitH - TOPO_PADX * 2 + TOPO_GAPX) / C;
+    const colw = Math.max(TOPO_NODEW + TOPO_GAP_MIN, Math.min(TOPO_NODEW + TOPO_GAP_MAX, want));
+    const boardW = TOPO_PADX * 2 + C * colw - TOPO_GAPX;
+    cands.push({ C, rows, colw, boardW, boardH, fit: Math.min(aw / boardW, fitH), gap: colw - TOPO_NODEW });
+  }
+  if (!cands.length) return null;
+  const bestFit = Math.max.apply(null, cands.map((c) => c.fit));
+  const near = cands.filter((c) => c.fit >= bestFit * 0.92);
+  near.sort((a, b) => Math.abs(a.gap - TOPO_GAP_TARGET) - Math.abs(b.gap - TOPO_GAP_TARGET));
+  const pick = near[0];
+  /* 行距回填:缩放定下来后,把竖直方向的余量吃进行距,画布不留大片空白 */
+  const gapY = pick.rows > 1
+    ? Math.max(TOPO_GAPY_MIN, Math.min(TOPO_GAPY_MAX, (ah / pick.fit - TOPO_PADY * 2 - pick.rows * TOPO_NODEH) / (pick.rows - 1)))
+    : TOPO_GAPY;
+  pick.gapY = gapY;
+  pick.boardH = TOPO_PADY * 2 + pick.rows * TOPO_NODEH + (pick.rows - 1) * gapY;
+  return pick;
 }
-/* 画布尺寸变了:该换列数就重排,否则只重新适配(列数不变时重排是白费) */
+/* 画布尺寸变了:布局(列数/间距)变了就重排,否则只重新适配 */
 function onBoxResize() {
   const n = (last && last.phases || []).length;
-  if (n && topoCols(n, Math.max(1, $("phase-topo").clientWidth || 1200)) !== board.C) { topoRender(); return; }
+  if (!n) return;
+  const box = $("phase-topo");
+  const L = topoLayout(box.clientWidth || 1200, box.clientHeight || 600, n);
+  if (L && (L.C !== board.C || Math.abs(L.colw - (board.colw || 0)) > 0.5 || Math.abs((L.gapY || 0) - (board.gapy || 0)) > 0.5)) { topoRender(); return; }
   fitBoard();
 }
 /* 按实测宽度截断文字(超出加省略号)—— 画布标签不许靠字数猜宽度 */
@@ -724,16 +939,8 @@ function fitText(ctx, text, maxW) {
   while (s.length > 1 && ctx.measureText(s + "…").width > maxW) s = s.slice(0, -1);
   return s + "…";
 }
-function requestBoardDraw() {
-  if (RM.matches) { drawBoard(0); return; }
-  if (!board.raf) board.raf = requestAnimationFrame(boardLoop);
-}
-function boardLoop(ts) {
-  if (document.hidden || routeFromHash() !== "overview") { board.raf = 0; drawBoard(ts / 1000); return; }
-  drawBoard(ts / 1000);
-  board.raf = requestAnimationFrame(boardLoop);
-}
-function stopBoardLoop() { if (board.raf) { cancelAnimationFrame(board.raf); board.raf = 0; } }
+/* 按需重绘:没有常驻动画循环,悬停/选中才重画一帧 */
+function requestBoardDraw() { drawBoard(0); }
 
 function topoRender() {
   const box = $("phase-topo");
@@ -744,13 +951,14 @@ function topoRender() {
   $("topoSummary").textContent = N
     ? N + " 阶段 · " + edges.length + " 依赖 · 最长链 " + (maxLv + 1)
     : "阶段清单还没建 —— STATE 的 Phases 落盘后显示";
-  if (!N) { box.innerHTML = '<div class="empty">没有阶段,画不出依赖拓扑。</div>'; board.phases = []; stopBoardLoop(); return; }
+  if (!N) { box.innerHTML = '<div class="empty">没有阶段,画不出依赖拓扑。</div>'; board.phases = []; return; }
   tipHide();
-  /* 蛇形流水布局:连续层共占视觉行(每行 ≤C 个,S 形折行,同层不拆散) */
-  /* 窄画布少放几列 —— 位置随 fit 缩,标签字号有下限,列多了必叠字 */
+  /* 卡片式蛇形流水:level 逐个占槽,一行满则折行(奇数行反向) —— 折行边因此是竖直短线 */
   const CW = Math.max(1, box.clientWidth || 1200);
-  const C = topoCols(N, CW);
-  board.C = C;
+  const CH = Math.max(1, box.clientHeight || 600);
+  const L = topoLayout(CW, CH, N) || { C: 1, rows: N, colw: TOPO_NODEW + TOPO_GAPX, boardW: 0, boardH: 0, gapY: TOPO_GAPY };
+  const NODEW = TOPO_NODEW, NODEH = TOPO_NODEH, COLW = L.colw, GAPY = L.gapY || TOPO_GAPY, ROWH = NODEH + GAPY;
+  const C = L.C;
   const byLv = new Map();
   for (const p of phases) {
     const l = p.level || 0;
@@ -758,36 +966,27 @@ function topoRender() {
     byLv.get(l).push(p);
   }
   const levels = [...byLv.keys()].sort((a, b) => a - b);
-  const rows = [];
-  let cur = [];
-  for (const lv of levels) {
-    const group = byLv.get(lv).slice().sort((a, b) => a.phase.localeCompare(b.phase));
-    if (group.length > C) {
-      if (cur.length) { rows.push(cur); cur = []; }
-      for (let i = 0; i < group.length; i += C) rows.push(group.slice(i, i + C));
-    } else if (cur.length + group.length <= C) {
-      cur = cur.concat(group);
-    } else {
-      rows.push(cur);
-      cur = group.slice();
-    }
-  }
-  if (cur.length) rows.push(cur);
-  const cellW = 118, rowH = 96, padX = 46, padY = 40, R = 19;
-  const maxLen = Math.max(...rows.map((r) => r.length));
   const pos = new Map();
-  rows.forEach((row, r) => {
-    const rev = r % 2 === 1;
-    row.forEach((p, i) => {
-      const slot = rev ? row.length - 1 - i : i;
-      pos.set(p.phase, { x: padX + cellW * (slot + 0.5), y: padY + r * rowH + 28, row: r, R });
+  let slot = 0;
+  for (const lv of levels) {
+    const group = byLv.get(lv).slice().sort((a, b) => String(a.phase).localeCompare(String(b.phase), undefined, { numeric: true }));
+    group.forEach((p) => {
+      const row = Math.floor(slot / C);
+      const inRow = slot % C;
+      const col = row % 2 === 0 ? inRow : C - 1 - inRow;
+      pos.set(p.phase, { x: TOPO_PADX + col * COLW, y: TOPO_PADY + row * ROWH, w: NODEW, h: NODEH, row, col });
+      slot++;
     });
-  });
+  }
+  const rows = Math.max(1, Math.ceil(slot / C));
   board.phases = phases;
   board.pos = pos;
   board.edges = edges;
-  board.W = padX * 2 + maxLen * cellW;
-  board.H = padY + rows.length * rowH + 30;
+  board.C = C;
+  board.colw = COLW;
+  board.gapy = GAPY;
+  board.W = TOPO_PADX * 2 + C * COLW - (COLW - NODEW);
+  board.H = TOPO_PADY * 2 + rows * ROWH - GAPY;
   board.hover = null;
   if (!board.cv) {
     board.cv = document.createElement("canvas");
@@ -813,7 +1012,7 @@ function fitBoard() {
   board.cv.width = Math.round(r.width * board.dpr);
   board.cv.height = Math.round(r.height * board.dpr);
   const pad = 30;
-  board.fit = Math.max(0.3, Math.min((r.width - pad * 2) / board.W, (r.height - pad * 2) / board.H, 1.35));
+  board.fit = Math.max(0.3, Math.min((r.width - pad * 2) / board.W, (r.height - pad * 2) / board.H, 1.75));
   board.ox = (r.width - board.W * board.fit) / 2;
   board.oy = (r.height - board.H * board.fit) / 2;
   requestBoardDraw();
@@ -822,14 +1021,33 @@ function fitBoard() {
 function hitNode(mx, my) {
   let best = null, bestD = 1e9;
   for (const p of board.phases) {
-    const s = boardXY(board.pos.get(p.phase));
-    const d = Math.hypot(s.x - mx, s.y - my);
-    if (d < 19 * board.fit + 10 && d < bestD) { best = p; bestD = d; }
+    const pa = board.pos.get(p.phase);
+    if (!pa) continue;
+    const s = boardXY(pa);
+    const w = pa.w * board.fit, h = pa.h * board.fit;
+    if (Math.abs(s.x - mx) <= w / 2 + 2 && Math.abs(s.y - my) <= h / 2 + 2) {
+      const d = Math.hypot(s.x - mx, s.y - my);
+      if (d < bestD) { best = p; bestD = d; }
+    }
   }
   return best;
 }
 
-function drawBoard(t) {
+function roundRect(ctx, x, y, w, h, r) {
+  const rr = Math.max(0, Math.min(r, w / 2, h / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
+function themeVar(name, fallback) {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || fallback;
+}
+function drawBoard() {
   const ctx = board.ctx, cv = board.cv;
   if (!ctx || !cv.width) return;
   ctx.setTransform(board.dpr, 0, 0, board.dpr, 0, 0);
@@ -839,132 +1057,90 @@ function drawBoard(t) {
   const S = (v) => v * board.fit;
   const hoverP = board.hover, selP = board.sel;
   const focus = selP || hoverP;
+  const cLine = themeVar("--line-2", "#2A3749");
+  const cFg = themeVar("--fg", "#E9EFF7");
+  const cFg3 = themeVar("--fg-3", "#6E7E93");
+  const cAcc = themeVar("--acc", "#3DD68C");
+  const cAmb = themeVar("--amb", "#F0B23E");
+  const cBlue = themeVar("--blue", "#6BA8F5");
+  const cPanel2 = themeVar("--panel-2", "#0E1622");
+  const cAccSoft = themeVar("--acc-soft", "rgba(61,214,140,.14)");
 
-  /* 鼠标范围照亮:淡淡一圈径向光跟随光标 */
-  if (board.mouse) {
-    const g = ctx.createRadialGradient(board.mouse.x, board.mouse.y, 0, board.mouse.x, board.mouse.y, 170);
-    g.addColorStop(0, "rgba(148, 163, 184, 0.10)");
-    g.addColorStop(1, "rgba(148, 163, 184, 0)");
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, board.cw, board.ch);
-  }
-
-  /* 边:选中/悬停的关联边高亮(选中的带流动虚线),其余降淡;终点箭头 */
+  /* 边:选中/悬停的关联边高亮,其余降淡 */
+  ctx.lineCap = "round";
   for (const [from, to] of board.edges) {
     const pa = board.pos.get(from), pb = board.pos.get(to);
     if (!pa || !pb) continue;
-    const a = boardXY(pa), b = boardXY(pb);
-    const related = focus && (from === focus.phase || to === focus.phase);
-    const flowing = selP && related;
+    const a = { x: X(pa.x), y: Y(pa.y), w: S(pa.w), h: S(pa.h) };
+    const b = { x: X(pb.x), y: Y(pb.y), w: S(pb.w), h: S(pb.h) };
+    const related = !!focus && (from === focus.phase || to === focus.phase);
+    const sameRow = pa.row === pb.row;
     ctx.beginPath();
-    if (pa.row === pb.row && Math.abs(a.x - b.x) <= 118 * board.fit * 1.6) {
+    if (sameRow) {
       const dir = Math.sign(b.x - a.x) || 1;
-      ctx.moveTo(a.x + dir * (S(pa.R) + 4), a.y);
-      ctx.lineTo(b.x - dir * (S(pb.R) + 6), b.y);
-    } else if (Math.abs(a.x - b.x) < 2) {
-      ctx.moveTo(a.x, a.y + S(pa.R) + 4);
-      ctx.lineTo(b.x, b.y - S(pb.R) - 6);
+      ctx.moveTo(a.x + dir * a.w / 2, a.y);
+      ctx.lineTo(b.x - dir * b.w / 2, b.y);
+    } else if (pa.col === pb.col) {
+      ctx.moveTo(a.x, a.y + a.h / 2);
+      ctx.lineTo(b.x, b.y - b.h / 2);
     } else {
-      const midY = (a.y + b.y) / 2;
-      ctx.moveTo(a.x, a.y + S(pa.R) + 4);
-      ctx.bezierCurveTo(a.x, midY, b.x, midY, b.x, b.y - S(pb.R) - 6);
+      const dx = Math.abs(b.x - a.x);
+      ctx.moveTo(a.x, a.y + a.h / 2);
+      ctx.bezierCurveTo(a.x, a.y + a.h / 2 + dx * .4, b.x, b.y - b.h / 2 - dx * .4, b.x, b.y - b.h / 2);
     }
-    if (flowing) {
-      ctx.strokeStyle = "rgba(34, 197, 94, .85)";
-      ctx.lineWidth = 2;
-      ctx.setLineDash([11, 9]);
-      ctx.lineDashOffset = -t * 46;
-    } else {
-      ctx.strokeStyle = related ? "rgba(148, 163, 184, .9)" : "rgba(148, 163, 184, " + (focus ? ".10" : ".38") + ")";
-      ctx.lineWidth = related ? 1.8 : 1.4;
-      ctx.setLineDash([]);
-    }
+    ctx.strokeStyle = related ? cAcc : cLine;
+    ctx.globalAlpha = related ? .95 : focus ? .22 : .75;
+    ctx.lineWidth = related ? 2 : 1.3;
     ctx.stroke();
-    const ang = Math.atan2(b.y - a.y, b.x - a.x);
+    ctx.globalAlpha = 1;
+    /* 箭头 */
+    const tx = sameRow ? b.x - (Math.sign(b.x - a.x) || 1) * b.w / 2 : b.x;
+    const ty = sameRow ? b.y : b.y - (Math.sign(b.y - a.y) || 1) * b.h / 2;
     ctx.save();
-    ctx.translate(b.x, b.y);
-    ctx.rotate(ang);
-    ctx.fillStyle = flowing ? "rgba(34, 197, 94, .95)" : related ? "rgba(148, 163, 184, .9)" : "rgba(148, 163, 184, " + (focus ? ".12" : ".4") + ")";
+    ctx.translate(tx, ty);
+    ctx.rotate(sameRow ? 0 : (b.y > a.y ? Math.PI / 2 : -Math.PI / 2));
+    ctx.fillStyle = related ? cAcc : cLine;
+    ctx.globalAlpha = related ? .95 : focus ? .22 : .75;
     ctx.beginPath();
-    ctx.moveTo(-S(6), -S(4));
-    ctx.lineTo(S(2), 0);
-    ctx.lineTo(-S(6), S(4));
+    ctx.moveTo(-6, -3.4); ctx.lineTo(1, 0); ctx.lineTo(-6, 3.4);
     ctx.closePath();
     ctx.fill();
     ctx.restore();
+    ctx.globalAlpha = 1;
   }
-  ctx.setLineDash([]);
 
-  /* 节点:done 绿 / active 蓝辉 / 挂账金环 / 悬停白圈 */
+  /* 节点:卡片(phase 号 + 标题),状态只体现在边框色 */
   for (const p of board.phases) {
-    const s = boardXY(board.pos.get(p.phase));
-    const R = S(19);
-    const shipped = p.ship?.status === "shipped" || p.done;
+    const pa = board.pos.get(p.phase);
+    if (!pa) continue;
+    const x = X(pa.x), y = Y(pa.y), w = S(pa.w), h = S(pa.h);
+    const shipped = (p.ship && p.ship.status === "shipped") || p.done;
     const act = last && last.activePhase === p.phase;
-    const isHot = hoverP && hoverP.phase === p.phase;
-    const isSel = selP && selP.phase === p.phase;
-    if (p.debt > 0) {
-      ctx.beginPath();
-      ctx.arc(s.x, s.y, R + 4, 0, Math.PI * 2);
-      ctx.strokeStyle = "rgba(251, 191, 36, .85)";
-      ctx.lineWidth = 2;
-      ctx.stroke();
-    }
-    ctx.beginPath();
-    ctx.arc(s.x, s.y, R, 0, Math.PI * 2);
-    ctx.fillStyle = shipped ? "rgba(34, 197, 94, .16)" : "#0E1724";
+    const isSel = !!selP && selP.phase === p.phase;
+    const isHot = !!hoverP && hoverP.phase === p.phase;
+    const debt = (p.debt || 0) > 0;
+    const border = isSel || isHot ? cAcc : act ? cBlue : shipped ? cAcc : debt ? cAmb : cFg3;
+    roundRect(ctx, x - w / 2, y - h / 2, w, h, Math.min(9 * board.fit, h / 2));
+    ctx.fillStyle = isSel ? cAccSoft : cPanel2;
     ctx.fill();
-    ctx.strokeStyle = isSel ? "rgba(34, 197, 94, 1)" : shipped ? "#22C55E" : act ? "#60A5FA" : "#2E3D57";
-    ctx.lineWidth = isSel || act ? 2.4 : 1.6;
-    if (act) { ctx.save(); ctx.shadowColor = "rgba(96, 165, 250, .55)"; ctx.shadowBlur = 12; }
+    ctx.strokeStyle = border;
+    ctx.lineWidth = isSel ? 2.2 : act ? 1.8 : 1.2;
     ctx.stroke();
-    if (act) ctx.restore();
-    ctx.fillStyle = "#F1F5F9";
-    ctx.font = (act ? "700 " : "") + Math.max(8, S(12)) + 'px ui-monospace, "Cascadia Code", Consolas, monospace';
-    ctx.textAlign = "center";
+    const numSize = Math.max(9, S(11.5));
+    const tSize = Math.max(8, S(10.5));
+    ctx.textAlign = "left";
     ctx.textBaseline = "middle";
-    ctx.fillText(p.phase, s.x, s.y + 1);
-    /* 标题按实测宽度截断(位置随 fit 缩、字号有下限 → 不截断必叠字);窄到读不了就不画 */
-    const tt = String(p.title || "").split(/[（(]/)[0];
-    const cellPx = 118 * board.fit;
-    if (cellPx >= 46) {
-      ctx.fillStyle = "rgba(120, 135, 159, .95)";
-      ctx.font = Math.max(9, S(10)) + 'px "Segoe UI", system-ui, sans-serif';
-      ctx.fillText(fitText(ctx, tt, cellPx - 8), s.x, s.y + R + 15);
-    }
-    if (isHot && !isSel) {
-      ctx.beginPath();
-      ctx.arc(s.x, s.y, R + 3, 0, Math.PI * 2);
-      ctx.strokeStyle = "rgba(241, 245, 249, .45)";
-      ctx.lineWidth = 1.4;
-      ctx.stroke();
-    }
-  }
-
-  /* 选中节点的边缘流光:conic 渐变环随时间旋转(不支持的实现退化为虚线环) */
-  if (selP) {
-    const s = boardXY(board.pos.get(selP.phase));
-    const RR = S(selP.R) + 5;
+    ctx.font = "600 " + numSize + 'px ui-monospace, "Cascadia Code", Consolas, monospace';
+    ctx.fillStyle = shipped || isSel ? cAcc : act ? cBlue : cFg;
+    ctx.fillText(String(p.phase), x - w / 2 + 9, y - h / 2 + numSize * 0.95);
     ctx.beginPath();
-    ctx.arc(s.x, s.y, RR, 0, Math.PI * 2);
-    ctx.lineWidth = 2.6;
-    if (ctx.createConicGradient) {
-      const cg = ctx.createConicGradient(t * 2.4, s.x, s.y);
-      cg.addColorStop(0, "rgba(34, 197, 94, 0)");
-      cg.addColorStop(0.12, "rgba(34, 197, 94, 1)");
-      cg.addColorStop(0.25, "rgba(96, 165, 250, 0)");
-      cg.addColorStop(0.5, "rgba(34, 197, 94, 0)");
-      cg.addColorStop(0.62, "rgba(96, 165, 250, .9)");
-      cg.addColorStop(0.75, "rgba(34, 197, 94, 0)");
-      cg.addColorStop(1, "rgba(34, 197, 94, 0)");
-      ctx.strokeStyle = cg;
-    } else {
-      ctx.strokeStyle = "#22C55E";
-      ctx.setLineDash([10, 8]);
-      ctx.lineDashOffset = -t * 40;
-    }
-    ctx.stroke();
-    ctx.setLineDash([]);
+    ctx.arc(x + w / 2 - 10, y - h / 2 + numSize * 0.95, Math.max(2.2, S(3.2)), 0, Math.PI * 2);
+    ctx.fillStyle = shipped ? cAcc : act ? cBlue : debt ? cAmb : cFg3;
+    ctx.fill();
+    ctx.font = tSize + 'px "Segoe UI", system-ui, "Microsoft YaHei", sans-serif';
+    ctx.fillStyle = cFg3;
+    const tt = String(p.title || "").split(/[（(]/)[0];
+    ctx.fillText(fitText(ctx, tt, w - 20), x - w / 2 + 9, y + h / 2 - tSize * 1.1);
   }
 }
 
@@ -1223,15 +1399,15 @@ async function load() {
   const claimed = claimable.filter((r) => r.claimed.length).length;
   $("nReq").innerHTML = claimed + ' <small>/ ' + claimable.length + "</small>";
   $("barReq").style.width = (claimable.length ? Math.round(100 * claimed / claimable.length) : 0) + "%";
-  $("kReq").className = "kpi tile s2" + (claimable.length && claimed < claimable.length ? " warn" : "");
+  $("kReq").className = "kpi" + (claimable.length && claimed < claimable.length ? " warn" : "");
   const donePh = st.phases.filter((p) => p.ship?.status === "shipped" || p.done).length;
   $("nPh").innerHTML = donePh + ' <small>/ ' + st.phases.length + "</small>";
   $("barPh").style.width = (st.phases.length ? Math.round(100 * donePh / st.phases.length) : 0) + "%";
   const openAnn = debt.counts.openAnnotations != null ? debt.counts.openAnnotations : st.annotations.filter((a) => a.status === "open").length;
   $("nAnn").textContent = openAnn;
-  $("kAnn").className = "kpi tile s2" + (openAnn ? " warn" : "");
+  $("kAnn").className = "kpi" + (openAnn ? " warn" : "");
   $("nIss").textContent = debt.localIssues.length;
-  $("kIss").className = "kpi tile s2" + (debt.localIssues.length ? " bad" : "");
+  $("kIss").className = "kpi" + (debt.localIssues.length ? " bad" : "");
   $("nRep").textContent = st.state ? st.state.repairsPending : 0;
   const repCount = st.state ? st.state.repairsPending : 0;
 
@@ -1248,7 +1424,8 @@ async function load() {
     dil.appendChild(row);
   }
   if (!debt.localIssues.length) dil.innerHTML = '<div class="empty">本地账没有未闭环的问题。</div>';
-  $("cntDebtIssues").textContent = debt.localIssues.length + " 项";
+  $("cntDebtIssues").textContent = debt.localIssues.length;
+  $("cardDebtIssues").className = "statcard" + (debt.localIssues.length ? " bad" : " ok");
 
   const dan = $("listDebtAnns");
   dan.innerHTML = "";
@@ -1261,7 +1438,8 @@ async function load() {
     dan.appendChild(row);
   }
   if (!debt.openAnnotations.length) dan.innerHTML = '<div class="empty">没有待消化的批注。</div>';
-  $("cntDebtAnns").textContent = debt.openAnnotations.length + " 条";
+  $("cntDebtAnns").textContent = debt.openAnnotations.length;
+  $("cardDebtAnns").className = "statcard" + (debt.openAnnotations.length ? " warn" : " ok");
 
   const ddf = $("tblDebtDeferred");
   ddf.innerHTML = "";
@@ -1288,7 +1466,8 @@ async function load() {
     td.className = "empty";
     td.textContent = "没有登记的未清偿挂账。";
   }
-  $("cntDebtDeferred").textContent = debt.deferred.length + " 条";
+  $("cntDebtDeferred").textContent = debt.deferred.length;
+  $("cardDebtDeferred").className = "statcard" + (debt.deferred.length ? " warn" : " ok");
 
   const parked = debt.parked || [];
   const pdp = $("tblDebtParked");
@@ -1319,7 +1498,7 @@ async function load() {
     ? debt.counts.total
     : debt.localIssues.length + debt.openAnnotations.length + debt.deferred.length;
   $("nDebt").textContent = debtTotal;
-  $("kDebt").className = "kpi tile s2" + (debtTotal ? " warn" : "");
+  $("kDebt").className = "kpi" + (debtTotal ? " warn" : "");
   /* 指标条摘要(折叠态那一行):数字与口径同源,零项淡、异常项染色 */
   $("kpiSum").innerHTML = [
     '<span class="kc ' + (claimable.length && claimed < claimable.length ? "warn" : "ok") + '">REQ <b>' + claimed + "/" + claimable.length + "</b></span>",
@@ -1336,9 +1515,7 @@ async function load() {
   const telLast = telDays ? tel.series[telDays - 1].date : "—";
   $("cntTelDays").textContent = telDays ? telDays + " 天 · 共 " + tel.total + " 次(截至 " + telLast + ")" : "—";
   $("cntTelTools").textContent = Object.keys(tel.byTool).length + " 种";
-  $("telChart").innerHTML = tel.empty
-    ? '<div class="empty">本项目暂无工具遥测记录</div>'
-    : telChartSvg(tel.series);
+  renderTelemetryChart();
   const telBox = $("telTools");
   telBox.innerHTML = "";
   const telEntries = Object.entries(tel.byTool).sort((a, b) => (b[1] - a[1]) || a[0].localeCompare(b[0]));
@@ -1359,20 +1536,32 @@ async function load() {
   for (const r of st.reqs) {
     if (q && !((r.id + " " + r.text + " " + r.claimed.join(" ")).toLowerCase().includes(q))) continue;
     const tr = tb.insertRow();
+    tr.dataset.req = r.id;
     if (!r.baseline && !r.claimed.length) tr.className = "miss";
     const mark = r.baseline ? '<span class="dot base" title="baseline 已交付"></span>'
       : r.claimed.length ? '<span class="dot ok" title="已认领"></span>' : '<span class="dot miss" title="无人认领"></span>';
     tr.insertCell().innerHTML = mark + "<b>" + esc(r.id) + "</b>" + (r.baseline ? ' <span class="pill info">baseline</span>' : "") + " " + dispPill(r.disposition);
     tr.insertCell().innerHTML = '<span class="reqtext">' + esc(r.text) + "</span>";
-    const show = r.claimed.slice(0, 6), rest = r.claimed.length - show.length;
-    tr.insertCell().innerHTML = r.claimed.length ? show.map(MONO_ID).join("") + (rest > 0 ? ' <span class="tk" title="' + esc(r.claimed.slice(6).join(", ")) + '">+' + rest + '</span>' : "")
+    /* 认领票按「票所在的 plan」归并成一条 —— 一张张票竖着排会把行撑到 170px */
+    const byPlan = new Map();
+    for (const t of r.claimed) {
+      const k = String(t).split(" ")[0];
+      if (!byPlan.has(k)) byPlan.set(k, []);
+      byPlan.get(k).push(String(t).split(" ").slice(1).join(" "));
+    }
+    const pk = [...byPlan.keys()];
+    const shown = pk.slice(0, 2), rest = pk.length - shown.length;
+    tr.insertCell().innerHTML = r.claimed.length
+      ? '<div class="claimed">' + shown.map((k) => '<span class="tk" title="' + esc(byPlan.get(k).join(", ")) + '">' + esc(k) + " " + esc(byPlan.get(k).join("·")) + "</span>").join("")
+        + (rest > 0 ? '<span class="tk" title="' + esc(r.claimed.join(", ")) + '">+' + rest + " 票</span>" : "") + "</div>"
       : r.baseline ? '<span style="color:var(--fg-dim)">baseline 已交付</span>' : '<strong style="color:var(--red)">无人认领</strong>';
     const c = tr.insertCell();
-    c.innerHTML = '<button type="button" class="ghost" data-t="' + esc("REQ:" + r.id) + '">批注</button>' +
-      '<button type="button" class="ghost" data-oneclick="req" data-key="' + esc(r.id) + '">一键批注</button>';
+    c.innerHTML = '<div class="rowbtns"><button type="button" class="ghost" data-t="' + esc("REQ:" + r.id) + '">批注</button>' +
+      '<button type="button" class="ghost" data-oneclick="req" data-key="' + esc(r.id) + '">一键批注</button></div>';
     REQ_PAYLOADS[r.id] = { id: r.id, text: r.text };
   }
   $("qCount").textContent = q ? "命中 " + tb.rows.length + " / " + st.reqs.length + " 条" : "";
+  if (reqSel) selectReq(reqSel); else selectReq(null);
   if (!tb.rows.length) tb.innerHTML = '<tr><td colspan="4" class="empty">没有匹配的 REQ。</td></tr>';
 
   /* ── 提醒(product_surface 对账 + 欠账防再积)→ 顶栏抽屉,默认收起 ── */
@@ -1387,6 +1576,7 @@ async function load() {
 
   renderOverview();
   topoRender();
+  if (reqdep.cv) reqdepDraw();
 
   /* ── 批注目标下拉 + 列表 ── */
   const sel = $("a-target");
@@ -1402,31 +1592,66 @@ async function load() {
     const div = document.createElement("div");
     div.className = "ann " + (a.status === "open" ? "open" : "digested");
     const actLabel = a.action ? '<span class="tk">' + esc(ACTION_LABELS[a.action] || a.action) + "</span> " : '<span class="mutd">—</span> ';
-    const noteHtml = a.note ? '<span class="txt mutd">结论:' + esc(a.note) + "</span>" : "";
-    div.innerHTML = '<span class="who"><span class="pill ' + (a.status === "open" ? "warn" : "ship") + '">' + esc(a.type) + "</span><br>" +
-      '<span style="color:var(--fg-dim)">' + esc(a.target) + "</span></span>" +
-      actLabel +
-      '<span class="txt">' + esc(a.text) + "</span>" +
-      noteHtml +
-      '<span class="when" title="' + esc(a.ts) + '">' + relTime(a.ts) + (a.status === "open" ? " · 待消化" : " · 已消化") + "</span>";
+    const noteHtml = a.note ? '<div class="txt mutd">结论:' + esc(a.note) + "</div>" : "";
+    div.innerHTML = '<div class="annhead">' +
+      '<span class="who"><span class="pill ' + (a.status === "open" ? "warn" : "ship") + '">' + esc(a.type) + "</span>" +
+      '<span style="color:var(--fg-dim)">' + esc(a.target) + "</span>" + actLabel + "</span>" +
+      '<span class="when" title="' + esc(a.ts) + '">' + relTime(a.ts) + (a.status === "open" ? " · 待消化" : " · 已消化") + "</span>" +
+      "</div>" +
+      '<div class="annbody"><span class="txt">' + esc(a.text) + "</span>" + noteHtml + "</div>";
     an.appendChild(div);
   }
 
   /* ── 本地账问题清单 ── */
   const ib = $("issues");
   const openIss = (st.issues || []).filter((i) => i.open);
-  ib.innerHTML = openIss.length ? "" : '<div class="card empty">没有未闭环的本地账问题。</div>';
+  ib.innerHTML = openIss.length ? "" : '<div class="empty">没有未闭环的本地账问题。</div>';
   for (const i of openIss) {
     const div = document.createElement("div");
-    div.className = "iss tile";
+    div.className = "iss";
     div.innerHTML = '<span class="tk">' + esc(i.id) + "</span>" +
       '<span class="itxt">' + esc(i.title) + "</span>" +
       '<span class="mutd">' + esc(i.file) + "</span>" +
       '<button type="button" class="ghost" data-t="issue:' + esc(i.id) + '">批注</button>';
     ib.appendChild(div);
   }
+  /* 内容灌完之后再归零一次:表格变高会触发浏览器的滚动锚定,把滚动区顶到底 */
+  resetInnerScrolls();
 }
 
+let reqSel = null;
+function selectReq(id) {
+  reqSel = id || null;
+  const side = $("reqSide");
+  if (!side) return;
+  const tb = $("reqs").tBodies[0];
+  for (const tr of tb.rows) tr.classList.toggle("pick", tr.dataset.req === reqSel);
+  const r = reqSel ? (last && last.reqs || []).find((x) => x.id === reqSel) : null;
+  if (!r) {
+    side.innerHTML = '<h2>选中一条需求</h2><p class="sub2">点左表任意一行,这里看原话全文、认领票与一键批注。</p>';
+    return;
+  }
+  const claimed = r.claimed || [];
+  side.innerHTML =
+    '<h2>' + esc(r.id) + '</h2>' +
+    '<p class="sub2">' + (r.baseline ? "baseline 已交付" : "需求") + " · " + esc(r.disposition || "未处置") + '</p>' +
+    '<div class="reqline">' + esc(r.text || "") + '</div>' +
+    '<div class="hr"></div>' +
+    '<h3 class="sideh">认领票 ' + claimed.length + '</h3>' +
+    (claimed.length
+      ? '<div class="reqgrid">' + claimed.map((t) => '<div class="rg"><span class="tk">' + esc(t) + '</span></div>').join("") + '</div>'
+      : '<p class="hint">' + (r.baseline ? "baseline 能力,不需要认领票。" : "无人认领 —— 这是需求遗漏。") + '</p>') +
+    '<div class="sidebtns">' +
+      '<button type="button" class="ghost" data-t="REQ:' + esc(r.id) + '">写批注</button>' +
+      '<button type="button" class="ghost" data-oneclick="req" data-key="' + esc(r.id) + '">一键批注</button>' +
+    '</div>';
+}
+/* 需求清单:点行 → 右侧详情栏(按钮自己处理,行只负责选中) */
+$("reqs").addEventListener("click", (e) => {
+  if (e.target.closest("button")) return;
+  const tr = e.target.closest("tr[data-req]");
+  if (tr) selectReq(tr.dataset.req);
+});
 /* 提醒抽屉:顶栏计数徽标 → 点开看明细 */
 $("warnChip").addEventListener("click", () => {
   openDetail("提醒", lastWarnHtml || '<div class="empty">没有提醒。</div>');
@@ -1535,99 +1760,160 @@ $("pauseBtn").onclick = () => {
   $("icoPlay").style.display = paused ? "" : "none";
   $("liveText").textContent = paused ? "自动刷新已暂停" : "15s · 更新于 " + (last ? fmtTime(last.generated) : "—");
 };
-setInterval(() => { if (!paused && !document.hidden) load(); }, 15000);
-load();
 
 /* ── REQ 依赖视图(28-06):画布 + 诊断标注,数据只读 /api/state 的 reqGraph ── */
-const reqdep = { cv: null, ctx: null, raf: 0, dpr: 1, hover: null };
-}
 function reqdepModelView() {
   const m = reqDepModel(last && last.reqGraph);
   return m || { nodes: [], edges: [], groups: [], empty: true };
 }
-function reqdepNodePos(i, n, W, H) {
-  const cols = Math.max(2, Math.ceil(Math.sqrt(n)));
-  const row = Math.floor(i / cols), col = i % cols;
-  const cw = W / cols, chh = H / Math.ceil(n / cols);
-  return { x: col * cw + cw / 2, y: row * chh + chh / 2, w: cw, h: chh };
+/* REQ 依赖:列 = phase,列内竖排;646 条边只画细线当纹理,详情看右侧检视栏 */
+const RD = { NW: 92, NH: 22, VGAP: 5, HGAP: 16, HEAD: 26, PADX: 18, PADY: 12, LEGH: 24 };
+function reqdepLayout(m, availH) {
+  const byG = new Map();
+  for (const n of m.nodes) {
+    const k = n.group == null ? "unclaimed" : String(n.group);
+    if (!byG.has(k)) byG.set(k, []);
+    byG.get(k).push(n);
+  }
+  const keys = [...byG.keys()].sort((a, b) => {
+    const ka = a === "unclaimed" ? "zzz" : a, kb = b === "unclaimed" ? "zzz" : b;
+    return ka.localeCompare(kb, undefined, { numeric: true });
+  });
+  const maxRows = Math.max(1, ...keys.map((k) => byG.get(k).length));
+  /* 行距按可用高度撑开 —— 画布比内容高时下面空一大块,看着像没画完 */
+  const room = (availH || 0) - RD.PADY * 2 - RD.HEAD - RD.LEGH;
+  const vgap = Math.max(RD.VGAP, Math.min(34, room > 0 ? room / maxRows - RD.NH : RD.VGAP));
+  const colH = RD.HEAD + maxRows * (RD.NH + vgap);
+  const pos = new Map();
+  keys.forEach((k, ci) => {
+    const nodes = byG.get(k);
+    const x = RD.PADX + ci * (RD.NW + RD.HGAP);
+    nodes.forEach((n, i) => {
+      pos.set(n.id, { x, y: RD.PADY + RD.HEAD + i * (RD.NH + vgap), w: RD.NW, h: RD.NH, group: k, col: ci });
+    });
+  });
+  const W = RD.PADX * 2 + Math.max(1, keys.length) * (RD.NW + RD.HGAP) - RD.HGAP;
+  return { pos, keys, byG, W, H: RD.PADY * 2 + colH + RD.LEGH };
 }
 function reqdepHit(mx, my) {
   const m = reqdepModelView();
-  const W = reqdep.cv.clientWidth || 800, H = 420;
-  const pos = m.nodes.map((n, i) => ({ n, p: reqdepNodePos(i, m.nodes.length, W, H) }));
-  return (pos.find((x) => Math.abs(x.p.x - mx) < 70 && Math.abs(x.p.y - my) < 26) || {}).n || null;
+  if (m.empty) return null;
+  const L = reqdepLayout(m, ($("reqdep-cv") || {}).clientHeight || 0);
+  for (const n of m.nodes) {
+    const p = L.pos.get(n.id);
+    if (!p) continue;
+    if (mx >= p.x && mx <= p.x + RD.NW && my >= p.y && my <= p.y + RD.NH) return n;
+  }
+  return null;
 }
 function reqdepHover() {
-  const hit = reqdepHit(reqdep.mouse ? reqdep.mouse.x : -999, reqdep.mouse ? reqdep.mouse.y : -999);
   const el = $("reqdep-hover");
-  if (!hit) { el.hidden = true; return; }
-  const rel = reqdepModelView().edges.filter((e) => e.from === hit.id || e.to === hit.id).map((e) => e.from + " → " + e.to);
-  el.innerHTML = "<b>" + esc(hit.id) + "</b> " + esc(hit.text || "") + "<br><span class='mutd'>" + esc(rel.join("; ") || "无依赖边") + "</span>";
+  const hit = reqdepHit(reqdep.mouse ? reqdep.mouse.x : -999, reqdep.mouse ? reqdep.mouse.y : -999);
+  if (!hit) {
+    el.hidden = true;
+    if (reqdep.hoverId) { reqdep.hoverId = null; reqdepDraw(); }
+    return;
+  }
+  if (reqdep.hoverId !== hit.id) { reqdep.hoverId = hit.id; reqdepDraw(); }
+  const m = reqdepModelView();
+  const rel = m.edges.filter((e) => e.from === hit.id || e.to === hit.id);
+  const peers = rel.slice(0, 4).map((e) => (e.from === hit.id ? e.to : e.from));
+  el.innerHTML = "<b>" + esc(hit.id) + "</b> " + esc(hit.text || "") +
+    "<br><span class='mutd'>" + (rel.length ? rel.length + " 条依赖边 · " + esc(peers.join(", ")) + (rel.length > 4 ? " …" : "") : "无依赖边") + "</span>";
   const rect = reqdep.cv.getBoundingClientRect();
-  el.style.left = Math.min(reqdep.mouse.x + 12, rect.width - 220) + "px";
-  el.style.top = (reqdep.mouse.y + 12) + "px";
+  el.style.left = Math.min(reqdep.mouse.x + 12, Math.max(8, rect.width - 260)) + "px";
+  el.style.top = (reqdep.mouse.y + 14) + "px";
   el.hidden = false;
 }
 function reqdepDraw() {
   const cv = reqdep.cv, ctx = reqdep.ctx;
   if (!cv || !ctx) return;
   const m = reqdepModelView();
-  const W = cv.clientWidth || 800, H = 420;
-  const dpr = reqdep.dpr;
-  cv.width = W * dpr; cv.height = H * dpr;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, W, H);
   $("reqdep-empty").hidden = !m.empty;
   $("reqdep-wrap").hidden = m.empty;
-  const style = getComputedStyle(document.body);
-  const fg = style.getPropertyValue("--fg") || "#ddd";
-  const dim = style.getPropertyValue("--fg-dim") || "#888";
-  const bg = style.getPropertyValue("--bg2") || "#1a1a1a";
-  for (const g of m.groups) {
-    const idxs = m.nodes.map((n, i) => ({ n, i })).filter((x) => String(x.n.group) === String(g.key));
-    if (!idxs.length) continue;
-    const x0 = Math.min(...idxs.map((x) => x.p.x)) - 80, y0 = Math.min(...idxs.map((x) => x.p.y)) - 30;
-    const x1 = Math.max(...idxs.map((x) => x.p.x)) + 80, y1 = Math.max(...idxs.map((x) => x.p.y)) + 30;
-    ctx.fillStyle = "rgba(120,140,255,0.08)";
-    ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
-    ctx.fillStyle = dim;
-    ctx.font = "12px sans-serif";
-    ctx.fillText("同组 · phase " + g.key, x0 + 8, y0 + 16);
+  if (m.empty) return;
+  const L = reqdepLayout(m, ($("reqdep-cv") || {}).clientHeight || 0);
+  const dpr = reqdep.dpr;
+  cv.width = Math.round(L.W * dpr); cv.height = Math.round(L.H * dpr);
+  cv.style.width = L.W + "px"; cv.style.height = L.H + "px";
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, L.W, L.H);
+  const cLine = themeVar("--line-2", "#2A3749");
+  const cFg = themeVar("--fg", "#E9EFF7");
+  const cFg3 = themeVar("--fg-3", "#6E7E93");
+  const cAcc = themeVar("--acc", "#3DD68C");
+  const cAmb = themeVar("--amb", "#F0B23E");
+  const cRed = themeVar("--red", "#F2726B");
+  const cBlue = themeVar("--blue", "#6BA8F5");
+  const cPanel2 = themeVar("--panel-2", "#0E1622");
+  const cAccSoft = themeVar("--acc-soft", "rgba(61,214,140,.14)");
+  const sel = reqdep.sel;
+  const relSet = new Set();
+  if (sel) {
+    relSet.add(sel);
+    for (const e of m.edges) { if (e.from === sel) relSet.add(e.to); if (e.to === sel) relSet.add(e.from); }
   }
-  ctx.strokeStyle = fg;
-  ctx.fillStyle = fg;
+  /* 列头 */
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.font = '10.5px ui-monospace, "Cascadia Code", Consolas, monospace';
+  ctx.fillStyle = cFg3;
+  for (const k of L.keys) {
+    const first = (L.byG.get(k) || [])[0];
+    if (!first) continue;
+    const p = L.pos.get(first.id);
+    if (!p) continue;
+    ctx.fillText(k === "unclaimed" ? "未认领" : "phase " + k, p.x, RD.PADY + 9);
+  }
+  /* 边:646 条边一次全画就是毛线球 —— 未选中只留极淡的纹理,选中才亮出它的边 */
+  ctx.lineCap = "round";
   for (const e of m.edges) {
-    const a = m.nodes.map((n, i) => ({ n, i })).filter((x) => x.n.id === e.from)[0];
-    const b = m.nodes.map((n, i) => ({ n, i })).filter((x) => x.n.id === e.to)[0];
-    if (!a || !b) continue;
-    const pa = reqdepNodePos(a.i, m.nodes.length, W, H), pb = reqdepNodePos(b.i, m.nodes.length, W, H);
+    const pa = L.pos.get(e.from), pb = L.pos.get(e.to);
+    if (!pa || !pb) continue;
+    const ax = pa.x + RD.NW, ay = pa.y + RD.NH / 2;
+    const bx = pb.x, by = pb.y + RD.NH / 2;
+    const related = !!sel && (e.from === sel || e.to === sel);
     ctx.beginPath();
-    ctx.moveTo(pa.x, pa.y);
-    ctx.lineTo(pb.x, pb.y);
-    ctx.stroke();
-    ctx.font = "11px sans-serif";
-    ctx.fillText("票级依赖", (pa.x + pb.x) / 2 + 6, (pa.y + pb.y) / 2 - 6);
-  }
-  ctx.textAlign = "center";
-  for (let i = 0; i < m.nodes.length; i++) {
-    const n = m.nodes[i], p = reqdepNodePos(i, m.nodes.length, W, H);
-    ctx.fillStyle = bg;
-    ctx.strokeStyle = n.mark === "无人认领" ? "#e55" : fg;
-    ctx.fillRect(p.x - 66, p.y - 18, 132, 36);
-    ctx.strokeRect(p.x - 66, p.y - 18, 132, 36);
-    ctx.fillStyle = fg;
-    ctx.font = "12px sans-serif";
-    ctx.fillText(fitTextCtx(ctx, n.id, 120), p.x, p.y - 2);
-    if (n.mark) {
-      ctx.fillStyle = n.mark === "无人认领" ? "#e55" : dim;
-      ctx.font = "11px sans-serif";
-      ctx.fillText(fitTextCtx(ctx, n.mark, 124), p.x, p.y + 12);
+    if (bx >= ax) {
+      const dx = Math.max(24, (bx - ax) * .45);
+      ctx.moveTo(ax, ay);
+      ctx.bezierCurveTo(ax + dx, ay, bx - dx, by, bx, by);
+    } else {
+      /* 回边的贝塞尔会兜到底下形成大弧 —— 改走直线,噪声小一半 */
+      ctx.moveTo(ax, ay);
+      ctx.lineTo(bx, by);
     }
+    ctx.strokeStyle = related ? cBlue : cLine;
+    ctx.globalAlpha = related ? .95 : sel ? .06 : .14;
+    ctx.lineWidth = related ? 1.6 : .8;
+    ctx.stroke();
   }
-  ctx.textAlign = "start";
-  ctx.fillStyle = dim;
-  ctx.font = "12px sans-serif";
-  ctx.fillText("实线 = 票级依赖 · 同组 = 同一个 phase 的需求", 12, H - 10);
+  ctx.globalAlpha = 1;
+  /* 节点 */
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  for (const n of m.nodes) {
+    const p = L.pos.get(n.id);
+    if (!p) continue;
+    const isSel = n.id === sel;
+    const rel = relSet.has(n.id);
+    roundRect(ctx, p.x, p.y, RD.NW, RD.NH, 6);
+    ctx.fillStyle = isSel ? cAccSoft : cPanel2;
+    ctx.fill();
+    ctx.strokeStyle = isSel ? cAcc : rel ? cBlue : cLine;
+    ctx.lineWidth = isSel ? 1.8 : 1;
+    ctx.stroke();
+    ctx.fillStyle = n.mark === "无人认领" ? cRed : n.isolated ? cAmb : cAcc;
+    ctx.fillRect(p.x + 2, p.y + 4, 2.5, RD.NH - 8);
+    ctx.font = '10px ui-monospace, "Cascadia Code", Consolas, monospace';
+    ctx.fillStyle = isSel ? cFg : cFg3;
+    ctx.fillText(fitTextCtx(ctx, n.id, RD.NW - 12), p.x + RD.NW / 2 + 2, p.y + RD.NH / 2);
+  }
+  /* 图例 */
+  ctx.textAlign = "left";
+  ctx.font = '11px "Segoe UI", system-ui, "Microsoft YaHei", sans-serif';
+  ctx.fillStyle = cFg3;
+  ctx.fillText("列 = phase · 细线 = 票级依赖 · 点节点看详情", RD.PADX, L.H - 11);
 }
 function fitTextCtx(ctx, text, maxW) {
   if (!text) return "";
@@ -1636,37 +1922,78 @@ function fitTextCtx(ctx, text, maxW) {
   while (s.length > 1 && ctx.measureText(s + "…").width > maxW) s = s.slice(0, -1);
   return s + "…";
 }
+function selectReqdep(id) {
+  const m = reqdepModelView();
+  const side = $("reqdepSide");
+  if (!side) return;
+  const n = m.nodes.find((x) => x.id === id);
+  if (!n) {
+    reqdep.sel = null;
+    side.innerHTML = '<h2>检视</h2><p class="sub2">点任一节点,看这条需求的认领与依赖。</p>';
+    reqdepDraw();
+    return;
+  }
+  reqdep.sel = id;
+  const rel = m.edges.filter((e) => e.from === id || e.to === id);
+  const claimed = n.claimed || [];
+  side.innerHTML =
+    '<h2>' + esc(n.id) + '</h2>' +
+    '<p class="sub2">' + esc(n.group === "unclaimed" ? "未认领" : "phase " + n.group) + " · " + (rel.length ? rel.length + " 条依赖边" : "无依赖边") + '</p>' +
+    '<div class="reqline">' + esc(n.text || "") + '</div>' +
+    '<div class="hr"></div>' +
+    '<h3 class="sideh">认领票 ' + claimed.length + '</h3>' +
+    (claimed.length
+      ? '<div class="reqgrid">' + claimed.map((t) => '<div class="rg"><span class="tk">' + esc(t) + '</span></div>').join("") + '</div>'
+      : '<p class="hint">' + (n.mark === "无人认领" ? "无人认领 —— 这是需求遗漏。" : "没有认领票。") + '</p>') +
+    '<h3 class="sideh">依赖边 ' + rel.length + '</h3>' +
+    (rel.length
+      ? '<div class="reqgrid">' + rel.slice(0, 40).map((e) =>
+          '<div class="rg"><span class="tk">' + esc(e.from === id ? e.to : e.from) + '</span>' +
+          '<span class="dtxt">' + esc((e.via || []).join(", ")) + '</span></div>').join("") + '</div>' +
+        (rel.length > 40 ? '<p class="hint">只列前 40 条,共 ' + rel.length + ' 条。</p>' : '')
+      : '<p class="hint">这条需求没有票级依赖边。</p>') +
+    '<div class="sidebtns">' +
+      '<button type="button" class="ghost" data-t="REQ:' + esc(n.id) + '">写批注</button>' +
+      '<button type="button" class="ghost" data-oneclick="req" data-key="' + esc(n.id) + '">一键批注</button>' +
+    '</div>';
+  reqdepDraw();
+}
 function reqdepStart() {
   const box = $("reqdep-cv");
   if (!box) return;
-  if (reqdep.cv) { reqdepDraw(); return; }
-  const cv = document.createElement("canvas");
-  cv.style.width = "100%";
-  cv.style.height = "420px";
-  box.appendChild(cv);
-  reqdep.cv = cv;
-  reqdep.ctx = cv.getContext("2d");
-  reqdep.dpr = Math.min(2.5, window.devicePixelRatio || 1);
-  cv.addEventListener("mousemove", (e) => {
-    const rect = cv.getBoundingClientRect();
-    reqdep.mouse = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    reqdepHover();
-  });
-  cv.addEventListener("mouseleave", () => { reqdep.mouse = null; $("reqdep-hover").hidden = true; });
-  cv.addEventListener("click", (e) => {
-    const rect = cv.getBoundingClientRect();
-    const hit = reqdepHit(e.clientX - rect.left, e.clientY - rect.top);
-    if (!hit) return;
-    $("reqdep-detail-body").innerHTML =
-      "<b>" + esc(hit.label) + "</b><br>" + esc(hit.note || "有票级依赖边") +
-      "<br><span class='mutd'>认领票:" + esc((hit.claimed || []).join(", ") || "无") + "</span>" +
-      "<br><span class='mutd'>group:" + esc(String(hit.group)) + "</span>";
-    $("reqdep-detail").hidden = false;
-  });
-  document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") $("reqdep-detail").hidden = true; });
-  load().then(() => { reqdepDraw(); });
+  if (!reqdep.cv) {
+    const cv = document.createElement("canvas");
+    box.appendChild(cv);
+    reqdep.cv = cv;
+    reqdep.ctx = cv.getContext("2d");
+    reqdep.dpr = Math.min(2.5, window.devicePixelRatio || 1);
+    cv.addEventListener("mousemove", (e) => {
+      const rect = cv.getBoundingClientRect();
+      reqdep.mouse = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      reqdepHover();
+    });
+    cv.addEventListener("mouseleave", () => {
+      reqdep.mouse = null;
+      $("reqdep-hover").hidden = true;
+      if (reqdep.hoverId) { reqdep.hoverId = null; reqdepDraw(); }
+    });
+    cv.addEventListener("click", (e) => {
+      const rect = cv.getBoundingClientRect();
+      const hit = reqdepHit(e.clientX - rect.left, e.clientY - rect.top);
+      if (!hit) return;
+      selectReqdep(hit.id);
+    });
+  }
+  reqdepDraw();
 }
-window.addEventListener("resize", () => reqdepDraw());
+window.addEventListener("resize", () => { reqdepDraw(); renderTelemetryChart(); });
+
+/* 引导:所有声明就位之后再跑 —— 顶层调用早于 const/let 声明就是 TDZ,
+   脚本一崩整页停在「连接中…」(28-11 同类事故:在 #reqdep 直接打开看板必崩)。
+   门禁 R-30 的判据三就盯着这段顺序。 */
+showView(routeFromHash());
+load();
+setInterval(() => { if (!paused && !document.hidden) load(); }, 15000);
 </script>
 </body>
 </html>

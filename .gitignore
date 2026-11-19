@@ -18,6 +18,7 @@ tools/_patch.mjs
 .v2c/
 .video_agent/
 .zcode/
+out/
 
 # autoresearch 会话状态(冻结基准在 .auto/,绝不进仓库)
 .auto/
