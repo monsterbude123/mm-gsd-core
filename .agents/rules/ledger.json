@@ -324,6 +324,17 @@
       "_候选顾虑回应": "与 R-12(安装可追溯)不重叠:那条查版本清单有没有写、写得全不全;这条查 update 有没有真的按 registry 上的版本去换。与 R-19(通道安全)不重叠:那条查 next 不得比 latest 旧;这条查 update 的行为。两个门都碰 registry,但一个是「标签对不对」,一个是「用户那条命令有没有真的升级」。",
       "friction": "low",
       "friction_note": "0 次触发;update 门静默守护"
+    },
+    {
+      "id": "R-32",
+      "status": "active",
+      "since": "0.7.14",
+      "statement": "两份主文件(skills/mm-gsd-loop/scripts/gsd-state-check.mjs 与 tools/mmc.mjs)的顶层函数名冻结在 tools/main-file-baseline.mjs;新增的顶层函数必须在 references/ 或 tools/checks/ 有同名导出,否则判红 —— 新判定实现不许再往主文件里长。CHECKS 简写方法不在此门射程,由 check-ledger-integrity 覆盖(新键必须登记台账)。",
+      "check": "check-main-file-ownership",
+      "friction": "low",
+      "friction_note": "2026-11-19 上线;静态枚举,只在改主文件时才可能红",
+      "_note": "2026-11-19 phase 30 T2 落地(#27 的『freeze new inline rules』可执行化)。判据:归属(新增名必须有同名导出)+ 冻结基线(tools/main-file-baseline.mjs,rule-baseline 先例)—— 基线豁免存量(存量不判死),否则门上线即红(r2 BLOCKER-1 实证)。不用计数口径:计数随写法漂移、增删等量就绕过。CHECKS 简写方法不在射程:那条增长路径由 check-ledger-integrity 覆盖,两路合围。限度:主文件是脚本不能真导入,文本枚举认不全对象简写/类方法/let 箭头(shortcut 注在门实现里),出现绕过形态再换真解析器。活违规输入:往主文件塞新顶层函数 → 红;删 → 绿(上线时实测)。",
+      "_候选顾虑回应": "与 R-16 不重叠:R-16 管会红用例登记,本门管新判定的落点。"
     }
   ],
   "candidates": [

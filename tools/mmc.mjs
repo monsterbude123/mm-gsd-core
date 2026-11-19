@@ -15,6 +15,7 @@ import { join, dirname, relative, resolve, sep } from "node:path";
 import { execFileSync } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
 import { missingRules, BASELINE_RULES } from "./rule-baseline.mjs";
+import { MAIN_FILE_BASELINE } from "./main-file-baseline.mjs";
 import { registryGaps, unregisteredModules, baselineDrift, deadGates, checkCardClaims, checkCardRefresh } from "./module-registry.mjs";
 import { collectFiles, countLines, collectScripts } from "./budget.mjs";
 import { fileURLToPath } from "node:url";
@@ -113,6 +114,42 @@ const CHECKS = {
     const cand = (led.candidates ?? []).filter((c) => c.status !== "candidate");
     if (cand.length) { report.fail(`candidates 区有 ${cand.length} 条不是 candidate 状态 —— 候选区只放未生效的`); pass = false; }
     report.pass(`${active} 条 active 规则全部挂了可跑的门禁;${(led.candidates ?? []).length} 条候选待门禁化`);
+    return pass;
+  },
+
+  // R-32(归属式门,phase 30 T2):新判定实现不许再往主文件里长 ——
+  // 两份主文件的顶层函数名冻结在 tools/main-file-baseline.mjs;新增的顶层函数必须
+  // 在 references/ 或 tools/checks/ 有同名导出。基线内的存量豁免(存量不判死)。
+  // CHECKS 简写方法不在此门射程 —— 那条增长路径由 check-ledger-integrity 覆盖(新键必须登记台账)。
+  // 限度(shortcut):主文件是脚本,不能真导入枚举(import 即执行),文本枚举认不全
+  // 对象简写方法/类方法/let 箭头 —— 升级时机:出现绕过形态再换真解析器。
+  "check-main-file-ownership"(report) {
+    const MAIN_FILES = Object.keys(MAIN_FILE_BASELINE);
+    let pass = true;
+    for (const f of MAIN_FILES) {
+      const src = readFileSync(R(f), "utf8");
+      const names = new Set();
+      for (const m of src.matchAll(/^(?:async )?function (\w+)/gm)) names.add(m[1]);
+      for (const m of src.matchAll(/^const (\w+) =/gm)) names.add(m[1]);
+      const frozen = new Set(MAIN_FILE_BASELINE[f]);
+      if (!frozen.size) { report.fail(`${f}: 冻结基线为空 —— 基线被清空时门必须红(fail-closed)`); pass = false; continue; }
+      // references/ 与 tools/checks/ 的导出名索引(新增名的合法去向)
+      const exported = new Set();
+      for (const dir of ["skills/mm-gsd-loop/references", "tools/checks"]) {
+        let es = []; try { es = readdirSync(R(dir)).filter((x) => x.endsWith(".mjs")); } catch {}
+        for (const e of es) {
+          const s = readFileSync(R(dir, e), "utf8");
+          for (const m of s.matchAll(/export (?:async )?(?:function|const) (\w+)/g)) exported.add(m[1]);
+        }
+      }
+      for (const n of names) {
+        if (frozen.has(n)) continue;
+        if (exported.has(n)) continue;
+        report.fail(`${f}: 新增顶层函数 "${n}" 没有同名导出 —— 新判定实现不许往主文件里长(R-32);落 references/ 或 tools/checks/ 并同名导出`);
+        pass = false;
+      }
+    }
+    if (pass) report.pass("主文件顶层函数全部在冻结基线内或已有同名导出(归属式门 ✓)");
     return pass;
   },
 
