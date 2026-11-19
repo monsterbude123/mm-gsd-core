@@ -41,6 +41,21 @@ export function runPlanGateCases(t, x) {
     mkdirSync(join(d4b, ".planning"), { recursive: true });
     writeFileSync(join(d4b, ".planning", "09-01-PLAN.md"), "---\nphase: \"09\"\n---\n\n### T1 事\n- **covers**: REQ-1\n");
     eqN(checkReqCoverage({ root: d4b, plansDir: join(d4b, ".planning") }).length, 0, "REQUIREMENTS.md 不存在 → 跳过(空)");
+    // worktree 局部 PLAN 集(#34):全局账的历史 REQ 不在本检出 → 只判 contextText 提及的
+    const d4w = mkdtempSync(join(tmpdir(), "mm-gsd-wt-"));
+    mkdirSync(join(d4w, ".planning"), { recursive: true });
+    const REQWT = "- REQ-1: 本 phase 的\n- REQ-2: 别的 phase 的(认领 PLAN 在主检出)\n- REQ-3: 本 phase 漏认领的\n";
+    const PLANWT = '---\nphase: "42"\n---\n\n- **covers**: REQ-1\n';
+    writeFileSync(join(d4w, ".planning", "REQUIREMENTS.md"), REQWT);
+    writeFileSync(join(d4w, ".planning", "42-01-PLAN.md"), PLANWT);
+    writeFileSync(join(d4w, ".planning", "42-CONTEXT.md"), "本 phase 涉及 REQ-1 与 REQ-3(REQ-2 属别的检出)\n");
+    const wtLegacy = checkReqCoverage({ root: d4w, plansDir: join(d4w, ".planning") });
+    eqN(wtLegacy.some((p) => p.includes("REQ-2")), true, "wt-legacy 不传 contextText → 全局账照判(旧口径不变,REQ-2 无人认领判红)");
+    const wtScoped = checkReqCoverage({ root: d4w, plansDir: join(d4w, ".planning"), contextText: "本 phase 涉及 REQ-1 与 REQ-3" });
+    eqN(wtScoped.some((p) => p.includes("REQ-2")), false, "wt-1 传 contextText → 只判本 phase 上下文提及的 REQ(REQ-2 跳过)");
+    eqN(wtScoped.some((p) => p.includes("REQ-3")), true, "wt-2 本 phase 真漏认领仍判红(作用域不放走真信号)");
+    eqN(wtScoped.some((p) => p.includes("REQ-1")), false, "wt-3 已认领的 REQ 不误红");
+    rmSync(d4w, { recursive: true, force: true });
     rmSync(d4b, { recursive: true, force: true });
   }
   // ---- baseline 跳过(phase 19 D-11):REQUIREMENTS.md 晚于部分能力诞生,标 (baseline 的 REQ 不进覆盖集 ----

@@ -206,16 +206,23 @@ export function checkReqClaims(tickets, root) {
  * 格式约定 `- REQ-N: <需求一句话>`(D-01),抽取 regex 与 checkReqClaims 同源。
  * REQUIREMENTS.md 不存在 → 判不了,不猜(与 checkReqClaims 同口径)。
  */
-export function checkReqCoverage({ root, plansDir }) {
+export function checkReqCoverage({ root, plansDir, contextText }) {
+  // worktree 局部 PLAN 集(#34):全局账的历史 REQ 的认领 PLAN 不在本检出,判不了
+  // ⇒ 传 contextText(本 phase 的 CONTEXT)时只判其提及的 REQ;跨 phase 交给
+  // 含全部 PLAN 的检出。不传 → 旧口径(全判)不变。
   const reqFile = join(root, ".planning", "REQUIREMENTS.md");
   if (!existsSync(reqFile)) return [];
   const reqText = readFileSync(reqFile, "utf8");
   // baseline 跳过(phase 19 D-11):REQUIREMENTS.md 晚于部分能力诞生,标 `(baseline` 的行
   // (实测形状 `(baseline,0.4.x)`)由已发布版本兑现,不进覆盖集;未标 baseline 的 REQ 照判红。
   // 逐行判 —— 标记跟着 REQ 行走,不能全文一判(会把别的行的说明文字也卷进来)。
-  const known = reqText.split(/\r?\n/)
+  let known = reqText.split(/\r?\n/)
     .filter((line) => !/\(baseline/i.test(line))
     .flatMap((line) => [...line.matchAll(/REQ-\d+/gi)].map((m) => m[0].toUpperCase()));
+  if (typeof contextText === "string" && contextText.length) {
+    const scoped = new Set([...contextText.matchAll(/REQ-\d+/gi)].map((m) => m[0].toUpperCase()));
+    known = known.filter((r) => scoped.has(r));
+  }
   const claimed = new Set();
   const scan = (dir) => {
     let entries;

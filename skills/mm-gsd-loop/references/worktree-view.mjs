@@ -16,8 +16,9 @@
 // 搬过来抄一份就是第二真相源 —— 抄的那份迟早与原件分叉,而没人会比对它们。
 
 import { execSync } from "node:child_process";
-import { readdirSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, existsSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 
 /**
@@ -229,11 +230,35 @@ export function resolveReviewBaseline(planId, root) {
   if (reviewBaseCache.has(anchor)) return reviewBaseCache.get(anchor);
   const base = new Map();
   try {
-    const files = execSync("git ls-tree -r --name-only " + anchor, { cwd: root, encoding: "utf8", maxBuffer: 1024 * 1024 * 8, stdio: ["ignore", "pipe", "ignore"] });
-    for (const rel of files.split(/\r?\n/).filter(Boolean)) {
-      try {
-        base.set(rel, execSync("git show " + anchor + ":" + rel, { cwd: root, encoding: "utf8", maxBuffer: 1024 * 1024 * 8, stdio: ["ignore", "pipe", "ignore"] }));
-      } catch { /* 二进制或已删除:读不到就跳过 */ }
+    // 一次性解包(30-05,#32):逐文件 spawn `git show` 在数千文件的树上 = 数千子进程,
+    // 实测单票 40 分钟。git archive 一个子进程解出整棵树到临时目录,读完即删。
+    // tar 不可用(极罕见)→ 回退到旧的逐文件循环,门禁照常工作只是慢。
+    const tmp = mkdtempSync(join(tmpdir(), "mm-gsd-baseline-"));
+    try {
+      execSync(`git archive "${anchor}" | tar -x -C "${tmp}"`, { cwd: root, stdio: ["ignore", "pipe", "ignore"], shell: true });
+      const walk = (dir) => {
+        let entries;
+        try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+        for (const d of entries) {
+          const p = join(dir, d.name);
+          if (d.isDirectory()) walk(p);
+          else {
+            const relPath = p.slice(tmp.length + 1).split("\\").join("/");
+            try { base.set(relPath, readFileSync(p, "utf8")); } catch { /* 二进制或读不到:跳过 */ }
+          }
+        }
+      };
+      walk(tmp);
+    } catch {
+      // tar/解包失败:回退逐文件循环(旧路径,慢但正确)
+      const files = execSync("git ls-tree -r --name-only " + anchor, { cwd: root, encoding: "utf8", maxBuffer: 1024 * 1024 * 8, stdio: ["ignore", "pipe", "ignore"] });
+      for (const rel of files.split(/\r?\n/).filter(Boolean)) {
+        try {
+          base.set(rel, execSync("git show " + anchor + ":" + rel, { cwd: root, encoding: "utf8", maxBuffer: 1024 * 1024 * 8, stdio: ["ignore", "pipe", "ignore"] }));
+        } catch { /* 二进制或已删除:读不到就跳过 */ }
+      }
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
     }
   } catch {
     return new Map();

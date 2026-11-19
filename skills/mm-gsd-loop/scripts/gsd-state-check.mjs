@@ -531,7 +531,12 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
     }
     // 需求覆盖门(phase 17 D-03,issue #21):checkReqClaims 的正方向 —— REQ 落盘了但无人认领。
     // 项目全量对账,整批一次;REQUIREMENTS.md 不存在 → 函数自己返回空,不猜。
-    for (const p of checkReqCoverage({ root, plansDir: P(".") }))
+    // worktree 局部 PLAN 集(#34):传本 phase 的 CONTEXT 作作用域 —— 只判本 phase 上下文
+    // 提及的 REQ;全局账的历史 REQ 的认领 PLAN 在别的检出,判不了,交给全量检出。
+    const ctxForCoverage = batchPlans
+      .map((b) => existsSync(P(b.phase + "-CONTEXT.md")) ? readFileSync(P(b.phase + "-CONTEXT.md"), "utf8") : "")
+      .join("\n");
+    for (const p of checkReqCoverage({ root, plansDir: P("."), contextText: ctxForCoverage }))
       e(p, "给这条需求拆票并在 covers 认领 REQ-N;确认不做就回 discuss 从 REQUIREMENTS.md 移除或改写");
   }
   {
