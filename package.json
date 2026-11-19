@@ -20,12 +20,28 @@
   "files": [
     "bin",
     "skills",
+    "!skills/mm-gsd-board/ui",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
     "test": "node tools/mmc.mjs health",
-    "pack:check": "node scripts/verify-package.mjs"
+    "pack:check": "node scripts/verify-package.mjs",
+    "build:board": "node scripts/build-board-ui.mjs",
+    "test:board": "node --experimental-strip-types --test skills/mm-gsd-board/ui/utils/boardModel.test.ts"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.5",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.3.0",
+    "lucide-react": "1.76.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "tailwindcss": "4.3.5",
+    "typescript": "5.9.3",
+    "vite": "8.3.8",
+    "vite-plugin-singlefile": "2.3.4"
   },
   "engines": {
     "node": ">=18"

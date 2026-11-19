@@ -13,6 +13,10 @@ tools/_patch.mjs
 # npm 打包产物
 *.tgz
 
+# 看板前端构建:依赖与中间产物都不是仓库资产(产物是 templates/web.html,进仓库)
+node_modules/
+skills/mm-gsd-board/build/
+
 # 工具产物与本地数据(release 流程会 git add -A,这些绝不能被扫进仓库)
 .codegraph/
 .v2c/

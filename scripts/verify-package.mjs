@@ -29,7 +29,11 @@ if (Object.keys(pkg.bin ?? {}).length !== 1) bad(`bin 必须只有一个(现在 
 ok(`package.json: ${pkg.name}@${pkg.version},bin=${Object.keys(pkg.bin ?? {}).join(",")}`);
 
 // 2) files 里列的路径都得存在
-for (const f of pkg.files ?? []) {
+// "!xxx" 是排除项(白名单的反面),不是要打进包的路径 —— 按存在性判它会假红。
+// 排除项在第 6 步验:排除没生效等于白写。
+const filesEntries = pkg.files ?? [];
+const excludes = filesEntries.filter((f) => String(f).startsWith("!")).map((f) => String(f).slice(1));
+for (const f of filesEntries.filter((f) => !String(f).startsWith("!"))) {
   if (!existsSync(join(ROOT, f))) bad(`files 里列的 "${f}" 在仓库里不存在`);
 }
 
@@ -93,6 +97,14 @@ try {
   for (const n of files) {
     if (n.startsWith("tools/") || n.startsWith("docs/") || n.startsWith(".agents/") || n.startsWith(".github/"))
       bad(`不该进用户包: ${n}`);
+    // 看板前端源码是仓库的事,用户要的是产物(templates/web.html)
+    if (n.startsWith("skills/mm-gsd-board/ui/")) bad(`不该进用户包(看板前端源码,用户要的是产物): ${n}`);
+  }
+  // files 里声明的排除项必须真的排掉 —— 排除规则写错/失效,用户就会白装一份源码
+  for (const ex of excludes) {
+    const rel = ex.replace(/\\/g, "/").replace(/\/$/, "");
+    const leaked = files.filter((n) => n === rel || n.startsWith(rel + "/"));
+    if (leaked.length) bad(`files 里排除了 "${rel}",但 ${leaked.length} 个文件还是进了包:${leaked.slice(0, 3).join("、")}`);
   }
   ok("打包清单符合预期");
 } catch (e) {

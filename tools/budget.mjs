@@ -16,7 +16,9 @@ export function collectFiles(root, ...dirs) {
     let names;
     try { names = readdirSync(dir, { withFileTypes: true }); } catch { return; }
     for (const e of names) {
-      if (e.name === ".git" || e.name === "node_modules") continue;
+      // node_modules 与 lockfile 是机器生成的,不是手写代码 —— 数行数是为了
+      // 「找出哪里的代码胖了」,把生成物算进来只会淹没真信号。
+      if (e.name === ".git" || e.name === "node_modules" || e.name === "package-lock.json") continue;
       const p = join(dir, e.name);
       if (e.isDirectory()) walk(p);
       else if (/\.(md|mjs|ts|json)$/.test(e.name) || e.name === "pre-commit") out.push(p);

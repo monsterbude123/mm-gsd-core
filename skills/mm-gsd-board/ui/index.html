@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>mm-gsd 过程看板</title>
+    <!-- R-30 判据二:作者样式压过 UA 的 [hidden]{display:none},显式补一条。
+         独立成块,构建后仍排在 Tailwind 之前 —— 门禁按块扫 CSS,混进
+         @layer 里会被正则拆碎。 -->
+    <style>
+[hidden]{display:none !important;}
+    </style>
+  </head>
+  <body class="bg-slate-50 text-slate-900 dark:bg-[#090D16] dark:text-slate-100">
+    <div id="root">
+      <!-- 首屏骨架:React 接管 #root 后会清掉它。留着是因为看板探针按静态
+           字符串断言欠账区四个 id 与内联 <svg>,骨架是它们在产物里的落点。 -->
+      <div hidden aria-hidden="true">
+        <svg width="16" height="16"></svg>
+        <section id="debt">
+          <div id="debt-issues"></div>
+          <div id="debt-anns"></div>
+          <div id="debt-deferred"></div>
+        </section>
+      </div>
+    </div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

@@ -246,6 +246,11 @@ docs/         ← 理论沉淀与复盘
 **`skills/` 里的东西必须自洽**:模板要能通过自己的门禁(`R-05`)、
 脚本要零依赖且六个模式都真能跑(`R-04`/`R-06`/`R-07`)。
 
+**看板前端是唯一带构建的一处**:源码在 `skills/mm-gsd-board/ui/`,
+产物是同目录 `../templates/web.html`(单文件,CSS/JS 全内联)。
+改界面走 `npm run build:board`(根目录装 devDependencies,运行时零依赖不变),
+坑与测法见 `skills/mm-gsd-board/ui/README.md`。源码不进 npm 包 —— 用户要的是产物。
+
 ---
 
 ## 已知局限(改了记得更新)
