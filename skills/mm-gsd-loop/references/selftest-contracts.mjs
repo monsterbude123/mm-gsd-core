@@ -10,7 +10,7 @@ import { ticketsCovered } from "./ticket-alive.mjs";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runArtifactCases, runBoundaryCases, runConvergenceCases, runCoreBoundaryCases, runCoverageCases, runDecisionScopeCases, runLedgerGateCases, runPackCases, runPhaseHealthCases, runPlanCheckE2ECases, runPlanReadyCases, runPremiseLocateCases, runRequirementMiningCases, runReviewGateCases, runRouteCases, runTelemetryViewCases, runUpdateGateCases, runWaveFromDagCases, runWebTemplateGateCases } from "./selftest-suite.mjs";
+import { runArtifactCases, runBoundaryCases, runConvergenceCases, runCoreBoundaryCases, runCoverageCases, runDecisionScopeCases, runLedgerGateCases, runPackCases, runPhaseHealthCases, runPlanCheckE2ECases, runPlanReadyCases, runPremiseLocateCases, runRequirementMiningCases, runReviewGateCases, runRouteCases, runStateDeriveCases, runTelemetryViewCases, runUpdateGateCases, runWaveFromDagCases, runWebTemplateGateCases } from "./selftest-suite.mjs";
 
 export function runContractCases(t, x) {
   const { eq, eqN, eqArr } = t;
@@ -138,6 +138,7 @@ export function runContractCases(t, x) {
   runWaveFromDagCases({ eqN });
   runReviewGateCases({ eqN });
   runConvergenceCases({ eqN });
+  runStateDeriveCases({ eqN });
   runPackCases({ eqN });
   runTelemetryViewCases({ eqN, eqArr });
   runCoreBoundaryCases({ eqN });

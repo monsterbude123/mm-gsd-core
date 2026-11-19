@@ -712,3 +712,42 @@ export function runPremiseLocateCases(st) {
   eqN(r[1].includes("verify 第 2 条命令") && r[1].includes("cat src/nope2"), true, "判红带上下文(±20 字符)");
   eqN(r[0].includes("不在本票"), true, "豁免判定人话出现");
 }
+
+// ---- 状态机判定块的行为基线(phase 30 30-03):判定块已搬到 references/state-derive.mjs,
+// 本组断言在夹具上真跑检查器,与基线逐字比对 —— 判据变了这里会红(D-02 的常驻证据)。
+export function runStateDeriveCases({ eqN }) {
+  // 夹具在运行时创建(.planning 不入库是本仓的 gitignore 规则)—— 照点修用例 mkShipped 的
+  // 现写现跑现删先例;baseline.json 是期望输出,不是 .planning,随包走。
+  const fx = mkdtempSync(join(tmpdir(), "mm-gsd-state-demo-"));
+  const pl = join(fx, ".planning");
+  mkdirSync(pl, { recursive: true });
+  writeFileSync(join(pl, "STATE.md"), "---\nstatus: verifying\nactive_phase: \"99\"\n---\n");
+  writeFileSync(join(pl, "99-CONTEXT.md"), "---\nphase: \"99\"\n---\n\n# 99 CONTEXT\n\n<domain>\n\u5939\u5177\n</domain>\n\n<decisions>\n- [D-01] reversible \u2014 \u5939\u5177\n</decisions>\n\n<specifics>\n- \u5939\u5177\n</specifics>\n\n<deferred>\n- \u65e0\n</deferred>\n");
+  writeFileSync(join(pl, "99-01-PLAN.md"), "---\nphase: \"99\"\nplan: \"01\"\n---\n\n## T1\n");
+  writeFileSync(join(pl, "99-01-SUMMARY.md"), "---\nphase: \"99\"\nstatus: complete\ncommits: 1\n---\n\n## One-liner\n\n\u5939\u5177\n");
+  const baseline = JSON.parse(readFileSync(fileURLToPath(new URL("../selftests/fixtures/state-demo/baseline.json", import.meta.url)), "utf8"));
+  const checker = fileURLToPath(new URL("../scripts/gsd-state-check.mjs", import.meta.url));
+  let out = "";
+  try {
+    out = execFileSync(process.execPath, [checker, "--json"], {
+      cwd: fx, encoding: "utf8", stdio: "pipe",
+      // 确定性三件套:沙盒 + 临时遥测 + 清空 GSD_PROJECT_DIR;GIT_DIR 钉死 ——
+      // 否则仓内跑与安装侧跑走不同 git 分支,基线逐字比对无意义(30-RESEARCH)
+      env: { ...process.env, GSD_SANDBOX: "1", GSD_PROJECT_DIR: "", GIT_DIR: "no-such-git-dir", GSD_TELEMETRY_PATH: join(tmpdir(), "mm-gsd-state-baseline-telemetry.jsonl") },
+    });
+  } catch (e) { out = String(e.stdout || ""); }
+  let json = null;
+  try { json = JSON.parse(out); } catch { json = null; }
+  eqN(!!json, true, "state-baseline-a 检查器在夹具上跑完并输出 JSON(崩了不算通过)");
+  if (JSON.stringify(json) !== JSON.stringify(baseline)) {
+    try {
+      console.log(`  ! 夹具目录: ${readdirSync(pl).join(",")} | ${readdirSync(join(pl)).length} 项`);
+      console.log(`  ! GSD_PROJECT_DIR=(${JSON.stringify(process.env.GSD_PROJECT_DIR)}) cwd 文件: ${readdirSync(fx).join(",")}`);
+    } catch (e) { console.log("  ! 夹具读取失败:", e.message); }
+    const a = JSON.stringify(json), b = JSON.stringify(baseline);
+    let i = 0; while (i < Math.max(a.length, b.length) && a[i] === b[i]) i++;
+    console.log(`  ! 差异@${i}: got=${a.slice(Math.max(0, i - 50), i + 70)} | want=${b.slice(Math.max(0, i - 50), i + 70)}`);
+  }
+  eqN(JSON.stringify(json) === JSON.stringify(baseline), true, "state-baseline-b 夹具输出与基线逐字一致 —— 判据变了这里会红");
+  rmSync(fx, { recursive: true, force: true });
+}

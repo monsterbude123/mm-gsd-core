@@ -376,7 +376,8 @@ export function checkModeOrdering(report) {
 // R-08:不得静默 no-op
 export function checkNoSilentNoop(report) {
     // 扫描面跟实现走:主文件 + checks/ 下全部实现模块(下沉后判定代码住 checks/,漏扫 = 静默失去覆盖面)
-    let src = readFileSync(CHECKER, "utf8") + readFileSync(R("tools", "mmc.mjs"), "utf8");
+    let src = readFileSync(CHECKER, "utf8") + readFileSync(R("tools", "mmc.mjs"), "utf8")
+      + readFileSync(R("skills", "mm-gsd-loop", "references", "state-derive.mjs"), "utf8");
     try {
       for (const f of readdirSync(R("tools", "checks")).filter((x) => x.endsWith(".mjs")))
         src += readFileSync(R("tools", "checks", f), "utf8");
