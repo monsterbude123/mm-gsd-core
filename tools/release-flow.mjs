@@ -66,10 +66,14 @@ export function tagsVerdict({ next, latest } = {}) {
 /**
  * 读 npm 上的 dist-tags。查不到就说查不到 ——
  * **不能**把「查不到」当成「标签没问题」(那是假绿)。
+ *
+ * `--prefer-online` 不是洁癖:npm 的 packument 有本地缓存,刚 promote 完再读,
+ * 读到的可能还是 promote 之前的旧标签 —— 2026-11-19 实测:晋级 0.7.12 后立刻读,
+ * 报的还是 latest=0.7.11(直连 registry 读是 0.7.12)。通道核对读到旧值 = 假绿。
  */
 export function readDistTags(pkg, exec = execFileSync) {
   try {
-    const out = exec("npm.cmd", ["view", pkg, "dist-tags", "--json"], { encoding: "utf8", shell: true, stdio: "pipe" });
+    const out = exec("npm.cmd", ["view", pkg, "dist-tags", "--json", "--prefer-online"], { encoding: "utf8", shell: true, stdio: "pipe" });
     return { ok: true, tags: JSON.parse(out) };
   } catch (e) {
     return { ok: false, tags: {}, error: String(e.stderr || e.message).split("\n")[0] };
