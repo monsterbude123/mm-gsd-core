@@ -551,6 +551,12 @@ const CHECKS = {
     return checkWebTemplateJsAll({ root: ROOT, report });
   },
 
+  // R-31:update 必须映射 registry 上的最新版 —— 判据权威在 references/update-gate.mjs
+  async "check-update-maps-latest"(report) {
+    const { checkUpdateMapsLatest } = await import("../skills/mm-gsd-loop/references/update-gate.mjs");
+    return checkUpdateMapsLatest({ root: ROOT, report });
+  },
+
   async "check-channel-safety"(report) {
     const { makeReleaseFlow, publishArgs } = await import("./release-flow.mjs");
     const calls = [];

@@ -255,6 +255,15 @@
       "check": "check-web-template-js",
       "_note": "2026-11-19 看板重做落地。三个真事故各对应一条判据:游离大括号让整页 JS 死掉,页面永远停在「连接中…」;作者样式(.view-fit{display:flex})压过 UA 的 [hidden]{display:none},被 hidden 的视图在每个视图里都显示,顶栏永远压在内容上;顶层调用早于 const 声明 → TDZ(ReferenceError: Cannot access 'reqdep' before initialization),直接以 #reqdep 打开看板必崩。旧的自测探针只测服务端与模板静态字符串,不测模板 JS 能否运行 —— 三个事故全从那里逃出去,所以补这条门。活违规输入:门上线时真判红过(顶层 setInterval 早于 const RD,已按判据三移到脚本底部)。编号:R-24..R-29 已占用,按台账顺次取 R-30。",
       "_候选顾虑回应": "与 R-04(核心 .mjs 语法)不重叠:那条管 .mjs 源文件,这条管 HTML 模板里的内联脚本与 CSS 规则;与 R-28(核心边界)不重叠:那条管核心不许引用可选包,这条扫全部 .html 且不区分核心与包。"
+    },
+    {
+      "id": "R-31",
+      "status": "active",
+      "since": "0.7.8",
+      "statement": "mm-gsd update 必须先问 registry「最新发布的是哪一版」,再决定盖哪一份:registry 上有新版就换新再盖(版本清单里的版本 = registry 那版、技能内容来自那一版);registry 上更旧就不降级;registry 问不到就不硬失败,并把「问不到」说出来。机器门 check-update-maps-latest 用假 npm 顶替 registry 跑三个场景。",
+      "check": "check-update-maps-latest",
+      "_note": "2026-11-19 用户报修:「mm-gsd update 还是没有映射最新,这个是用户用的最多的指令,我刚刚去其他的机器使用,指向的0.7.3」。根因两条:①latest 通道停在 0.7.3(已 promote 0.7.7 修);②update 的语义是「用包里这份盖掉装出去的那份」,根本不查 registry —— 全局装着旧版的机器敲 update,盖回去的还是旧版,指令跑了版本没动,而且不报错。修法:update 先 npm view dist-tags.<channel>(默认 latest,--next 跟预发布通道),registry 更新就 npm install 那一版再拿它的技能去盖;问不到就照旧覆盖并说清;registry 更旧就不降级。活违规输入:门上线时拿一个「只覆盖不问 registry」的旧版 stub 跑过,真判红 8 条。编号:R-24..R-30 已占用,按台账顺次取 R-31。",
+      "_候选顾虑回应": "与 R-12(安装可追溯)不重叠:那条查版本清单有没有写、写得全不全;这条查 update 有没有真的按 registry 上的版本去换。与 R-19(通道安全)不重叠:那条查 next 不得比 latest 旧;这条查 update 的行为。两个门都碰 registry,但一个是「标签对不对」,一个是「用户那条命令有没有真的升级」。"
     }
   ],
   "candidates": [

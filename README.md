@@ -87,12 +87,14 @@ npm i -g mm-gsd-core     # 之后 mm-gsd web / mm-gsd check / mm-gsd doctor 直�
 ```
 
 **全局装完注意版本对齐**:全局那份与 `~/.agents/skills/` 里那份是两个副本,会各走各的。
-`mm-gsd doctor` 比对两边指纹,报「装的是旧版」就 `mm-gsd update` 机械覆盖。
+`mm-gsd doctor` 比对两边指纹,报「装的是旧版」就 `mm-gsd update` —— 它会先问 npm registry
+「最新发布的是哪一版」,registry 上有更新的就先取那一版再盖,所以旧版机器敲一次就能升上去
+(问不到 registry 就按当前这份盖,并明说「问不到」;registry 上更旧就不降级)。
 
 两个命令的分工:**install 首装尊重已有内容** —— 同名技能已存在且内容相同就跳过;
 内容不同,先把原内容备份到 `~/.agents/backups/<技能名>-<时间戳>/` 再覆盖
 (备份不留在 skills 目录里 —— 留在里面会被宿主注册成第二个技能)。
-**update 机械覆盖**:不比对、不提问,已装技能与宿主卡直接盖成包里这份(零判断)。
+**update 覆盖**:对齐 registry 上的最新版之后不比对、不提问,已装技能与宿主卡直接盖成包里这份(零判断)。
 
 零依赖，Node ≥ 18，跨 Windows / macOS / Linux。装完 8 个技能就位：
 `mm-gsd-discuss` / `mm-gsd-plan` / `mm-gsd-exec` / `mm-gsd-verify` / `mm-gsd-plan-check` / `mm-gsd-diagnose` / `mm-gsd-loop` / `mm-gsd-board`(过程看板,可选项,见下)。
