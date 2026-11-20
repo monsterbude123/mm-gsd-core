@@ -29,6 +29,9 @@ import { aggregateByDay } from "../../mm-gsd-loop/references/telemetry-view.mjs"
 // 拓扑口径(24-01 T1a,D-01):depends_on 解析逐字照抄 checker 基线、分层/剪环/幽灵边防御都在
 // references/phase-topo.mjs 一处 —— 同一份 STATE 行,--phases 与看板必须同答案(预审 W1/W2)。
 import { topoLevels, parseDepends } from "../../mm-gsd-loop/references/phase-topo.mjs";
+// REQ-67/68:契约解析的唯一实现住 ssot(纯模块,看板可安全 import —— F8 取舍消解)。
+// 看板自带的 fm()/REQUIREMENTS 行解析退役(phase 33-01 T2)。
+import { parseFrontmatterRaw, readStateContract, readPlanContract, readRequirementEntries } from "../../mm-gsd-loop/references/ssot.mjs";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_PATH = join(SCRIPT_DIR, "..", "templates", "web.html");
@@ -80,16 +83,10 @@ const TELEMETRY_PATH = process.env.GSD_TOOL_TELEMETRY_PATH || join(homedir(), ".
 
 const TYPES = ["需求遗漏", "方向不对", "验收不过", "备注"];
 
+// REQ-67/68:解析统一住 ssot —— 看板这份自含实现退役(它与检查器的 frontmatter 有细微
+// 差异:引号内含 # 时看板会截断、检查器不会;统一后以检查器口径为准)。
 function fm(text) {
-  const m = String(text ?? "").match(/^---\r?\n([\s\S]*?)\r?\n---/);
-  const out = {};
-  if (!m) return out;
-  for (const line of m[1].split(/\r?\n/)) {
-    const kv = line.match(/^([A-Za-z_][\w-]*):\s*(.*)$/);
-    if (!kv) continue;
-    out[kv[1]] = kv[2].trim().replace(/^["']|["']$/g, "").replace(/\s+#.*$/, "");
-  }
-  return out;
+  return parseFrontmatterRaw(String(text ?? "")) ?? {};
 }
 
 function walkPl(dir, out = []) {
@@ -144,7 +141,7 @@ function readTelemetry(root) {
 }
 
 function buildState(root) {
-  const stateFm = existsSync(P(root, "STATE.md")) ? fm(readFileSync(P(root, "STATE.md"), "utf8")) : {};
+  const stateFm = existsSync(P(root, "STATE.md")) ? (readStateContract(P(root)).fm ?? {}) : {};
   const body = existsSync(P(root, "STATE.md")) ? readFileSync(P(root, "STATE.md"), "utf8") : "";
   const phasesFromState = [];
   let inPh = false;
@@ -165,14 +162,7 @@ function buildState(root) {
   const shipPaths = new Set(allMd.filter((f) => f.endsWith("-SHIP.md")));
   const ctxPaths = allMd.filter((f) => f.endsWith("-CONTEXT.md"));
 
-  const reqRe = /- (REQ-[\w.-]+)(\(baseline[^)]*\))?:\s*(.*)/;
-  const reqs = [];
-  if (existsSync(P(root, "REQUIREMENTS.md"))) {
-    for (const line of readFileSync(P(root, "REQUIREMENTS.md"), "utf8").split(/\r?\n/)) {
-      const m = line.match(reqRe);
-      if (m) reqs.push({ id: m[1], baseline: Boolean(m[2]), text: m[3].trim(), claimed: [] });
-    }
-  }
+  const reqs = readRequirementEntries(P(root)).map((r) => ({ ...r, claimed: [] }));
 
   const phases = new Map();
   const claimByReq = new Map(reqs.map((r) => [r.id, r]));
@@ -180,8 +170,9 @@ function buildState(root) {
   const depList = (v) => String(v ?? "").replace(/[[\]"'\s]/g, "").split(/[,、]/).filter(Boolean);
   for (const pp of planPaths) {
     const txt = readFileSync(pp, "utf8");
-    const f = fm(txt);
-    const base = pp.split(/[\\/]/).pop().replace(/-PLAN\.md$/, "");
+    const planName = pp.split(/[\\/]/).pop();
+    const f = readPlanContract(P(root), planName).fm ?? {};
+    const base = planName.replace(/-PLAN\.md$/, "");
     const phase = String(f.phase ?? base.slice(0, 2));
     const covers = coversOf(txt);
     const tickets = ticketsOf(txt);

@@ -8,6 +8,56 @@
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
+import { parseReqLedger } from "./req-ledger.mjs";
+import { parseAccounting } from "./artifact-ledger.mjs";
+
+/** ssot.json 的 schema 版本 —— 不匹配时回落 Markdown(旧路径永远可用) */
+export const SSOT_SCHEMA = 1;
+
+/** ssot.json 文件名(在 .planning 下) */
+export const SSOT_FILE = "ssot.json";
+
+/** 内容指纹:源文件当前内容的 SHA-256 前 16 hex(D-03:不用 mtime,git checkout/复制会改 mtime → 假报陈旧) */
+export function contentSha(text) {
+  return createHash("sha256").update(String(text ?? ""), "utf8").digest("hex").slice(0, 16);
+}
+
+/**
+ * 读结构化镜像(.planning/ssot.json):不存在 → null;schema 版本不符 → null(回落 Markdown)。
+ * 镜像里每份契约带 sha(源文件内容指纹)—— 读取时指纹对不上 = 陈旧 = 回落 + 报 warning,
+ * 绝不静默用旧值(双真相比只有 Markdown 更坏 —— phase 33 CONTEXT 的靶心)。
+ */
+export function loadMirror(planningDir) {
+  const p = join(planningDir, SSOT_FILE);
+  if (!existsSync(p)) return null;
+  let j;
+  try { j = JSON.parse(readFileSync(p, "utf8")); } catch { return null; }
+  if (!j || j.schema !== SSOT_SCHEMA || typeof j.contracts !== "object" || !j.contracts) return null;
+  return j;
+}
+
+/** 镜像里某契约的值;陈旧(源文件 sha 不匹配)→ null */
+export function mirrorValue(mirror, contract, sourceFile, currentText) {
+  if (!mirror) return null;
+  const c = mirror.contracts[contract];
+  if (!c || c.source !== sourceFile) return null;
+  if (c.sha && currentText !== undefined && c.sha !== contentSha(currentText)) return null; // 陈旧
+  return c.value ?? null;
+}
+
+/** 陈旧清单:哪些契约的镜像与源文件脱节(供 --check 与 warning 用) */
+export function staleContracts(mirror, planningDir) {
+  const out = [];
+  if (!mirror) return out;
+  for (const [contract, c] of Object.entries(mirror.contracts ?? {})) {
+    if (!c?.source || !c?.sha) continue;
+    const p = join(planningDir, c.source);
+    if (!existsSync(p)) { out.push({ contract, source: c.source, reason: "源文件已删除" }); continue; }
+    if (contentSha(readFileSync(p, "utf8")) !== c.sha) out.push({ contract, source: c.source, reason: "源文件已改动(镜像陈旧)" });
+  }
+  return out;
+}
 
 /**
  * frontmatter kv 解析 —— 逐字照抄 gsd-state-check.mjs 的 frontmatter()(REQ-67 唯一实现):
@@ -71,25 +121,16 @@ export function reqIdsWholeText(text) {
   return [...String(text ?? "").matchAll(/REQ-\d+/gi)].map((m) => m[0].toUpperCase());
 }
 
-/** REQ 处置台账(markdown 表)→ [{req, disposition, note}];与 req-ledger.mjs parseReqLedger 同口径 */
-export function parseReqLedgerRows(text) {
-  const rows = [];
-  for (const line of String(text ?? "").split(/\r?\n/)) {
-    const m = line.match(/^\|\s*REQ-(\d+)\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|/);
-    if (m) rows.push({ req: `REQ-${m[1]}`, disposition: m[2].trim(), note: m[3].trim() });
-  }
-  return rows;
-}
+/**
+ * REQ 处置台账(markdown 表)→ [{req, disposition, successor, evidence}]
+ * **转发到 req-ledger.mjs 的规范实现**(phase 33 T1 收拢:此前 ssot 自带一份,
+ * 形状都不一样(3 列 note vs 4 列 successor/evidence,REQ 模式也不同)—— 这正是
+ * phase 32 要消灭的「两份实现漂移」,phase 33 发现它没被消灭干净,如实记)。
+ */
+export { parseReqLedger } from "./req-ledger.mjs";
 
-/** artifact-ledger(markdown 表)→ [{file, disposition, note}] */
-export function parseArtifactLedgerRows(text) {
-  const rows = [];
-  for (const line of String(text ?? "").split(/\r?\n/)) {
-    const m = line.match(/^\|\s*([\w./-]+\.(?:md|mjs|js|json))\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|/);
-    if (m) rows.push({ file: m[1].trim(), disposition: m[2].trim(), note: m[3].trim() });
-  }
-  return rows;
-}
+/** artifact-ledger(markdown 表)→ [{file, gap, commit}];转发 artifact-ledger.mjs 的规范实现(同上) */
+export { parseAccounting } from "./artifact-ledger.mjs";
 
 /** PLAN 文本 → frontmatter kv(四件套/depends_on/wave 的唯一取值口);无法解析返回 null */
 export function parsePlanFrontmatter(text) {
@@ -99,9 +140,7 @@ export function parsePlanFrontmatter(text) {
 /**
  * 附加校验入口(供 scripts/ssot-check.mjs 调用):对 .planning 树跑全部契约解析,
  * 返回结构化报告 —— 每份契约的解析结果与问题清单。非法结构由调用方决定退出码。
- */
-export function ssotReport(planningDir) {
-  const report = { planningDir, contracts: [], problems: [] };
+ */export function ssotReport(planningDir) {  const report = { planningDir, contracts: [], problems: [] };
   const statePath = join(planningDir, "STATE.md");
   if (existsSync(statePath)) {
     try {
@@ -127,8 +166,8 @@ export function ssotReport(planningDir) {
     const p = join(planningDir, file);
     if (!existsSync(p)) continue;
     const rows = name === "req-ledger"
-      ? parseReqLedgerRows(readFileSync(p, "utf8"))
-      : parseArtifactLedgerRows(readFileSync(p, "utf8"));
+      ? parseReqLedger(readFileSync(p, "utf8"))
+      : parseAccounting(readFileSync(p, "utf8"));
     report.contracts.push({ contract: name, file, ok: true, rows: rows.length });
   }
   for (const f of (existsSync(planningDir) ? readdirSync(planningDir) : [])) {
@@ -138,5 +177,134 @@ export function ssotReport(planningDir) {
     report.contracts.push({ contract: "PLAN-FM", file: f, ok: true, fields: { phase: fm.phase ?? "", plan: fm.plan ?? "", wave: fm.wave ?? "" } });
   }
   return report;
+}
+
+// ---- 结构化镜像的派生(写读共用 —— 写出与读出若用两套逻辑就会漂移,那是另一条双真相路径)----
+
+/** 五契约从 Markdown 派生的结构化值(镜像的 value 与 fallback 都用它) */
+export function deriveContracts(planningDir) {
+  const out = { contracts: {} };
+  const put = (contract, source, value) => {
+    const p = join(planningDir, source);
+    if (!existsSync(p)) return;
+    out.contracts[contract] = { source, sha: contentSha(readFileSync(p, "utf8")), value };
+  };
+  const statePath = join(planningDir, "STATE.md");
+  if (existsSync(statePath)) put("STATE", "STATE.md", parseFrontmatterRaw(readFileSync(statePath, "utf8")) ?? {});
+  const reqPath = join(planningDir, "REQUIREMENTS.md");
+  if (existsSync(reqPath)) {
+    const t = readFileSync(reqPath, "utf8");
+    const d = deriveRequirements(t);
+    put("REQUIREMENTS", "REQUIREMENTS.md", { ...d, entries: deriveRequirementEntries(t) });
+  }
+  const rlPath = join(planningDir, "req-ledger.md");
+  if (existsSync(rlPath)) put("req-ledger", "req-ledger.md", parseReqLedger(readFileSync(rlPath, "utf8")));
+  const alPath = join(planningDir, "artifact-ledger.md");
+  if (existsSync(alPath)) put("artifact-ledger", "artifact-ledger.md", parseAccounting(readFileSync(alPath, "utf8")));
+  for (const f of (existsSync(planningDir) ? readdirSync(planningDir) : [])) {
+    if (!f.endsWith("-PLAN.md")) continue;
+    const fm = parsePlanFrontmatter(readFileSync(join(planningDir, f), "utf8"));
+    if (fm) put("PLAN:" + f, f, fm);
+  }
+  return out;
+}
+
+/** REQUIREMENTS.md 全文 → { ids, idsAll, texts }
+ * ids = 剔 baseline 行后的 REQ 号(**逐条等价于 reqIdsFromText**,含重复 ——
+ * 门禁按数组逐条报,去重会改报错条数);idsAll = 全文 REQ 号(等价 reqIdsWholeText);
+ * texts = 每个 REQ 的一句话描述(给人与工具看,门禁不依赖)。
+ * 陷阱:REQ 的正则必须与 reqIdsFromText 同为 REQ-\d+ —— 用 REQ-[\w.-]+ 会把
+ * "REQ-# 无人认领" 这类说明文字里的 REQ-# 也抓进来(实测多 5 条,行为会变)。 */
+export function deriveRequirements(text) {
+  const ids = [];
+  const idsAll = [];
+  const texts = {};
+  for (const line of String(text ?? "").split(/\r?\n/)) {
+    const baseline = /\(baseline/i.test(line);
+    for (const m of line.matchAll(/REQ-\d+/gi)) {
+      const id = m[0].toUpperCase();
+      idsAll.push(id);
+      if (baseline) continue;
+      ids.push(id);
+      if (texts[id] === undefined) texts[id] = line.slice(line.indexOf(m[0]) + m[0].length).trim().replace(/^[:：]\s*/, "");
+    }
+  }
+  return { ids, idsAll, texts };
+}
+
+/** 构建完整镜像对象(schema 版本 + 契约值 + 指纹) */
+export function buildMirror(planningDir) {
+  const d = deriveContracts(planningDir);
+  return { schema: SSOT_SCHEMA, generatedAt: new Date().toISOString(), contracts: d.contracts };
+}
+
+// ---- format-aware 读:JSON 新鲜则用 JSON,陈旧/无 JSON 则回落 Markdown(老项目零变化)----
+
+/** STATE 契约读:镜像新鲜 → JSON 值;否则 → Markdown 解析(stale=true 表示镜像陈旧) */
+export function readStateContract(planningDir) {
+  const p = join(planningDir, "STATE.md");
+  if (!existsSync(p)) return { fm: null, stale: false, source: "none" };
+  const text = readFileSync(p, "utf8");
+  const mirror = loadMirror(planningDir);
+  const v = mirrorValue(mirror, "STATE", "STATE.md", text);
+  if (v) return { fm: v, stale: false, source: "json" };
+  return { fm: parseFrontmatterRaw(text), stale: !!mirror, source: "markdown" };
+}
+
+/** PLAN frontmatter 契约读(按文件名) */
+export function readPlanContract(planningDir, fileName) {
+  const p = join(planningDir, fileName);
+  if (!existsSync(p)) return { fm: null, stale: false, source: "none" };
+  const text = readFileSync(p, "utf8");
+  const mirror = loadMirror(planningDir);
+  const v = mirrorValue(mirror, "PLAN:" + fileName, fileName, text);
+  if (v) return { fm: v, stale: false, source: "json" };
+  return { fm: parseFrontmatterRaw(text), stale: !!mirror, source: "markdown" };
+}
+
+/** 契约派发器:按文件名选契约读取路径(STATE / PLAN 走 format-aware;其余走纯解析) */
+export function contractFrontmatter(planningDir, filePath) {
+  const name = filePath.split(/[\\/]/).pop();
+  if (name === "STATE.md") return readStateContract(planningDir).fm;
+  if (name.endsWith("-PLAN.md")) return readPlanContract(planningDir, name).fm;
+  return parseFrontmatterFile(filePath);
+}
+
+/**
+ * REQUIREMENTS 的**条目列表**(行锚定 `- REQ-N: 描述`)—— 与 deriveRequirements 的
+ * 「ID 集合」是两个不同契约,别混:门禁要的是「文件里提到了哪些 REQ」(全文扫),
+ * 看板要的是「有几条需求、各是什么」(只认条目行)。两套语义各自命名、各自实现,
+ * 但都住本文件(phase 33:看板自含解析退役)。
+ */
+export function deriveRequirementEntries(text) {
+  const re = /- (REQ-[\w.-]+)(\(baseline[^)]*\))?:\s*(.*)/;
+  const out = [];
+  for (const line of String(text ?? "").split(/\r?\n/)) {
+    const m = line.match(re);
+    if (m) out.push({ id: m[1], baseline: Boolean(m[2]), text: m[3].trim() });
+  }
+  return out;
+}
+
+/** REQUIREMENTS 契约读:返回 { ids, idsAll, texts }(与文本路径逐条等价) */
+export function readRequirementsContract(planningDir) {
+  const p = join(planningDir, "REQUIREMENTS.md");
+  if (!existsSync(p)) return { reqs: { ids: [], idsAll: [], texts: {} }, stale: false, source: "none" };
+  const text = readFileSync(p, "utf8");
+  const mirror = loadMirror(planningDir);
+  const v = mirrorValue(mirror, "REQUIREMENTS", "REQUIREMENTS.md", text);
+  if (v) return { reqs: v, stale: false, source: "json" };
+  return { reqs: deriveRequirements(text), stale: !!mirror, source: "markdown" };
+}
+
+/** REQUIREMENTS 条目列表读(看板用):镜像里带 entries 就用,否则现解析 */
+export function readRequirementEntries(planningDir) {
+  const p = join(planningDir, "REQUIREMENTS.md");
+  if (!existsSync(p)) return [];
+  const text = readFileSync(p, "utf8");
+  const mirror = loadMirror(planningDir);
+  const v = mirrorValue(mirror, "REQUIREMENTS", "REQUIREMENTS.md", text);
+  if (v && Array.isArray(v.entries)) return v.entries;
+  return deriveRequirementEntries(text);
 }
 

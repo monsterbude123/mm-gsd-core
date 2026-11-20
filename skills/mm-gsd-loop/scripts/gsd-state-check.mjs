@@ -88,10 +88,11 @@ function die(message, fix) {
 }
 
 // ---- 极简 frontmatter 解析(不引 YAML 依赖);剥行尾 # 注释,否则模板照抄即报错 ----
-// REQ-67:实现唯一化 —— 逻辑住 references/ssot.mjs(parseFrontmatterFile),此处委托。
-const { parseFrontmatterFile } = await import("../references/ssot.mjs");
+// REQ-67:实现唯一化 —— 逻辑住 references/ssot.mjs(contractFrontmatter);
+// REQ-68:STATE/PLAN 走 format-aware 读(镜像新鲜用 JSON,陈旧回落 Markdown)。
+const { contractFrontmatter } = await import("../references/ssot.mjs");
 function frontmatter(path) {
-  return parseFrontmatterFile(path);
+  return contractFrontmatter(join(root, ".planning"), path);
 }
 
 // ---- PLAN 解析(--plan / --phases / --worktrees 共用)----
