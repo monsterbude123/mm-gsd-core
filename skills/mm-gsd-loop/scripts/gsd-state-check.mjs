@@ -88,23 +88,10 @@ function die(message, fix) {
 }
 
 // ---- 极简 frontmatter 解析(不引 YAML 依赖);剥行尾 # 注释,否则模板照抄即报错 ----
+// REQ-67:实现唯一化 —— 逻辑住 references/ssot.mjs(parseFrontmatterFile),此处委托。
+const { parseFrontmatterFile } = await import("../references/ssot.mjs");
 function frontmatter(path) {
-  if (!existsSync(path)) return null;
-  const m = readFileSync(path, "utf8").match(/^---\r?\n([\s\S]*?)\r?\n---/);
-  if (!m) return null;
-  const out = {};
-  for (const line of m[1].split(/\r?\n/)) {
-    const kv = line.match(/^([A-Za-z_][\w-]*):\s*(.*)$/);
-    if (!kv) continue;
-    // 行尾注释:值本身不含 # 时才剥(commits: 3  # 说明 → "3")
-    let v = kv[2].trim();
-    const hash = v.indexOf("#");
-    if (hash > 0 && !/^["']/.test(v)) v = v.slice(0, hash).trim();
-    // 剥引号(issue #20):active_phase: "33" ⇒ "33"(不带引号)—— 同一包内 worktree-view 已剥,此处补齐口径
-    v = v.replace(/^["']|["']$/g, "");
-    out[kv[1]] = v;
-  }
-  return out;
+  return parseFrontmatterFile(path);
 }
 
 // ---- PLAN 解析(--plan / --phases / --worktrees 共用)----

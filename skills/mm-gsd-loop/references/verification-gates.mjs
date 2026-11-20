@@ -125,6 +125,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { splitCommands, isFullSuite } from "./worktree-view.mjs";
 import { parseReqLedger, reqState, successorExists } from "./req-ledger.mjs";
+import { reqIdsFromText, reqIdsWholeText } from "./ssot.mjs";
 
 /**
  * 前提存在性:票里引用的路径,要么真实存在,要么是这张票自己要产出的。
@@ -186,7 +187,7 @@ export function checkTicketLoad(tickets) {
 export function checkReqClaims(tickets, root) {
   const reqFile = join(root, ".planning", "REQUIREMENTS.md");
   if (!existsSync(reqFile)) return [];
-  const known = new Set([...readFileSync(reqFile, "utf8").matchAll(/REQ-\d+/gi)].map((m) => m[0].toUpperCase()));
+  const known = new Set(reqIdsWholeText(readFileSync(reqFile, "utf8")));
   const problems = [];
   for (const t of tickets) {
     for (const r of t.covers ?? []) {
@@ -216,9 +217,8 @@ export function checkReqCoverage({ root, plansDir, contextText }) {
   // baseline 跳过(phase 19 D-11):REQUIREMENTS.md 晚于部分能力诞生,标 `(baseline` 的行
   // (实测形状 `(baseline,0.4.x)`)由已发布版本兑现,不进覆盖集;未标 baseline 的 REQ 照判红。
   // 逐行判 —— 标记跟着 REQ 行走,不能全文一判(会把别的行的说明文字也卷进来)。
-  let known = reqText.split(/\r?\n/)
-    .filter((line) => !/\(baseline/i.test(line))
-    .flatMap((line) => [...line.matchAll(/REQ-\d+/gi)].map((m) => m[0].toUpperCase()));
+  // REQ-67:行过滤 + 抽取的唯一实现住 ssot.reqIdsFromText(与 ssot-check 同口径)。
+  let known = reqIdsFromText(reqText);
   if (typeof contextText === "string" && contextText.length) {
     const scoped = new Set([...contextText.matchAll(/REQ-\d+/gi)].map((m) => m[0].toUpperCase()));
     known = known.filter((r) => scoped.has(r));
