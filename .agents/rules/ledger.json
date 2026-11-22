@@ -335,6 +335,17 @@
       "friction_note": "2026-11-19 上线;静态枚举,只在改主文件时才可能红",
       "_note": "2026-11-19 phase 30 T2 落地(#27 的『freeze new inline rules』可执行化)。判据:归属(新增名必须有同名导出)+ 冻结基线(tools/main-file-baseline.mjs,rule-baseline 先例)—— 基线豁免存量(存量不判死),否则门上线即红(r2 BLOCKER-1 实证)。不用计数口径:计数随写法漂移、增删等量就绕过。CHECKS 简写方法不在射程:那条增长路径由 check-ledger-integrity 覆盖,两路合围。限度:主文件是脚本不能真导入,文本枚举认不全对象简写/类方法/let 箭头(shortcut 注在门实现里),出现绕过形态再换真解析器。活违规输入:往主文件塞新顶层函数 → 红;删 → 绿(上线时实测)。",
       "_候选顾虑回应": "与 R-16 不重叠:R-16 管会红用例登记,本门管新判定的落点。"
+    },
+    {
+      "id": "R-33",
+      "status": "active",
+      "since": "0.7.20",
+      "statement": "改门禁判据必须同步契约文档:新增 check 门禁在 theory.md / SKILL.md / gate-cases.json 全无判据描述提及 → 判红;文档提及已不存在的 check 名 → 判红 —— 门禁名与文档语料双向对账(C-05 机器化)。",
+      "check": "check-criterion-sync",
+      "friction": "low",
+      "friction_note": "2026-11-22 上线(phase 35 T1);静态对账,只在改门禁或改文档时才可能红;上线当天即修掉一处真幽灵(theory.md 提及已不存在的 check-template-gates)",
+      "_note": "C-05 升级为 R-33(原候选 claim:门禁报错附带的「怎么改」必须与门禁自己的判据同源 —— 判据与解法分叉,照着改还是红,更糟是照着改会把别的形态改坏;evidence: docs/lessons/2026-11-15-assertion-gates.md)。机器可判谓词是 35-01 Truths 谓词的收窄形态([AUTO] 授权,记录见 35-01-SUMMARY):门禁名全集 = CHECKS 键 ∪ tools/checks 与 references 导出的 check*/validate*;语料 = theory.md ∪ skills/*/SKILL.md ∪ gate-cases.json —— 全量 98 个导出逐一要求 prose 提及会让存量树恒红、把理论文档变成登记表(T-13/T-20),收窄后存量树零误红、两端判红照旧。A 向只判 CHECKS 键,camel 导出全集只参与 B 向解析。词边界防误伤(batch-check-rounds 不算提及)。与 R-16 分工:R-16 判登记三向齐(CHECKS↔gate-cases↔台账),本条判门禁名↔文档语料同步。",
+      "_候选顾虑回应": "原候选说「要机器化得先有判据的唯一机器可读出处」——出处即 gate-cases.json(登记)+ theory/SKILL(阐述),双向可枚举后本条成立。"
     }
   ],
   "candidates": [
@@ -359,13 +370,6 @@
       "status": "candidate",
       "why-not-active": "要机器化得先有「外部系统读回接口」的抽象。本仓库只有 npm 一处真实消费(发布),为单一实现提前抽接口会先胖起来。等第二个消费点出现再提为 R。",
       "evidence": "docs/lessons/2026-10-19-release-false-green.md"
-    },
-    {
-      "id": "C-05",
-      "claim": "门禁报错时附带的「怎么改」必须与门禁自己的判据同源:判据与解法分叉,等于给使用者发一份错的说明书 —— 照着改还是红,更糟的是照着改会把别的形态改坏。",
-      "status": "candidate",
-      "why-not-active": "要机器化得先有「判据的唯一机器可读出处」:现在判据是散文 + 多个正则(verification-gates.mjs / worktree-view.mjs / gsd-state-check.mjs 各管一半),教法是另一份散文,两边没法自动对账。phase 26 靠七轮独立验收(逐字读源码 + 实跑形态)抓到两处分叉,门禁自己抓不到。",
-      "evidence": "docs/lessons/2026-11-15-assertion-gates.md"
     },
     {
       "id": "C-06",

@@ -1,4 +1,4 @@
-// mmc 门禁实现本体(phase 30 下沉):30 条检查按族分节住这里,mmc.mjs 只留一行式转发壳。
+// mmc 门禁实现本体(phase 30 下沉):检查按族分节住这里,mmc.mjs 只留一行式转发壳。
 // 契约:导出名 = 台账 check 键的 camelCase,且必须匹配 ^(check|run|validate)[A-Z](deadGates alive 判据);
 // 报错文案与判据逐字保留 —— 使用方在看的契约,下沉不是改写。
 
@@ -563,6 +563,72 @@ export async function checkWebTemplateJs(report) {
 export async function checkUpdateMapsLatest(report) {
     const { checkUpdateMapsLatest } = await import("../../skills/mm-gsd-loop/references/update-gate.mjs");
     return checkUpdateMapsLatest({ root: ROOT, report });
+}
+
+// R-33(C-05 机器化,phase 35 T1):改门禁判据常漏改契约文档 —— 门禁名与判据描述文档双向对账。
+// 判据谓词(35-01 Truths + [AUTO] 收窄,收窄记录见 35-01-SUMMARY):
+//   门禁名全集 = mmc CHECKS 键(kebab)∪ tools/checks 与 references 下导出的 check*/validate*(camel);
+//   提及语料 = docs/theory.md ∪ skills/*/SKILL.md ∪ tools/gate-cases.json(每门判据描述的权威住那里,
+//   31 条存量门禁的描述不在 theory/SKILL —— 全量 98 导出逐一对 prose 会把理论文档变成登记表,T-20 双载体教训)。
+//   A 向(门禁→文档):每个 CHECKS 键必须在语料里有提及(kebab 或 camel)—— 新增 check 零文档提及 → 红;
+//   B 向(文档→门禁):语料里每个 check-kebab / checkCamel 记号必须解析到真实门禁 —— 文档提及已删 check → 红;
+//   词边界:前置字符非 [\w-] 才算提及(batch-check-rounds 这类复合词不算,防误伤)。
+// 与 R-16 分工:R-16 判登记三向齐(CHECKS↔gate-cases↔台账),本条判门禁名↔文档语料同步。
+export function criterionSyncGaps({ checks, extraNames = [], docs }) {
+  const camel = (k) => k.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+  // A 向只判 CHECKS 键(kebab);extraNames(camel 导出全集)只参与 B 向的解析宇宙 ——
+  // 否则 98 个导出逐一要求 prose 提及,存量树恒红(T-13:恒红的门不是严,是废)
+  const names = new Set([...checks, ...checks.map(camel), ...extraNames]);
+  const gaps = [];
+  const all = docs.join("\n");
+  for (const k of checks)
+    if (!all.includes(k) && !all.includes(camel(k)))
+      gaps.push(`新增门禁 ${k} 无判据描述提及 —— 改门禁必须同步契约文档(theory.md / SKILL.md / gate-cases.json),否则照文档开工的人拿的是错的说明书(C-05)`);
+  const ghosts = new Set();
+  for (const d of docs)
+    for (const m of d.matchAll(/(^|[^\w-])(check-[a-z][a-z-]*|check[A-Z]\w*)/g)) {
+      const tok = m[2];
+      if (!names.has(tok) && !names.has(camel(tok))) ghosts.add(tok);
+    }
+  for (const g of ghosts)
+    gaps.push(`文档提及的 "${g}" 不是任何已存在的门禁 —— 门禁删了/改名了而文档没跟上,照文档改会改坏别的形态(C-05)`);
+  return gaps;
+}
+
+export function checkCriterionSync(report) {
+    // 自证(红绿孪生,照 checkCardClaims 先例):假夹具三端都必须判对,否则本条不可信。
+    const okGreen = criterionSyncGaps({ checks: ["check-real-gate"], docs: ["用 check-real-gate 判某某"] }).length === 0;
+    const redNew = criterionSyncGaps({ checks: ["check-fresh-gate"], docs: ["与门禁无关的文档"] }).some((g) => g.includes("check-fresh-gate"));
+    const redGhost = criterionSyncGaps({ checks: ["check-real-gate"], docs: ["文档还在提 check-ghost-gate"] }).some((g) => g.includes("check-ghost-gate"));
+    const redGhostResolved = criterionSyncGaps({ checks: ["check-real-gate"], extraNames: ["checkGhostCamel"], docs: ["用 check-real-gate 判某某,正文里 checkGhostCamel 是真门禁"] }).length === 0;
+    if (!okGreen || !redNew || !redGhost || !redGhostResolved) {
+      report.fail(`判据同步自证失败:红绿孪生没判对(净树 ${okGreen} / 新增无文档 ${redNew} / 文档幽灵 ${redGhost} / 幽灵可被 camel 导出解析 ${redGhostResolved})—— 这条门禁自己不可信`);
+      return false;
+    }
+    // 真树:门禁名全集从 mmc.mjs 源码枚举(CHECKS 键),不假设与 gate-cases 同步(那正是要判的事之一)
+    const mmcSrc = readFileSync(R("tools", "mmc.mjs"), "utf8");
+    const checks = [...mmcSrc.matchAll(/(?:^  )(?:async )?"(check-[a-z-]+)"\(report\)/gm)].map((m) => m[1]);
+    if (!checks.length) { report.fail("mmc.mjs 里枚举不到任何 CHECKS 键 —— 判据同步对账无从谈起"); return false; }
+    const exports = new Set();
+    for (const dir of ["tools/checks", "skills/mm-gsd-loop/references"]) {
+      let es = []; try { es = readdirSync(R(dir)).filter((x) => x.endsWith(".mjs")); } catch {}
+      for (const e of es)
+        for (const m of readFileSync(R(dir, e), "utf8").matchAll(/export (?:async )?(?:function|const) ((?:check|validate)\w+)/g))
+          exports.add(m[1]);
+    }
+    // tools/ 根下的判定模块也在门禁宇宙里(gate-cases.json 的 _tools 节登记它们:reference-map 的 checkRefs、module-registry 的 checkCardClaims 等)
+    let tes = []; try { tes = readdirSync(R("tools")).filter((x) => x.endsWith(".mjs")); } catch {}
+    for (const e of tes)
+      for (const m of readFileSync(R("tools", e), "utf8").matchAll(/export (?:async )?(?:function|const) ((?:check|validate)\w+)/g))
+        exports.add(m[1]);
+    const docs = [readFileSync(R("docs", "theory.md"), "utf8"), readFileSync(R("tools", "gate-cases.json"), "utf8")];
+    for (const d of readdirSync(R("skills"))) {
+      try { docs.push(readFileSync(R("skills", d, "SKILL.md"), "utf8")); } catch { /* 无 SKILL.md 的目录跳过 */ }
+    }
+    const gaps = criterionSyncGaps({ checks, extraNames: [...exports], docs });
+    if (gaps.length) { for (const g of gaps) report.fail(g); return false; }
+    report.pass(`判据同步对账全绿(${checks.length} 个 CHECKS 键 + ${exports.size} 个 check*/validate* 导出 ↔ 文档语料双向一致)`);
+    return true;
 }
 
 export async function checkChannelSafety(report) {

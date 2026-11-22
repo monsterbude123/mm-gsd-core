@@ -16,7 +16,7 @@ import { execFileSync } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
 import { missingRules, BASELINE_RULES } from "./rule-baseline.mjs";
 import { MAIN_FILE_BASELINE } from "./main-file-baseline.mjs";
-import { checkArtifactLedger, checkBudget, checkChannelSafety, checkCoreBoundary, checkGateCases, checkGateSelftest, checkInstallTraceable, checkIssueEvidence, checkLedgerIntegrity, checkMainFileOwnership, checkModeOrdering, checkNoSilentNoop, checkPackageVerifiable, checkReferenceMap, checkReleaseTags, checkReportFailsLoud, checkReportReachable, checkRequirementMining, checkResearchConsumed, checkReviewConvergence, checkReviewScope, checkSyntaxAndModes, checkTemplatesSelfValidate, checkTicketSize, checkUpdateMapsLatest, checkWaveFromDag, checkWebTemplateJs, checkZeroDep } from "./checks/core-checks.mjs";
+import { checkArtifactLedger, checkBudget, checkChannelSafety, checkCoreBoundary, checkCriterionSync, checkGateCases, checkGateSelftest, checkInstallTraceable, checkIssueEvidence, checkLedgerIntegrity, checkMainFileOwnership, checkModeOrdering, checkNoSilentNoop, checkPackageVerifiable, checkReferenceMap, checkReleaseTags, checkReportFailsLoud, checkReportReachable, checkRequirementMining, checkResearchConsumed, checkReviewConvergence, checkReviewScope, checkSyntaxAndModes, checkTemplatesSelfValidate, checkTicketSize, checkUpdateMapsLatest, checkWaveFromDag, checkWebTemplateJs, checkZeroDep } from "./checks/core-checks.mjs";
 import { baselineDrift, deadGates, checkCardClaims, checkCardRefresh } from "./module-registry.mjs";
 import { collectFiles, countLines } from "./budget.mjs";
 import { fileURLToPath } from "node:url";
@@ -87,6 +87,7 @@ const CHECKS = {
   async "check-web-template-js"(report) { return checkWebTemplateJs(report); },
   async "check-update-maps-latest"(report) { return checkUpdateMapsLatest(report); },
   async "check-channel-safety"(report) { return checkChannelSafety(report); },
+  "check-criterion-sync"(report) { return checkCriterionSync(report); },
 };
 const pathBase = (p) => p.split("/").pop();
 
