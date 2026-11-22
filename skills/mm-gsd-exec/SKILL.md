@@ -86,6 +86,7 @@ description: "极简 GSD 执行:施工方身份 —— 照 PLAN 施工,不重做
 - 逐文件 staging,**绝不 `git add .` / `git add -A`**;提交格式 `type(phase-plan): 描述`(feat/fix/test/refactor/docs/chore)。
 - **提交主题必须含 `(NN-MM):` scope** —— SUMMARY 的 commits 实测按它精确匹配,缺失无法自动核销。
 - 禁令:`git clean`(任何 flag)、`git stash` 全族、`git reset --hard`、对非自建分支 force push、动保护分支(main/master/develop)。
+- **删除纪律(探针/临时产物)**:只准删「本会话自建且路径记录在案」的目标——先 `ls` 看清单确认归属,再**单独一条** `rm` 精确路径;审视清单与删除禁止合成一条 `&&` 命令(`&&` 只看退出码,清单输出来不及被看见);禁删任何凭推断认定的目录;破坏性命令禁止超时转后台(后台化 = 脱离监督继续执行)。探针/临时产物只建在系统 Temp(固定前缀)或仓内 `fixtures/`,创建时记录精确路径。
 - **被守卫/pre-commit 拦住时的唯一合法出口是 `mm-gsd commit --ticket <NN-MM>`**(红窗受控放行):先正常提交,失败项**全部**落在该票 red_windows 清单才 `--no-verify` 重试并标注受控放行,清单外失败 exit 2 停下 —— 细节见 mm-gsd-loop 与工具 `--help`。
 - 提交后检查:`git show --diff-filter=D --name-only` 查意外删除;不留未跟踪的生成文件(有意删除记入 SUMMARY,意外删除按 R1 回滚)。
 - **在 worktree 里执行**:只在自己的 worktree 里提交,绝不 `git checkout <branch>` 切到别人的 worktree 分支去提交;提交落在哪个 worktree 分支上就让它停在那里,由编排层合并——**执行者不负责合并**。
