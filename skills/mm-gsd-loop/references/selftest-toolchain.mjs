@@ -106,7 +106,8 @@ export function runToolchainCases(t) {
     const STAGE = fileURLToPath(new URL("../../mm-gsd-exec/scripts/mm-gsd-stage.mjs", import.meta.url));
     const runTool = (script, args) => { const r = spawnSync(process.execPath, [script, ...args], { cwd: d, encoding: "utf8" }); return { code: r.status, out: String(r.stdout || "") + String(r.stderr || "") }; };
     const r1 = runTool(STAGE, ["--ticket", "14-01"]);
-    eqN(r1.code === 0 && sh(["status", "--porcelain"]).includes("A  src/app/[locale]/a.css"), true, "stage 按票面 literal 暂存");
+    // phase 36(REQ-75/D-01):stage 改走票级隔离索引 —— 暂存视图从工具自己的输出看,共享主索引零写入
+    eqN(r1.code === 0 && r1.out.includes("A  src/app/[locale]/a.css") && sh(["diff", "--cached", "--name-only"]).trim() === "", true, "stage 按票面 literal 暂存走隔离索引(共享主索引零写入)");
     eqN(r1.code === 0 && r1.out.includes("跳过"), true, "stage 对不存在路径跳过不报错");
     // ---- summary 工具(phase 14 D-04/D-05,#19):scope 精确 / 前缀兜底 WARN / 拒绝覆盖,同一真仓 fixture ----
     const commit = (m) => sh(["commit", "--allow-empty", "-q", "-m", m]);

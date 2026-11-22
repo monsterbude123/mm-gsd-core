@@ -6,9 +6,10 @@ import { checkResearchSummary } from "./research-gates.mjs";
 import { checkIssueLedger, checkReqClaims, checkReqCoverage, checkTicketLoad, checkTicketPremises } from "./verification-gates.mjs";
 import { checkBatchGraph, checkTicketBudget } from "./worktree-view.mjs";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 export function runPlanGateCases(t, x) {
   const { eq, eqN, eqArr } = t;
@@ -22,6 +23,54 @@ export function runPlanGateCases(t, x) {
   eqN(checkTicketBudget([{ id: "T1", verify: "node --test test/x.test.mjs" }]).length, 0, "票级 verify 是单文件 → 转绿");
   eqN(checkResearchSummary("## 摘要\n" + Array.from({ length: 20 }, (_, i) => "- 第" + (i + 1) + "行").join("\n")).length, 1, "研究摘要 20 行 → 判红(主上下文会被灌)");
   eqN(checkResearchSummary("## 摘要\n- 一句话结论\n\n## 正文\n细节").length, 0, "研究摘要够短 → 转绿");
+  // ---- Wiring Ticket 拦停(phase 36 T3,REQ-76/D-02):聚合出口/接线点碰撞引导拆后置接线票(孪生:红例 + 不误伤绿例) ----
+  {
+    const w = checkBatchGraph([{ id: "A", files: ["src/index.ts"], depends: [] }, { id: "B", files: ["src/index.ts"], depends: [] }]);
+    eqN(w.length, 1, "同波两票共触 index.ts 聚合出口 → 判红");
+    eqN(w.length === 1 && w[0].includes("Wiring Ticket"), true, "聚合出口碰撞引导拆后置 Wiring Ticket(不是普通拆批话术)");
+    const plain = checkBatchGraph([{ id: "A", files: ["a.js"], depends: [] }, { id: "B", files: ["a.js"], depends: [] }]);
+    eqN(plain.length === 1 && plain[0].includes("拆批或补依赖") && !plain[0].includes("Wiring Ticket"), true, "普通文件碰撞仍走旧口径(聚合出口话术不误标)");
+    const decl = checkBatchGraph([{ id: "A", files: ["a.ts"], wiring: ["agg.ts"], depends: [] }, { id: "B", files: ["b.ts"], wiring: ["agg.ts"], depends: [] }]);
+    eqN(decl.length === 1 && decl[0].includes("Wiring Ticket"), true, "两票显式标明同一 wiring 共享点(文件不重叠)→ 判红引导接线票");
+    eqN(checkBatchGraph([{ id: "A", files: ["src/a/index.ts"], depends: [] }, { id: "B", files: ["src/b/index.ts"], depends: [] }]).length, 0, "不同目录各自的 barrel 出口 → 不误伤");
+    eqN(checkBatchGraph([{ id: "A", files: ["a.ts"], wiring: ["agg.ts"], depends: [] }, { id: "B", files: ["b.ts"], wiring: ["other.ts"], depends: [] }]).length, 0, "wiring 声明不相交 → 转绿");
+  }
+  // ---- 并发隔离真跑用例(phase 36 T1,REQ-75/D-01):临时真仓里跑 stage/commit 脚本本尊 ----
+  // 断言共享主索引零踩踏、.commit.lock 持锁提交与孤儿锁回收、兄弟票先行提交不被交错回滚。
+  {
+    const STAGE = fileURLToPath(new URL("../../mm-gsd-exec/scripts/mm-gsd-stage.mjs", import.meta.url));
+    const COMMIT = fileURLToPath(new URL("../../mm-gsd-exec/scripts/mm-gsd-commit.mjs", import.meta.url));
+    const d = mkdtempSync(join(tmpdir(), "mm-gsd-conc-"));
+    mkdirSync(join(d, ".planning"), { recursive: true });
+    const g = (args) => {
+      try { return { code: 0, out: execFileSync("git", args, { cwd: d, encoding: "utf8", stdio: "pipe" }) }; }
+      catch (e) { return { code: e.status ?? 1, out: String(e.stdout || "") + String(e.stderr || "") }; }
+    };
+    const runTool = (script, args) => {
+      try { return { code: 0, out: execFileSync(process.execPath, [script, ...args], { cwd: d, encoding: "utf8", stdio: "pipe" }) }; }
+      catch (e) { return { code: e.status ?? 1, out: String(e.stdout || "") + String(e.stderr || "") }; }
+    };
+    g(["init"]); g(["config", "user.name", "t"]); g(["config", "user.email", "t@t"]);
+    writeFileSync(join(d, "base.txt"), "base\n");
+    g(["add", "base.txt"]); g(["commit", "-q", "-m", "init"]);
+    const mkPlan = (n, f) => writeFileSync(join(d, ".planning", `14-${n}-PLAN.md`), `---\nphase: "14"\nplan: "${n}"\nfiles_modified:\n  - ${f}\ndepends_on: []\n---\n\n### T1 事\n- **files**: ${f}\n`);
+    mkPlan("01", "a.txt"); mkPlan("02", "b.txt");
+    writeFileSync(join(d, "a.txt"), "a\n"); writeFileSync(join(d, "b.txt"), "b\n");
+    const s1 = runTool(STAGE, ["--ticket", "14-01"]);
+    const s2 = runTool(STAGE, ["--ticket", "14-02"]);
+    eqN(s1.code === 0 && s2.code === 0 && g(["diff", "--cached", "--name-only"]).out.trim() === "", true, "stage 走票级隔离 GIT_INDEX_FILE:共享主索引零暂存(并发 add 不踩踏)");
+    eqN(readdirSync(tmpdir()).filter((n) => n.startsWith("mm-gsd-stage-")).length, 0, "stage 临时索引 finally 清理,Temp 无残留");
+    const c1 = runTool(COMMIT, ["--ticket", "14-01", "--message", "feat(14-01): a"]);
+    eqN(c1.code === 0 && !existsSync(join(d, ".planning", ".commit.lock")) && g(["show", "--name-only", "--format=", "HEAD"]).out.includes("a.txt"), true, "commit 持 .commit.lock 正常 git commit:提交落地且锁 finally 清理");
+    const c2 = runTool(COMMIT, ["--ticket", "14-02", "--message", "feat(14-02): b"]);
+    const tree = g(["ls-tree", "-r", "--name-only", "HEAD"]).out;
+    eqN(c2.code === 0 && tree.includes("a.txt") && tree.includes("b.txt"), true, "兄弟票先行提交后本票提交不回滚对方变更(持锁内以当时 HEAD 重建基线)");
+    writeFileSync(join(d, "a.txt"), "a2\n");
+    writeFileSync(join(d, ".planning", ".commit.lock"), "2147483000 " + (Date.now() - 60000) + "\n");
+    const c3 = runTool(COMMIT, ["--ticket", "14-01", "--message", "feat(14-01): a2"]);
+    eqN(c3.code === 0 && !existsSync(join(d, ".planning", ".commit.lock")), true, "孤儿锁(>30s 且 PID 已退出)自动回收后照常提交");
+    rmSync(d, { recursive: true, force: true });
+  }
   // ---- 计划可信度(phase 09 D-07):前提存在性 / 载量 / 需求反核销 ----
   const d4 = mkdtempSync(join(tmpdir(), "mm-gsd-prem-"));
   mkdirSync(join(d4, "src"), { recursive: true }); writeFileSync(join(d4, "src", "a.mjs"), "x"); mkdirSync(join(d4, ".planning"), { recursive: true }); writeFileSync(join(d4, ".planning", "REQUIREMENTS.md"), "- REQ-1: 真需求\n");

@@ -121,8 +121,21 @@ export function runWorktrees({ cwd, plan, die, err }) {
  * 只在**同一个 phase 内**判:不同 phase 碰同一个文件是正常的(前一个 phase 改完,后一个再改),
  * 跨 phase 判重叠会把正常的先后关系判成冲突。
  *
- * @param tickets [{id, files:[], depends:[]}] 同一 phase 的票
+ * Wiring 共享出口(36-01 T3,REQ-76/D-02;deferred-LEDGER 36-W3「开工先落定义」的落地):
+ * 判「共享聚合出口/接线点」认两个通道,命中任一即按 Wiring 口径处置 ——
+ *   1) 显式声明:票对象 `wiring: [<路径>]`(规划者明知是接线点时的标记;PLAN→票对象的回填住
+ *      gsd-state-check 的 parsePlanFile,本票未动那个文件,库级通道先可用);
+ *   2) 名称形状:basename 命中手写汇总入口的常见形状 index/routes/router/registry/exports
+ *      (.ts/.tsx/.js/.jsx/.mjs/.cjs)—— 目录自动发现缺失的仓库里,聚合点就长这几种样子。
+ * 处置差异:普通文件碰撞 = 拆批或补依赖;聚合出口/接线点碰撞 = **拆出后置 Wiring Ticket 统一收口**
+ * (并行票谁也不许碰共享接线点 —— 各改各的模块,接线留给专用票)。
+ *
+ * @param tickets [{id, files:[], depends:[], wiring?:[]}] 同一 phase 的票
  * @returns 问题串数组;空数组 = 批图健康 */
+// 聚合出口形状(大小写不敏感;正斜杠归一后看 basename)
+const WIRING_SHAPE = /(?:^|\/)(?:index|routes|router|registry|exports)\.[cm]?[jt]sx?$/i;
+const isWiringFile = (f) => WIRING_SHAPE.test(String(f ?? "").replace(/\\/g, "/"));
+
 export function checkBatchGraph(tickets) {
   const problems = [];
   const byId = new Map(tickets.map((t) => [t.id, t]));
@@ -143,7 +156,13 @@ export function checkBatchGraph(tickets) {
       const linked = (a.depends ?? []).includes(b.id) || (b.depends ?? []).includes(a.id);
       if (linked) continue;
       const hit = (a.files ?? []).filter((f) => (b.files ?? []).includes(f));
-      if (hit.length) problems.push(`${a.id} 与 ${b.id} 互不依赖(可并行)却撞了文件:${hit.join("、")} —— 并行必冲突,拆批或补依赖`);
+      const wdecl = (a.wiring ?? []).filter((f) => (b.wiring ?? []).includes(f));
+      if (!hit.length && !wdecl.length) continue;
+      const wiring = wdecl.length > 0 || hit.some((f) => isWiringFile(f) || (a.wiring ?? []).includes(f) || (b.wiring ?? []).includes(f));
+      const items = [...new Set([...hit, ...wdecl])];
+      problems.push(wiring
+        ? `${a.id} 与 ${b.id} 同波互不依赖却共触聚合出口/接线点:${items.join("、")} —— 拆出后置 Wiring Ticket 统一收口(并行票不许碰共享接线点,各改各模块、接线留给专用票)`
+        : `${a.id} 与 ${b.id} 互不依赖(可并行)却撞了文件:${items.join("、")} —— 并行必冲突,拆批或补依赖`);
     }
   }
   return problems;
