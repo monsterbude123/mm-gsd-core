@@ -9,7 +9,11 @@
 
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { renderFrictionOverview } from "./telemetry-view.mjs";
+import {
+  renderFrictionOverview,
+  computeEfficiency, renderEfficiencyOverview,
+  summarizeRunsWindow, renderRunsEfficiency,
+} from "./telemetry-view.mjs";
 
 /** 读遥测文件;读不到返回空数组 */
 export function readRows(path) {
@@ -60,7 +64,11 @@ export function runStats({ path, scope, all, log = console.log }) {
     log("  检查器每跑一次会自动记一行;跑一次任意模式(默认/--plan/--phases/--worktrees)即产生。");
     return 0;
   }
-  log(render(aggregate(rows, { scope, all }), path));
+  const a = aggregate(rows, { scope, all });
+  log(render(a, path));
+  // 34-02(REQ-70):执行耗时 P50/P95 与慢模式排行 —— 只吃 scope 过滤后的 only;
+  // duration_ms 未积累的历史行不参与,全无样本时标「暂无数据」而不是 0(与 34-F5 同一纪律:不输出假数)
+  log(renderRunsEfficiency(summarizeRunsWindow(a.only, all ? null : scope)).join("\n"));
   log("");
   return 0;
 }
@@ -146,6 +154,7 @@ export function runToolStats({ path, log = console.log }) {
     log("尚无工具日志(" + path + ")。");
     log("  跑 install --hooks 装上工具遥测(PreToolUse 机械记录,零上下文污染)后自然积累,再回来看 --stats --tools。");
     for (const line of renderFrictionOverview(computeToolFriction([]))) log(line);
+    for (const line of renderEfficiencyOverview(computeEfficiency([]))) log(line);
     return 0;
   }
   const byCwd = new Map();
@@ -158,6 +167,8 @@ export function runToolStats({ path, log = console.log }) {
     `\nmm-gsd 工具日志(${rows.length} 行,${byCwd.size} 个项目;日志 ${path})`,
     "  时长为近似值:窗口 = Task 行 → 该项目下一个 Task 行,末次派发标「进行中」(宿主无 PostToolUse) —— 观测面,不判红",
     ...renderFrictionOverview(computeToolFriction(rows)),
+    // 34-02(REQ-70):resume 复用率与 context-thrash —— 与摩擦概览并排,同一观测面纪律
+    ...renderEfficiencyOverview(computeEfficiency(rows)),
   ];
   for (const [cwd, rs] of byCwd) {
     const cf = computeToolFriction(rs);
