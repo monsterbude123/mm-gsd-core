@@ -103,6 +103,7 @@ ${C.b}mm-gsd${C.x} — 极简 GSD 核心安装器
   ${C.b}doctor${C.x}             体检:宿主环境、已装状态、hooks(只读,不改任何东西)
   ${C.b}check${C.x} [args]       跑状态检查器(转发 --plan / --plan-check / --phases / --worktrees / --stats / --stats --tools / --templates)
   ${C.b}check --plan-check${C.x} <PLAN>  显式校验一份计划:现在能不能开工(退出码 0 = 能)
+  ${C.b}context-pack${C.x} <file...>  静态提取目标文件的 export/interface 签名(紧凑 <interfaces> 块,贴进 PLAN 压薄 read_first)
   ${C.b}update${C.x}             先对齐 registry 上的最新版,再机械覆盖:技能整删重拷、宿主卡无条件刷新、守卫/工具遥测脚本刷新
       --next                 跟预发布通道(next)而不是正式通道(latest)
       --local                 更新当前项目的 ./.agents/skills/(跳过宿主卡)
@@ -459,6 +460,16 @@ if (cmd === "update") process.exit(await update());
   }
 }
 if (cmd === "check") process.exit(check());
+if (cmd === "context-pack") {
+  // R-21 预打包转发(36-02 T1):输出整段贴进 PLAN 的 <interfaces> 节,压薄 read_first
+  const files = argv.slice(1).filter((a) => !a.startsWith("-"));
+  if (!files.length) { bad("用法: mm-gsd context-pack <file...>(相对 cwd;目标缺失会点名报错)"); process.exit(1); }
+  try {
+    const cp = await import(pathToFileURL(join(PKG_ROOT, "skills", "mm-gsd-loop", "references", "context-pack.mjs")).href);
+    process.stdout.write(cp.packFiles(files, process.cwd()));
+    process.exit(0);
+  } catch (e) { bad(String(e?.message || e)); process.exit(1); }
+}
 if (["stage", "summary", "commit", "wave-check"].includes(cmd)) {
   // 执行期工具转发(skills/mm-gsd-exec/scripts/,R-13:使用方手上只有 skills/)。
   // spawnSync 不用 execFileSync:后者把子进程非零退出变调用栈(report 转发先例)。

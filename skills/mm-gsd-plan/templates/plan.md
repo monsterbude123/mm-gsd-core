@@ -29,6 +29,10 @@ wave: 1   <!-- 批内序号:同 wave 的票必须零文件重叠,否则拆批 --
 
 ## Tasks
 
+<!-- 可选 <interfaces> 节(R-21 预打包):对 read_first 里的真理来源文件跑
+     `mm-gsd context-pack <files>`,把输出的紧凑 <interfaces> 块整段贴进来 ——
+     Worker 按 file:line 锚点直取签名,不为找接口通读整文件。没有就整节省略。 -->
+
 ### T1 <一句话任务名>
 - **files**: src/api/auth.ts, src/lib/session.ts
 - **read_first**: src/api/auth.ts, src/lib/types.ts   <!-- 要改的文件 + 作为真理来源的文件(接口定义/类型声明/既有同类实现) -->

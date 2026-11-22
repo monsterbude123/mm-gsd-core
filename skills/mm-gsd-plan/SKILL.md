@@ -35,7 +35,7 @@ PLAN 单列 `<auto_decisions>` 节:执行期可能要问用户的点,**规划时
 
 ## 任务四件套(每个任务必填)
 
-`<files>` 精确路径禁模糊语;`<read_first>` 要改的文件必读 + 真理来源文件是**核对点**(确认图纸与现状一致,不是从头理解项目)——**规划期把要核对的东西摘进 action**,摘得越清楚执行端要开的文件越少;`<action>` 做什么 + 避免什么及为什么,不含代码块;`<verify>` 自动化验证命令;`<done>` 可度量判据。任务数 ≤3 也要落精简 PLAN(每任务一行四件套),不落盘 = 闭环断裂。
+`<files>` 精确路径禁模糊语;`<read_first>` 要改的文件必读 + 真理来源文件是**核对点**(确认图纸与现状一致,不是从头理解项目)——**规划期把要核对的东西摘进 action**,摘得越清楚执行端要开的文件越少;**read_first 预打包(可选,兑现 R-21)**:对真理来源文件跑 `mm-gsd context-pack <files>`(bin 转发 skills/mm-gsd-loop/references/context-pack.mjs),把输出的紧凑 `<interfaces>` 块贴进 PLAN,执行端按行号锚点直取签名,不为找接口通读整文件;`<action>` 做什么 + 避免什么及为什么,不含代码块;`<verify>` 自动化验证命令;`<done>` 可度量判据。任务数 ≤3 也要落精简 PLAN(每任务一行四件套),不落盘 = 闭环断裂。
 
 **fails_when 契约**:每条 verify 后紧跟失败方向(退出码/输出串/缺失行);TBD/N-A/none 视为没写。可选 `<precondition>`:一行可检验的前置事实,不满足即停。**验证命令复用**:上一 phase 跑通过的命令逐字复制,不重新推导路径。每个 plan 另列 `files_modified` 全清单与 `depends_on`。跨 worktree 时 files_modified 是安全契约不是元数据,必须机器可解析(见 mm-gsd-loop「多 worktree」)。**事实仲裁**:计划与仓库事实冲突,事实为准(注明出处);引用的事实错了 → 打回改计划;判不了 → 报差异。
 
