@@ -66,11 +66,11 @@ export function phaseReqs(root, phase) {
       if (m) for (const rq of m[1].match(/REQ-[\w.-]+/g) ?? []) reqs.add(rq);
     }
   }
-  // 豁免一:REQUIREMENTS.md 里标 (baseline 的行
+  // 豁免一:REQUIREMENTS.md 里标 (baseline 的行(全角括号与半角同权,G-35-1)
   const reqFile = join(pdir, "REQUIREMENTS.md");
   if (existsSync(reqFile)) {
     for (const line of readFileSync(reqFile, "utf8").split(/\r?\n/)) {
-      if (/\(baseline/.test(line)) {
+      if (/(?:\(|（)baseline/.test(line)) {
         const m = line.match(/REQ-[\w.-]+/);
         if (m) reqs.delete(m[0]);
       }

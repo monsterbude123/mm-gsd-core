@@ -7,6 +7,7 @@ import { checkConclusionDrift, checkDecisions, checkDrift, locateContexts } from
 import { checkResearchConsumed, researchCompliant, researchRequired } from "./research-gates.mjs";
 import { extractTemplateBlock } from "./template-gates.mjs";
 import { ticketsCovered } from "./ticket-alive.mjs";
+import { checkReqCoverage } from "./verification-gates.mjs";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -189,4 +190,10 @@ export function runContractCases(t, x) {
   const rc = (txt) => { const errs = []; checkResearchConsumed({ name: "08-01-PLAN.md", phase: "08", root: d3, text: txt, e: (m) => errs.push(m), w: () => {} }); return errs; };
   eqN(rc("read_first: src/a.mjs").length, 1, "有研究产物 + 票没引用它 → 判红(研究落盘了没人读)");
   eqN(rc("read_first: .planning/08-RESEARCH.md, src/a.mjs").length, 0, "票里点名了研究产物 → 转绿"); rmSync(d3, { recursive: true, force: true });
+  // ---- 全角括号基线(G-35-1,35-01 独立验证 gap):（baseline） 与半角同权豁免,不误红 ----
+  const dFW = mkdtempSync(join(tmpdir(), "mm-gsd-baseline-fw-"));
+  mkdirSync(join(dFW, ".planning"), { recursive: true });
+  writeFileSync(join(dFW, ".planning", "REQUIREMENTS.md"), "- REQ-80 （baseline）: 基线能力\n- REQ-81: 新需求\n");
+  eqN(checkReqCoverage({ root: dFW, plansDir: join(dFW, ".planning") }).length, 1, "全角括号基线与半角同权豁免(只剩 REQ-81 无人认领判红,REQ-80 不误红)");
+  rmSync(dFW, { recursive: true, force: true });
 }

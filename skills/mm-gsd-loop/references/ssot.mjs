@@ -119,11 +119,11 @@ export function parseStateFile(statePath, root) {
   };
 }
 
-/** REQUIREMENTS.md 文本 → REQ 号集合(baseline 行过滤与 checkReqCoverage 同口径) */
+/** REQUIREMENTS.md 文本 → REQ 号集合(baseline 行过滤与 checkReqCoverage 同口径;全角括号与半角同权,G-35-1) */
 export function reqIdsFromText(reqText) {
   return String(reqText ?? "")
     .split(/\r?\n/)
-    .filter((line) => !/\(baseline/i.test(line))
+    .filter((line) => !/(?:\(|（)baseline/i.test(line))
     .flatMap((line) => [...line.matchAll(/REQ-\d+/gi)].map((m) => m[0].toUpperCase()));
 }
 
@@ -231,7 +231,7 @@ export function deriveRequirements(text) {
   const idsAll = [];
   const texts = {};
   for (const line of String(text ?? "").split(/\r?\n/)) {
-    const baseline = /\(baseline/i.test(line);
+    const baseline = /(?:\(|（)baseline/i.test(line);
     for (const m of line.matchAll(/REQ-\d+/gi)) {
       const id = m[0].toUpperCase();
       idsAll.push(id);
