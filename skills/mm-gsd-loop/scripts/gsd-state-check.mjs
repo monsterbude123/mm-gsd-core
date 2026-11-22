@@ -57,13 +57,13 @@ const SANDBOX = process.env.GSD_SANDBOX === "1";
 const PLAN_CHECK = process.argv.includes("--plan-check");
 const MODE = ["init", "worktrees", "plan", "plan-check", "phases", "stats", "route"].find((m) => process.argv.includes("--" + m))
   ?? (process.argv.includes("--json") ? "check-json" : "check");
-const runRec = { ts: new Date().toISOString(), mode: MODE, cwd: root, sandbox: SANDBOX, ver: mmGsdVersion(SKILL_DIR), declared: null, derived: null, phase: null, errors: [], warnings: [] };
+const runRec = { ts: new Date().toISOString(), t0: Date.now(), mode: MODE, cwd: root, sandbox: SANDBOX, ver: mmGsdVersion(SKILL_DIR), declared: null, derived: null, phase: null, tier: null /* 无值源:路由 tier 声明是 REQ-73(phase 35)的交付,先记 null 不发明口径(预审 34-F7) */, errors: [], warnings: [] };
 // exit 钩子保证每个 process.exit 路径都被记到,不靠人工在分支里记得写
 process.on("exit", (code) => {
   if (!TELEMETRY) return;
   try {
     mkdirSync(dirname(TELEMETRY_PATH), { recursive: true });
-    appendFileSync(TELEMETRY_PATH, JSON.stringify({ ...runRec, exit: code }) + "\n");
+    appendFileSync(TELEMETRY_PATH, JSON.stringify({ ...runRec, exit: code, duration_ms: Date.now() - runRec.t0 }) + "\n");
   } catch {}   // 遥测失败绝不阻断流程
 });
 

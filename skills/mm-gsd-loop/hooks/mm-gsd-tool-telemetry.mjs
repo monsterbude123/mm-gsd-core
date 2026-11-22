@@ -9,6 +9,12 @@
 // prompt_head(截 80)—— 组装顺序唯一(20-预审 F10):先组 brief,Task 行再加独立键,
 // 不折进 brief,否则角色与 prompt 头会丢。tool=Bash 时 brief 取命令头(grep/rg 计数落点)。
 //
+// 34-02(REQ-70)起另记:bg(run_in_background 布尔)、target_path(归一化小写正斜杠路径,
+// context-thrash 分组落点);子代理行(Task **或** Agent —— ZCode 的子代理工具叫 Agent,
+// 385 行实测 / Task 0 行,只认 Task 会让本机子代理字段全盲)另记 is_resume 与 resume_src:
+// 续跑来源键(resume/continued/renewed)宿主是否传无仓内证据(预审 34-F5),未观测到时
+// is_resume 恒 false,resume_src 记空串 —— 聚合层据它把复用率标「不可得」,不造假 0%。
+//
 // 日志:GSD_TOOL_TELEMETRY_PATH 可注入(测试钩子,先例 GSD_TELEMETRY_PATH,预审 F3),
 // 缺省 ~/.agents/mm-gsd-tools.jsonl(与 checker 的 runs.jsonl 分文件,量级差一个数量级);
 // 超 8MB 轮转 .old(只留一代),rename 失败(Windows 句柄/竞态)→ 放弃本次轮转照常追加
@@ -35,9 +41,15 @@ process.stdin.on("end", () => {
       : s(ti.file_path ?? ti.pattern ?? ti.description ?? ti.skill)    // 其余工具取主要参数
     ).trim().slice(0, 140);
     const row = { ts: new Date().toISOString(), cwd: s(ev.cwd), tool, brief };
-    if (tool === "Task") {
+    row.bg = ti.run_in_background === true;   // 后台并发标记(34-02)
+    const tp = s(ti.file_path ?? ti.path ?? ti.notebook_path).replace(/\\/g, "/").trim().toLowerCase();
+    if (tp) row.target_path = tp;             // 归一化目标路径,只在有路径键时写(context-thrash 分组)
+    if (tool === "Task" || tool === "Agent") {
       row.subagent_type = s(ti.subagent_type);
       row.prompt_head = s(ti.prompt).trim().slice(0, 80);   // 独立键,不折进 brief
+      const src = ["resume", "continued", "renewed"].find((k) => ti[k] != null && ti[k] !== "");
+      row.is_resume = Boolean(src);   // 来源键未观测到 → 恒 false,复用率由聚合层标不可得(34-F5)
+      row.resume_src = src ?? "";     // 真出现了哪个键;空串 = 未观测到来源键
     }
     const path = process.env.GSD_TOOL_TELEMETRY_PATH || join(homedir(), ".agents", "mm-gsd-tools.jsonl");
     try { if (statSync(path).size > 8 * 1024 * 1024) renameSync(path, path + ".old"); }
