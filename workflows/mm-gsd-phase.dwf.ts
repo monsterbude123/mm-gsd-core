@@ -22,7 +22,13 @@ args:
 // 拍板权:技术细节全部自主决策(标 [AUTO]);只有五类白名单才上浮用户。
 // 状态机:每步后跑 gsd-state-check(确定性,模型无法绕过)。
 
-const SKILLS = "C:/Users/septe/.agents/skills/mm-gsd";
+// SKILLS 目录动态解析(REQ-78):GSD_SKILLS_DIR 优先(= mm-gsd 目录全前缀,形如 <home>/.agents/skills/mm-gsd),
+// 缺省回退家目录(Windows 读 USERPROFILE,Unix 读 HOME)—— 不再硬编码作者本机绝对路径。
+function resolveSkillsDir(): string {
+  const home = (process.env.USERPROFILE || process.env.HOME || "").replace(/[\\/]+$/, "");
+  return (process.env.GSD_SKILLS_DIR || home + "/.agents/skills/mm-gsd").replace(/[\\/]+$/, "");
+}
+const SKILLS = resolveSkillsDir();
 const CHECK = SKILLS + "-loop/scripts/gsd-state-check.mjs";
 const RIGHTS =
   "【拍板权】技术细节一律自己决定,不要问人:选库、文件组织、命名、实现路线、重构边界、测试写法——按项目既有约定和代码事实定," +

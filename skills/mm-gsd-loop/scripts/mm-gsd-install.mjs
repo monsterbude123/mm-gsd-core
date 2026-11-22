@@ -95,7 +95,8 @@ console.log("主仓技能:  " + MASTER + "(" + SKILLS.filter((s) => existsSync(j
 console.log("宿主:      " + (present.map(([k]) => k).join(", ") || "无"));
 
 for (const [name, v] of targets) {
-  if (!v.skills || v.skills === ".agents/skills") { oks.push(name + ":技能主仓原生(" + v.dist + ")"); continue; }
+  if (!v.skills) { oks.push(name + ":无 skills 目录约定,跳过链接(" + v.dist + ")"); continue; }
+  if (v.skills === ".agents/skills") { oks.push(name + ":技能主仓原生(" + v.dist + ")"); continue; }
   const dstRoot = H(v.skills);
   const inMaster = SKILLS.filter((s) => existsSync(join(MASTER, s)));
   const linked = [], notLinked = [];
@@ -137,7 +138,8 @@ if (CHECK_ONLY) {
 // ---------- 动作 1:技能软链分发 ----------
 if (!HOOKS_ONLY && !AGENTS_ONLY) {
   for (const [name, v] of targets) {
-    if (!v.skills || v.skills === ".agents/skills") continue;
+    if (!v.skills) { skips.push(name + " 技能链接:无 skills 目录约定(" + v.dist + ")"); continue; }   // 不静默丢弃(REQ-78)
+    if (v.skills === ".agents/skills") continue;
     const dstRoot = H(v.skills);
     let made = 0, already = 0;
     for (const s of SKILLS) {
