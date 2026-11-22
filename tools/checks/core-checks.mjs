@@ -611,13 +611,13 @@ export function checkCriterionSync(report) {
     if (!checks.length) { report.fail("mmc.mjs 里枚举不到任何 CHECKS 键 —— 判据同步对账无从谈起"); return false; }
     const exports = new Set();
     for (const dir of ["tools/checks", "skills/mm-gsd-loop/references"]) {
-      let es = []; try { es = readdirSync(R(dir)).filter((x) => x.endsWith(".mjs")); } catch {}
+      let es = []; try { es = readdirSync(R(dir)).filter((x) => x.endsWith(".mjs")); } catch { /* 无该目录则跳过 */ }
       for (const e of es)
         for (const m of readFileSync(R(dir, e), "utf8").matchAll(/export (?:async )?(?:function|const) ((?:check|validate)\w+)/g))
           exports.add(m[1]);
     }
     // tools/ 根下的判定模块也在门禁宇宙里(gate-cases.json 的 _tools 节登记它们:reference-map 的 checkRefs、module-registry 的 checkCardClaims 等)
-    let tes = []; try { tes = readdirSync(R("tools")).filter((x) => x.endsWith(".mjs")); } catch {}
+    let tes = []; try { tes = readdirSync(R("tools")).filter((x) => x.endsWith(".mjs")); } catch { /* 无 tools 目录则跳过 */ }
     for (const e of tes)
       for (const m of readFileSync(R("tools", e), "utf8").matchAll(/export (?:async )?(?:function|const) ((?:check|validate)\w+)/g))
         exports.add(m[1]);
