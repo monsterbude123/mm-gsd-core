@@ -761,4 +761,51 @@ export function runStateDeriveCases({ eqN }) {
   }
   eqN(JSON.stringify(json) === JSON.stringify(baseline), true, "state-baseline-b 夹具输出与基线逐字一致 —— 判据变了这里会红");
   rmSync(fx, { recursive: true, force: true });
+  // ---- tier 按档放行夹具(phase 35 REQ-73):同形工件只差 tier 声明,断言按档放行;
+  // 无 tier 的同形夹具保持现状照红 —— 反例既证按档放行真有判别力,也证缺省路径零放水。
+  const runT = (files) => {
+    const d = mkdtempSync(join(tmpdir(), "mm-gsd-tier-"));
+    const p = join(d, ".planning");
+    mkdirSync(p, { recursive: true });
+    for (const [n, c] of Object.entries(files)) writeFileSync(join(p, n), c);
+    let o = "";
+    try {
+      o = execFileSync(process.execPath, [checker, "--json"], {
+        cwd: d, encoding: "utf8", stdio: "pipe",
+        env: { ...process.env, GSD_SANDBOX: "1", GSD_PROJECT_DIR: "", GIT_DIR: "no-such-git-dir", GSD_TELEMETRY_PATH: join(tmpdir(), "mm-gsd-state-tier-telemetry.jsonl") },
+      });
+    } catch (e) { o = String(e.stdout || ""); }
+    let j = null;
+    try { j = JSON.parse(o); } catch { j = null; }
+    rmSync(d, { recursive: true, force: true });
+    return j;
+  };
+  const msgs = (j, k) => (j?.[k] ?? []).map((x) => String(x.message ?? ""));
+  // L1:STATE + PLAN 各一,零 CONTEXT/SUMMARY,声明 shipped —— 缺席错位不拦(免全套工件缺席阻塞)
+  const l1files = (t) => ({
+    "STATE.md": `---\nstatus: shipped\nactive_phase: "97"${t}\n---\n`,
+    "97-01-PLAN.md": `---\nphase: "97"\nplan: "01"${t}\n---\n\n## T1\n`,
+  });
+  const l1 = runT(l1files("\ntier: L1"));
+  eqN(!!l1, true, "tier-L1-a 检查器在 tier: L1 夹具上跑完并输出 JSON(崩了不算通过)");
+  eqN(msgs(l1, "errors").length, 0, "tier-L1-b L1 免全套工件缺席拦截:零工件 + 声明 shipped 不判错位(按档放行)");
+  eqN(msgs(runT(l1files("")), "errors").some((m) => m.includes("声明")), true, "tier-L1-c 反例:同形夹具无 tier 声明 → 照判错位(缺省路径零放水)");
+  // L2:全套轻量工件 + VERIFICATION passed,无 SHIP、无 PLAN-CHECK —— 免预审收敛门与 SHIP 缺席黄
+  const CTX96 = "---\nphase: \"96\"\n---\n\n# 96 CONTEXT\n\n<domain>\n\u5939\u5177\n</domain>\n\n<decisions>\n- [D-01] reversible \u2014 \u5939\u5177\n</decisions>\n\n<specifics>\n- \u5939\u5177\n</specifics>\n\n<deferred>\n- \u65e0\n</deferred>\n";
+  const VER96 = "---\nstatus: passed\n---\n\n## Observable Truths\n\n| Truth | 判据 | 判定 |\n|---|---|---|\n| T1 夹具 | 夹具行为 | ✓ VERIFIED |\n";
+  const l2files = (t) => ({
+    "STATE.md": `---\nstatus: completed\nactive_phase: "96"${t}\n---\n`,
+    "96-CONTEXT.md": CTX96,
+    "96-01-PLAN.md": `---\nphase: "96"\nplan: "01"${t}\n---\n\n## T1\n`,
+    "96-01-SUMMARY.md": "---\nphase: \"96\"\nstatus: complete\ncommits: 1\n---\n\n## One-liner\n\n\u5939\u5177\n",
+    "96-VERIFICATION.md": VER96,
+  });
+  const l2 = runT(l2files("\ntier: L2"));
+  eqN(!!l2, true, "tier-L2-a 检查器在 tier: L2 夹具上跑完并输出 JSON(崩了不算通过)");
+  eqN(msgs(l2, "errors").length, 0, "tier-L2-b L2 免票级预审收敛门:开工无 PLAN-CHECK 不判红(按档放行)");
+  eqN(msgs(l2, "warnings").length, 0, "tier-L2-c L2 免独立 SHIP 工件阻塞:passed 无 SHIP 无黄条");
+  eqN(l2?.derived, "completed", "tier-L2-d L2 终态仍用既有词表:passed + 无 SHIP → completed(不新增枚举)");
+  const l2n = runT(l2files(""));
+  eqN(msgs(l2n, "errors").some((m) => m.includes("预审结论")), true, "tier-L2-e 反例:无 tier 同形夹具 → 照判缺预审结论(缺省路径零漂移)");
+  eqN(msgs(l2n, "warnings").some((m) => m.includes("SHIP")), true, "tier-L2-f 反例:无 tier 同形夹具 → 照报 SHIP 缺席黄");
 }

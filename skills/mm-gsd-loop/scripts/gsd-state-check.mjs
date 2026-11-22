@@ -57,7 +57,7 @@ const SANDBOX = process.env.GSD_SANDBOX === "1";
 const PLAN_CHECK = process.argv.includes("--plan-check");
 const MODE = ["init", "worktrees", "plan", "plan-check", "phases", "stats", "route"].find((m) => process.argv.includes("--" + m))
   ?? (process.argv.includes("--json") ? "check-json" : "check");
-const runRec = { ts: new Date().toISOString(), t0: Date.now(), mode: MODE, cwd: root, sandbox: SANDBOX, ver: mmGsdVersion(SKILL_DIR), declared: null, derived: null, phase: null, tier: null /* 无值源:路由 tier 声明是 REQ-73(phase 35)的交付,先记 null 不发明口径(预审 34-F7) */, errors: [], warnings: [] };
+const runRec = { ts: new Date().toISOString(), t0: Date.now(), mode: MODE, cwd: root, sandbox: SANDBOX, ver: mmGsdVersion(SKILL_DIR), declared: null, derived: null, phase: null, tier: null /* 值源 = STATE/PLAN frontmatter 的 tier 声明(REQ-73,phase 35 落地);主检查流里由 resolveTier 回填 */, errors: [], warnings: [] };
 // exit 钩子保证每个 process.exit 路径都被记到,不靠人工在分支里记得写
 process.on("exit", (code) => {
   if (!TELEMETRY) return;
@@ -90,7 +90,7 @@ function die(message, fix) {
 // ---- 极简 frontmatter 解析(不引 YAML 依赖);剥行尾 # 注释,否则模板照抄即报错 ----
 // REQ-67:实现唯一化 —— 逻辑住 references/ssot.mjs(contractFrontmatter);
 // REQ-68:STATE/PLAN 走 format-aware 读(镜像新鲜用 JSON,陈旧回落 Markdown)。
-const { contractFrontmatter } = await import("../references/ssot.mjs");
+const { contractFrontmatter, normalizeTier } = await import("../references/ssot.mjs");
 function frontmatter(path) {
   return contractFrontmatter(join(root, ".planning"), path);
 }
@@ -99,7 +99,7 @@ function frontmatter(path) {
 // 模糊措辞让机器无法判断并行冲突。两条正则的唯一实现住 references/state-derive.mjs
 // (REQ-69 收拢:此前主脚本与 gate-selftest 各持一份字面量 —— 两份必然走偏,phase 32 同一课);
 // #6/#7 的坑注释随常量住在唯一定义点,用例与理由见 references/gate-selftest.mjs。
-const { VAGUE_FILE, DEP_RE } = await import("../references/state-derive.mjs");
+const { VAGUE_FILE, DEP_RE, resolveTier } = await import("../references/state-derive.mjs");
 // 「无 / none」是"没有依赖"的写法,中文 STATE.md 实际都这么写。
 // 不过滤就会报「phase 01 依赖了不存在的 phase 无」。
 const splitDeps = (raw) => raw.split(/[,\s]+/).map(unquote)
@@ -260,7 +260,8 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
       if (superseded) {
         w(`[REVIEW-CONVERGENCE] phase ${convPhase} 预审收敛在位(round ${conv.latest.round},status ${conv.latest.status})—— 票级预审由 phase 收敛取代`);
         if (conv.stalled) e(conv.stalledMsg + " 停滞,转人", "拿收敛清单拍板:Proceed(把判断项归 Deferred 带进施工)或 Manual review");
-      } else if (Number(convPhase) >= pr.PHASE_CONVERGENCE_REQUIRED_FROM && unclosedSamePhase >= 2) {
+      // tier: L2 免多票强制收敛(REQ-73,phase 35):L2 常规迭代免 phase 级预审收敛要求(值解析住 ssot.mjs)
+      } else if (Number(convPhase) >= pr.PHASE_CONVERGENCE_REQUIRED_FROM && unclosedSamePhase >= 2 && normalizeTier(fm.tier) !== "L2") {
         e(`[REVIEW-CONVERGENCE] phase ${convPhase} 缺 phase 级预审收敛工件(<${convPhase}-REVIEW-CONVERGENCE.md>)—— ${pr.PHASE_CONVERGENCE_REQUIRED_FROM} 起 ${unclosedSamePhase} 张未收口票按 phase 一次预审(一个预算一份清单)`, "预审结论落盘为 phase 级收敛工件(round/new_judgment/open_judgment)再跑本命令");
       }
       const rr = pr.checkPlanReady({ planPath: path }, { superseded, phaseDir: dirname(path), phase: convPhase });
@@ -962,11 +963,15 @@ const artifactInfo = { context: null, plans: [], summaries: [], verification: nu
       : "verifying";
   }
 
+  // ---- 三级路由档位(REQ-73,phase 35):STATE 声明优先,本 phase PLAN 兜底,缺省 = L3 全环。
+  // R-32:档位判定住 state-derive.mjs(resolveTier),这里只导入传参。
+  const tier = resolveTier(stateFm, artifactInfo.plans.map((f) => frontmatter(J(f))));
+  runRec.tier = tier;
   // ---- 工件字段契约(fake-completed / 手填 commits / 假 status)----
   const { stateContracts } = await import("../references/state-derive.mjs");
   await stateContracts({
     root, base, artifactInfo, frontmatter, unquote, parsePlanFile,
-    derived, declared, err, warn,
+    derived, declared, err, warn, tier,
     argvJson: process.argv.includes("--json"),
     SUMMARY_STATUSES, VERIF_STATUSES, SHIP_STATUSES, STATUSES, PLACEHOLDER, NO_DIRECTION,
   });

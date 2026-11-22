@@ -7,6 +7,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { normalizeTier } from "./ssot.mjs";
 
 // ---- 共享正则常量(phase 34 REQ-69 收拢):此前 gsd-state-check.mjs 的本地字面量与
 // gate-selftest.mjs 的注入正则各持一份 —— 两份字面量必然走偏,phase 32 的同一课。
@@ -15,6 +16,13 @@ import { spawnSync } from "node:child_process";
 export const VAGUE_FILE = /相关|若干|全部|所有|等等|若干文件|…|\.\.\.|etc\b|TBD|待定|(?<![A-Za-z0-9])N\/A(?![A-Za-z0-9])/i;
 // DEP_RE 的括号要认全角 U+FF08/FF09,否则中文 STATE.md 依赖链解析为空(GitHub #7)
 export const DEP_RE = /[（(]\s*depends_on\s*[:：]\s*([^）)]*)[）)]/i;
+
+// ---- 三级路由档位推导(REQ-73,phase 35):声明通道 = STATE.md / PLAN frontmatter 的 tier 字段。
+// 不新增状态枚举 —— 档位只改「工件缺席要不要拦」,终态词表照旧;缺省/非法 → L3 全环(历史零回归)。
+// 值的解析住 ssot.mjs(normalizeTier),档位推导住这里(R-32),主脚本只导入传参。
+export function resolveTier(stateFm, planFms = []) {
+  return normalizeTier(stateFm?.tier) ?? planFms.map((fm) => normalizeTier(fm?.tier)).find(Boolean) ?? "L3";
+}
 
 // ---- git log 有界查询 + 进程内缓存(phase 34 REQ-69):无界全史扫描是大仓下
 // gsd-state-check 的耗时大户(34-RESEARCH 第 2 条)。上限 -n 500:scope 对账只关心近期提交;
@@ -45,7 +53,7 @@ export async function stateContracts(x) {
   const { validateVerification } = await import("../references/template-gates.mjs");
   const {
     root, base, artifactInfo, frontmatter, unquote, parsePlanFile,
-    derived, declared, err, warn, argvJson,
+    derived, declared, err, warn, argvJson, tier,
     SUMMARY_STATUSES, VERIF_STATUSES, SHIP_STATUSES, STATUSES, PLACEHOLDER, NO_DIRECTION,
   } = x;
   const P = (...s) => join(root, ".planning", ...s);
@@ -147,8 +155,11 @@ export async function stateContracts(x) {
       if (!ph || supersededPhases.has(ph)) continue;
       if (readPhaseConvergence(base, ph).present) supersededPhases.add(ph);
     }
-    for (const m of checkPlanCheckArtifacts({ dir: base, plans: artifactInfo.plans, summaries: artifactInfo.summaries, frontmatter, supersededPhases }))
-      err(m, "先派一个全新上下文的只读子代理做预审(见 mm-gsd-verify「执行前预审」),产出 .planning/<NN-MM>-PLAN-CHECK.md");
+    // tier: L2 免票级预审收敛门(REQ-73,phase 35):L2 免独立 Judge 预审 —— 开工无 PLAN-CHECK 不判红。
+    // 档位由主脚本 resolveTier 解析传入(R-32);缺省(L3)与历史行为逐字一致。
+    if (tier !== "L2")
+      for (const m of checkPlanCheckArtifacts({ dir: base, plans: artifactInfo.plans, summaries: artifactInfo.summaries, frontmatter, supersededPhases }))
+        err(m, "先派一个全新上下文的只读子代理做预审(见 mm-gsd-verify「执行前预审」),产出 .planning/<NN-MM>-PLAN-CHECK.md");
   }
   if (artifactInfo.verification) {
     const vfm = frontmatter(J(artifactInfo.verification));
@@ -175,14 +186,17 @@ export async function stateContracts(x) {
       else if (/[<>]/.test(ev)) err(`${artifactInfo.shipment}: delivered 还是模板占位符`, "替换成真实位置(PR 链接 / 合并 commit / 发布单号);尖括号包着的是说明,不是证据");
       if (shm.docs_synced !== "yes") warn(`${artifactInfo.shipment}: docs_synced != yes —— 用户可见变更没同步文档`, "改了用法/接口/配置就更新文档;没改写 no 并说明");
     }
-  } else if (derived === "completed") {
+  } else if (derived === "completed" && tier !== "L2") {
+    // tier: L2 免独立 SHIP 工件阻塞(REQ-73):passed 后照常推导 completed(既有词表),只免缺席黄条
     warn("验证已通过但没有 SHIP 工件 —— 本 phase 停在验证,没走到交付", "写 <NN>-MM-SHIP.md(status/delivered/docs_synced);交付物被消费才算完成");
   }
   // ---- STATE 声明 vs 推导 ----
   if (declared && !STATUSES.includes(declared)) {
     err(`STATE status "${declared}" 非法`, `改为 ${STATUSES.join("|")}`);
   }
-  if (declared && derived && declared !== derived && declared !== "paused") {
+  // tier: L1 免全套工件缺席阻塞(REQ-73):零工件直做时推导只能停在 discussing/planning,
+  // 声明的缺席错位不拦;状态词表照旧校验(不新增枚举),缺省(L3)与历史行为逐字一致。
+  if (declared && derived && declared !== derived && declared !== "paused" && tier !== "L1") {
     err(`STATE 声明 "${declared}" 但工件推导是 "${derived}" —— 请将 .planning/STATE.md 的 status: 改为 "${derived}" 后重跑`, `把 STATE status 改为 ${derived}(或补齐缺失工件)`);
   }
   if (declared === "paused") {

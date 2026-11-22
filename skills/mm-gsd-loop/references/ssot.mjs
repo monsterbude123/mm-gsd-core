@@ -93,6 +93,17 @@ export function unquoteFrontmatterValue(v) {
   return String(v ?? "").replace(/^["']|["']$/g, "");
 }
 
+/**
+ * tier 档位归一化(REQ-73,phase 35):STATE/PLAN frontmatter 的 tier 值 → "L1"|"L2"|"L3";
+ * 缺省/非法 → null(消费方按 L3 全环处理 —— 历史 .planning 零回归,[AUTO] 35-02)。
+ * tier 随 frontmatter kv 解析在镜像与 Markdown 两条读路径里透传,唯一要新增的解析就是值的合法归一;
+ * SSOT_SCHEMA 不 bump:fm 形状未变,存量镜像加 tier 声明后按 sha 陈旧自然回落重导出。
+ */
+export function normalizeTier(v) {
+  const t = String(v ?? "").trim().toUpperCase();
+  return ["L1", "L2", "L3"].includes(t) ? t : null;
+}
+
 /** STATE.md → { status, activePhase, lines, raw } */
 export function parseStateFile(statePath, root) {
   const raw = readFileSync(statePath, "utf8");
