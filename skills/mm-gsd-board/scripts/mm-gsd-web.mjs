@@ -17,9 +17,9 @@
 // 同样是零 I/O 纯函数;读文件在 buildState() 里做(每次请求现读现算,只读、不外发、不缓存)。
 
 import { createServer } from "node:http";
-import { readFileSync, existsSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync, writeFileSync, mkdirSync, renameSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, dirname, relative, resolve } from "node:path";
+import { join, dirname, basename, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { buildDebt } from "../../mm-gsd-loop/references/debt-panel.mjs";
@@ -57,6 +57,23 @@ function readProjects() {
   } catch { return []; }
 }
 
+// 原子写(REQ-75/D-01):同目录「.<名>.tmp-<pid>-<随机>」临时文件 + renameSync 落盘 ——
+// 并发写不再产生半截 JSON(rename 原子,读者见到的要么是旧文件要么是完整新文件)。
+// Windows 上 rename 到已存在目标偶发 EPERM(目标被占用):短退避重试几次,仍失败删临时文件后抛出
+// (调用方各自有 500/启动兜底);整列表 read-modify-write 的并发丢条目残余照旧,见 deferred-LEDGER 36-W1。
+function atomicWriteFile(filePath, content) {
+  const tmp = join(dirname(filePath), "." + basename(filePath) + ".tmp-" + process.pid + "-" + Math.random().toString(36).slice(2, 8));
+  writeFileSync(tmp, content);
+  for (let i = 0; ; i++) {
+    try { renameSync(tmp, filePath); return; }
+    catch (e) {
+      if (e && e.code === "EPERM" && i < 4) { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25 * (i + 1)); continue; }
+      try { unlinkSync(tmp); } catch {}
+      throw e;
+    }
+  }
+}
+
 // merge-on-write(预审 W1):写前重读只追加缺项,防两进程互覆盖 —— 单机单用户,不做文件锁(残余入 deferred)
 function registerProjects(roots) {
   const merged = [...readProjects()];
@@ -64,7 +81,7 @@ function registerProjects(roots) {
   for (const r of roots) if (r && !merged.includes(r)) { merged.push(r); changed = true; }
   if (!changed) return;
   mkdirSync(dirname(CONFIG_PATH), { recursive: true });
-  writeFileSync(CONFIG_PATH, JSON.stringify({ projects: merged }, null, 2) + "\n");
+  atomicWriteFile(CONFIG_PATH, JSON.stringify({ projects: merged }, null, 2) + "\n");
 }
 
 // ?project= 解析:每请求现读全局配置(预审 B2)—— 运行中的服务因此能看见别处新注册的项目。
@@ -458,7 +475,7 @@ const server = createServer(async (req, res) => {
     if (hasNote) ann.note = note;
     list.push(ann);
     try {
-      writeFileSync(P(pr.root, "annotations.json"), JSON.stringify(list, null, 2) + "\n");
+      atomicWriteFile(P(pr.root, "annotations.json"), JSON.stringify(list, null, 2) + "\n");
       res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
       res.end(JSON.stringify({ ok: true, id: ann.id }));
     } catch (e) {
@@ -526,7 +543,7 @@ const server = createServer(async (req, res) => {
     }
     list[idx] = next;
     try {
-      writeFileSync(P(pr.root, "annotations.json"), JSON.stringify(list, null, 2) + "\n");
+      atomicWriteFile(P(pr.root, "annotations.json"), JSON.stringify(list, null, 2) + "\n");
       res.writeHead(200, { "content-type": "application/json; charset=utf-8" });
       res.end(JSON.stringify({ ok: true, id: next.id, annotation: next }));
     } catch (e) {
