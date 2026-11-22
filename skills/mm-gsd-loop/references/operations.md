@@ -39,11 +39,23 @@ npx mm-gsd-core report "<一句话说清什么坏了>" --evidence "<你跑了什
 
 ## 多 worktree 并发(默认不做)
 
-**默认不做多 worktree。** 一个项目一个 worktree、串行走完五步环,是绝大多数项目的正解;多开换来的是合并冲突和 STATE 基线过期,不是速度。只在 phase 之间真能零重叠、或同一 phase 内有大片可并行的独立任务时才开。
+**默认不做多 worktree。** 一个项目一个 worktree、串行走完五步环,是绝大多数项目的正解;多开换来的是合并冲突和 STATE 基线过期,不是速度。只在 phase 之间真能零重叠、或同一 phase 内有大片可并行的独立任务时才开。多 worktree 属 L3 Full 通道(跨域/并行)—— 三级放行口径见下节,不必再为并发项目单独记一套豁免。
 
 确要开,五件事:①每个 worktree 独占一个 phase(同一 phase 内一组 `files_modified` 零重叠的任务);②动手前先跑 `--worktrees` 冲突检查(在**任意** worktree 里跑,它读全局列表),有冲突就回去改 phase 切分边界 —— PLAN 没落盘就等于没检查,顺序是"plan 落盘 → 跑检查 → 才建 worktree 并派活";③`files_modified` 是跨 worktree 的唯一安全契约,必须精确到路径:共享入口(路由表、schema、类型索引、公共 util)被两个 phase 碰到,并行必冲突,这个成本要在 plan 阶段暴露,不是合并时才发现;④`files_modified` 管不到的资源(端口、数据库/迁移、共享构建产物、单例服务、测试固定端口)自己分配,写进 plan 的前置条件;⑤合并一个 worktree 后**立刻**在剩余 worktree 里重跑检查器并重读 STATE —— 合并是唯一会全局改变并行安全性的事件。
 
 `.planning/` 是每个 worktree 各自的工作记忆,不跨 worktree 同步;跨 worktree 的事实来源只有一个——git commit history。
+
+## 三级规模路由(状态机侧放行口径)
+
+档位声明通道:`STATE.md` / `PLAN` frontmatter 的 `tier:` 字段(L1/L2/L3,大小写不敏感);**缺省 = L3 全环**——历史 `.planning/` 零回归。放行判据只在检查器(state-derive.mjs 的 `resolveTier` + 契约判定),本表只转述:
+
+| tier | 检查器放行 | 不变的部分 |
+|---|---|---|
+| `L1 Direct` | 免全套工件缺席阻塞(STATE 声明与推导的缺席错位不拦) | 状态词表照旧校验,不新增枚举 |
+| `L2 Lite` | 免票级预审收敛门(开工无 PLAN-CHECK 不判红)与 SHIP 缺席黄 | 终态仍推导 completed/shipped |
+| `L3 Full` | 无放行(全环) | 缺省即此 |
+
+建议档位(编程消费):`suggestTier({ files, risk })`(references/agent-routing.mjs,阈值与 `ROUTE_TIERS` 的 `when` 字段同源)——规模未知/超 5 文件/高风险一律 L3(fail-closed)。它是建议不是开关:改放行判据只能改 state-derive.mjs,改建议阈值只能改 `when` 字段,两处别混。
 
 ### 跨波红窗(守卫跨波变红,计划期承载)
 

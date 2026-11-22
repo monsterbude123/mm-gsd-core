@@ -137,6 +137,7 @@ export const ROUTE_TIERS = [
     scope: "单域明确微调（≤5 文件、无新依赖、无架构变更）",
     artifacts: "零 .planning/ 工件；直接实施 + verify 转绿 + 原子提交 + STATE 记一行",
     agents: "无需冷启新代理，优先复用当前或热上下文 Worker",
+    when: { filesMax: 5, risk: "low" },   // 结构化建议字段(35-02):suggestTier 按它判,别在别处抄第二份阈值
   },
   {
     id: "L2",
@@ -145,6 +146,7 @@ export const ROUTE_TIERS = [
     scope: "常规功能迭代或局部重构",
     artifacts: "保留轻量 CONTEXT 与 PLAN（四件套 + --plan），免独立 Judge 预审与 SHIP",
     agents: "同模块修改、文档纠偏与修复优先 resume 原 Worker 代理",
+    when: { filesMax: 5, risk: "medium" },
   },
   {
     id: "L3",
@@ -153,8 +155,24 @@ export const ROUTE_TIERS = [
     scope: "跨多域、不可逆变更、高风险或并行 worktree 开发",
     artifacts: "完整五步环（CONTEXT / PLAN / PLAN-CHECK / SUMMARY / VERIFICATION / SHIP）",
     agents: "Worker 热复用 + Judge（独立 verify / 高风险预审）冷隔离只读上下文",
+    when: { filesMax: Infinity, risk: "high" },
   },
 ];
+
+/**
+ * 结构化 tier 默认建议(REQ-73/74,35-02):按文件跨度与风险给档位,供主会话/状态机编程消费
+ * —— 此前 --route 只有人读展示文本,无可消费字段(票面点名的真实增量)。
+ * 阈值唯一住 ROUTE_TIERS 的 when 字段(单真相源);规模未知/超预算/高风险一律 L3(fail-closed,
+ * 与 [AUTO] 35-02「缺省按 L3 严格模式」同向)。它是建议不是开关:放行判据在 state-derive.mjs。
+ */
+export function suggestTier({ files, risk = "low" } = {}) {
+  const f = Number(files);
+  for (const t of ROUTE_TIERS) {
+    const w = t.when ?? {};
+    if ((Number.isFinite(f) ? f : Infinity) <= (w.filesMax ?? Infinity) && (w.risk ?? "low") === risk) return t.id;
+  }
+  return ROUTE_TIERS[ROUTE_TIERS.length - 1].id;   // 无匹配(如文件超预算)→ 最严档
+}
 
 /**
  * 造一份路由提示:该读哪些路径、本项目门禁速查、宿主能不能开子代理。
