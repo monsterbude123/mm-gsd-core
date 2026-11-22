@@ -6,7 +6,7 @@
 // (预审 F8 已知取舍)—— 本模块没有这些,看板第一次能安全共享解析。
 // 判据:输出与被搬移的既有实现逐字一致(--selfcheck 全绿 + health 31/31 是验收,不是口号)。
 
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync, renameSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { parseReqLedger } from "./req-ledger.mjs";
@@ -236,6 +236,28 @@ export function deriveRequirements(text) {
 export function buildMirror(planningDir) {
   const d = deriveContracts(planningDir);
   return { schema: SSOT_SCHEMA, generatedAt: new Date().toISOString(), contracts: d.contracts };
+}
+
+// ---- 写入原语(phase 34 REQ-69 收拢):此前原子写内联在 ssot-migrate.mjs —— 写入通道分散
+// 就是双口风险(读侧 phase 32 已收拢,写侧补齐)。所有 ssot.json 落盘一律走 writeContracts。
+
+/** 原子写 JSON:先写同目录临时文件再 renameSync(同目录 ⇒ 同卷 ⇒ rename 原子,不留半截状态)。
+ * 失败时清理临时文件后**原样抛出** —— 错误处理归调用方(它知道该对用户说什么)。 */
+export function atomicWriteJson(targetPath, data) {
+  const text = JSON.stringify(data, null, 2) + "\n";
+  const tmp = targetPath + ".tmp";
+  try {
+    writeFileSync(tmp, text, "utf8");
+    renameSync(tmp, targetPath);
+  } catch (e) {
+    try { rmSync(tmp, { force: true }); } catch { /* 临时文件清理失败不掩盖主错误 */ }
+    throw e;
+  }
+}
+
+/** ssot.json 的唯一写入入口:从 Markdown 派生(buildMirror,与读侧同一派生路径)并原子落盘。 */
+export function writeContracts(planningDir) {
+  atomicWriteJson(join(planningDir, SSOT_FILE), buildMirror(planningDir));
 }
 
 // ---- format-aware 读:JSON 新鲜则用 JSON,陈旧/无 JSON 则回落 Markdown(老项目零变化)----

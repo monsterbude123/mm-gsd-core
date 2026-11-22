@@ -11,9 +11,9 @@
 // 幂等:对已迁移的树再跑 --apply,内容零变化(除 generatedAt 时间戳外)。
 // 不消耗 agents:纯脚本,不 spawn 子代理。
 
-import { existsSync, readFileSync, writeFileSync, renameSync, rmSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { buildMirror, deriveContracts, loadMirror, staleContracts, SSOT_SCHEMA, SSOT_FILE, contentSha } from "../references/ssot.mjs";
+import { deriveContracts, loadMirror, staleContracts, writeContracts, SSOT_SCHEMA, SSOT_FILE, contentSha } from "../references/ssot.mjs";
 
 const argv = process.argv.slice(2);
 const pi = argv.indexOf("--planning");
@@ -33,21 +33,17 @@ const derivedMirror = { schema: SSOT_SCHEMA, contracts: derived.contracts };
 const existing = loadMirror(dir);
 
 if (apply || dryRun) {
-  // 原子写:先写临时文件,再 rename(同目录 ⇒ 同卷 ⇒ rename 是原子的)
-  const payload = { schema: SSOT_SCHEMA, generatedAt: new Date().toISOString(), contracts: derived.contracts };
-  const text = JSON.stringify(payload, null, 2) + "\n";
   if (dryRun) {
     console.log(`ssot-migrate --dry-run(${dir})`);
     for (const [k, c] of Object.entries(derived.contracts)) console.log(`  将写入 ${k}  ← ${c.source}(sha ${c.sha})`);
     console.log(`\n共 ${Object.keys(derived.contracts).length} 份契约;未写盘。`);
     process.exit(0);
   }
-  const tmp = target + ".tmp";
+  // 写盘走 ssot.mjs 的唯一写入入口(REQ-69 收拢):派生 + 原子落盘(临时文件 + rename)都住那边,
+  // 本脚本退为调用方;失败时临时文件已由 atomicWriteJson 清理,ssot.json 不会被半截状态覆盖。
   try {
-    writeFileSync(tmp, text, "utf8");
-    renameSync(tmp, target);
+    writeContracts(dir);
   } catch (e) {
-    try { rmSync(tmp, { force: true }); } catch { /* 临时文件清理失败不掩盖主错误 */ }
     console.error(`写入失败(已清理临时文件,ssot.json 未被破坏): ${e.message}`);
     process.exit(1);
   }
