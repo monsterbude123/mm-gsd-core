@@ -31,6 +31,9 @@ export function runAntiFalseGreenCases(t, x) {
   eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- my_case 2>&1 | tee o.txt\ngrep -q \"running 3 tests\" o.txt" }]).length, 0, "判别性痕迹:cargo running N tests 是判别性断言");
   eqN(checkZeroMatchErrors([{ id: "T1", verify: "go test ./... -run TestFoo 2>&1 | tee o.txt\n! grep -q \"no tests to run\" o.txt" }]).length, 0, "判别性痕迹:go 否定式断言是判别性断言");
   eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- my_case 2>&1 | tee o.txt\ngrep -q \"test result: FAILED\" o.txt" }]).length, 0, "判别性痕迹:cargo test result: FAILED 是判别性断言");
+  // 跨行引号(35-01 T2):断言串被换行劈开时,引号内的 \n 合并成空格,不误红
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "go test -v -run TestX ./... | tee o.txt\n! grep -q \"no tests to\nrun\" o.txt" }]).length, 0, "跨行引号:否定断言串被换行劈开,合并后不误红");
+  eqN(checkZeroMatchErrors([{ id: "T1", verify: "go test -run TestX ./...\necho \"still no\ntests to run\"" }]).length, 1, "跨行引号:合并不豁免真零断言(echo 不是断言,go test -run 仍判红)");
   eqN(checkZeroMatchErrors([{ id: "T1", verify: "cargo test -- my_case  # 期望 3 passed" }]).length, 1, "行尾注释不算断言(cargo 行尾注释里的 3 passed)");
   eqN(checkZeroMatchErrors([{ id: "T1", verify: "go test ./... -run TestFoo # --- PASS" }]).length, 1, "行尾注释不算断言(go 行尾注释里的 --- PASS)");
   // ---- 假绿通道收紧(phase 26 D-06 + D-08,REQ-35):过滤器形态 / 标记来源 / 否定签名 / ≥1 计数形态 ----

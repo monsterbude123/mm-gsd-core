@@ -502,12 +502,33 @@ const isPositiveStage = (s) =>
  * 段列表按「先按行剥注释、再按 shell 语义切命令」生成:
  * 顺序反了会把注释里的 `;` `&&` 尾巴漏成独立命令(既误伤合法票,又留了假绿通道)。
  */
+/**
+ * 跨行引号合并:引号内的换行不是命令边界。stripTrailingComment 的引号状态按行重置,
+ * 断言串被换行劈成两个 stage 后,否定签名(no tests to run)认不出 → 合法 verify 误红
+ * (35-01 T2 实测)。把引号内的 \n 收成空格,逐行处理之前先合并。
+ */
+function joinQuotedLines(text) {
+  let out = "", q = null;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === "\\" && i + 1 < text.length) { out += c + text[i + 1]; i++; continue; }
+      if (c === q) { q = null; out += c; continue; }
+      out += c === "\n" ? " " : c;
+      continue;
+    }
+    if (c === "'" || c === '"' || c === "`") q = c;
+    out += c;
+  }
+  return out;
+}
+
 export function checkZeroMatchErrors(tickets) {
   const problems = [];
   for (const t of tickets) {
-    const raw = String(t.verify ?? "");
+    const raw = joinQuotedLines(String(t.verify ?? ""));
     const segs = [];
-    for (const line of raw.split(/\r?\n/)) {
+    for (const line of raw.split("\n")) {
       const s = stripTrailingComment(line).trim();
       if (!s) continue;
       for (const seg of splitCommands(s)) segs.push(seg);
@@ -622,11 +643,36 @@ const BATCH_DIRLIKE = (t) =>
   && !/\.[A-Za-z0-9]+$/.test(t.split(/[\\/]/).pop())     // 末段带扩展名 = 具名文件,有界
   && /^(?:[\\/])?(?:\.{1,2}[\\/])?[\w.-]+(?:[\\/][\w.-]+)*[\\/]?$/.test(t);
 
+/**
+ * 引号感知分词:引号包起来的多词参数(grep 过滤器、reporter 名)是一个 token。
+ * 掩成空白后 BATCH_DIRLIKE 必不认 —— 以前先剥引号再拆词,过滤器里的单词被当成
+ * 裸目录误红(35-01 T2,实测 npm test -- --grep "auth test" 判红)。引号里的真目录
+ * (npm test -- "tests/")会随之漏报 —— lint 漏报比误报便宜,本模块既定口径。
+ */
+function tokenizeArgs(seg) {
+  const out = [];
+  let cur = "", q = null;
+  for (let i = 0; i < seg.length; i++) {
+    const c = seg[i];
+    if (q) {
+      if (c === "\\" && i + 1 < seg.length) { cur += "  "; i++; continue; }
+      if (c === q) { q = null; cur += " "; continue; }
+      cur += " ";
+      continue;
+    }
+    if (c === "'" || c === '"' || c === "`") { q = c; cur += " "; continue; }
+    if (/\s/.test(c)) { if (cur !== "") out.push(cur.trim()); cur = ""; continue; }
+    cur += c;
+  }
+  if (cur !== "") out.push(cur.trim());
+  return out;
+}
+
 export function checkBatchVerifyLints(batchVerify) {
   const problems = [];
   for (const seg of splitCommands(String(batchVerify ?? ""))) {
     let dd = false, prevFlag = false, prev = "";
-    for (const t of seg.replace(/[`'"]/g, " ").split(/\s+/).filter(Boolean)) {
+    for (const t of tokenizeArgs(seg)) {
       if (t === "--") { dd = true; prevFlag = false; prev = t; continue; }
       if (/^--?[A-Za-z][\w-]*/.test(t)) { prevFlag = true; prev = t; continue; }
       // `--` 之后裸词也判(-- tests);之外只判带斜杠的(npm run build 的 build 不判)

@@ -68,6 +68,10 @@ export function runToolchainCases(t) {
   eqN(checkBatchVerifyLints("npm run build").length, 0, "有界批闸不误报(裸脚本词不是目录参数)");
   eqN(checkBatchVerifyLints("cd /tmp && npm test -- tests").length, 1, "cd 目标豁免不外溢:-- 后的无界目录照判");
   eqN(checkBatchVerifyLints("").length, 0, "空 batch_verify 不报");
+  // 带参多子目录批闸(35-01 T2):引号内的多词参数是一个 token,不拆成裸目录误红
+  eqN(checkBatchVerifyLints('npm test -- tests/unit tests/integration --grep "case one two"').length, 0, "带参多子目录批闸不误红:引号内多词过滤器不是目录");
+  eqN(checkBatchVerifyLints('npm test -- --grep "auth test"').length, 0, "引号内过滤参数不是目录");
+  eqN(checkBatchVerifyLints('npm test -- --grep "auth test" tests/').length, 1, "引号参数不豁免真无界目录(判别力保持)");
   // ---- update 机械覆盖(用户指令:更新零判断) ----
   {
     const d = mkdtempSync(join(tmpdir(), "mm-gsd-upd-"));
