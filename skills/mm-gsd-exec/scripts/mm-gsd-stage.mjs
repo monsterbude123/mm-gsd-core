@@ -8,9 +8,12 @@
 // `git add -- ":(literal)<path>"` —— :(literal) 是 [locale] 这类形状被当 glob
 // 吞掉的官方解法;绝不 git add .(exec SKILL 明令禁止)。
 // 路径不在磁盘且不在 git 索引 → 跳过不报错(新文件还没落盘属正常)。
+// phase 36(REQ-75/D-01):add 走票级隔离 GIT_INDEX_FILE 临时索引(基线 = 当时 HEAD),
+// 共享 .git/index 零写入 —— 同 wave 并发子代理的暂存互不踩踏;临时索引 finally 清理。
 // 零依赖,只认 node: 内置;行解析一律 /\r?\n/(Git for Windows 的 CRLF)。
 
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, unlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 
@@ -30,9 +33,14 @@ if (has("--help") || has("-h")) {
 
 行为:
   1. 解析 PLAN frontmatter 的 files_modified(列表逐条,兼容 CRLF)
-  2. 每条路径 git add -- ":(literal)<路径>" —— 精确暂存,[locale] 不被当 glob
-  3. 不在磁盘且不在 git 索引的路径 → 跳过(新文件暂不存在属正常),不报错
-  4. 结束打印暂存计数与 git status --porcelain 摘要
+  2. 按票号派生隔离 GIT_INDEX_FILE 临时索引(基线 = 当时 HEAD),每条路径
+     git add -- ":(literal)<路径>" —— 精确暂存,[locale] 不被当 glob;
+     只写临时索引,共享 .git/index 零写入(同 wave 并发 add 互不踩踏,REQ-75/D-01)
+  3. 不在磁盘且不在索引的路径 → 跳过(新文件暂不存在属正常),不报错
+  4. 结束打印暂存计数与本票暂存视图;临时索引 finally 清理
+
+提交必须走 mm-gsd-commit(持 .planning/.commit.lock 串行落盘):stage 只是
+「宣言路径可暂存」的隔离预演,不落共享索引 —— stage 后手动 git commit 提交不到东西。
 
 绝不 git add . / -A;退出码 0 = 暂存动作完成(跳过不算失败)。`);
   process.exit(0);
@@ -73,28 +81,54 @@ if (!paths.length) {
   process.exit(1);
 }
 
-const git = (args) => spawnSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+const gitEnv = (args, env) => spawnSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env });
+
+// 票级隔离索引(REQ-75/D-01):基线 = 当时 HEAD;绝不在 HEAD 已存在时拿空索引冒充基线
+// (那会把本票之外的文件从树里删掉)。临时索引用完即清,共享 .git/index 零写入。
+const idxPath = join(tmpdir(), `mm-gsd-stage-${ticket}-${process.pid}.index`);
+const isoEnv = () => ({ ...process.env, GIT_INDEX_FILE: idxPath });
 
 let staged = 0;
 const skipped = [];
-for (const p of paths) {
-  if (!existsSync(p)) {
-    // 不在磁盘:只有已在索引里的路径暂存得动(如已暂存的删除);两者皆否 → 还没落盘的新文件,跳过
-    const ls = git(["ls-files", "--", `:(literal)${p}`]);
-    if (ls.status !== 0 || !ls.stdout.trim()) { skipped.push(p); continue; }
+const statusLines = [];
+let failMsg = null;
+try {
+  const hasHead = gitEnv(["rev-parse", "--verify", "HEAD"], process.env).status === 0;
+  const seeded = gitEnv(["read-tree", hasHead ? "HEAD" : "--empty"], isoEnv());
+  if (seeded.status !== 0) {
+    failMsg = `✗ 重建票级隔离索引失败(GIT_INDEX_FILE):${(seeded.stderr || seeded.stdout || "").trim()}`;
+  } else {
+    for (const p of paths) {
+      if (!existsSync(p)) {
+        // 不在磁盘:只有已在索引里的路径暂存得动(如已暂存的删除);两者皆否 → 还没落盘的新文件,跳过
+        const ls = gitEnv(["ls-files", "--", `:(literal)${p}`], isoEnv());
+        if (ls.status !== 0 || !ls.stdout.trim()) { skipped.push(p); continue; }
+      }
+      const r = gitEnv(["add", "--", `:(literal)${p}`], isoEnv());
+      if (r.status !== 0) {
+        failMsg = `✗ git add 失败(${p}):${(r.stderr || r.stdout || "").trim()}`;
+        break;
+      }
+      staged++;
+    }
+    if (!failMsg) {
+      const st = gitEnv(["status", "--porcelain"], isoEnv());
+      if (st.status === 0 && st.stdout.trim()) {
+        for (const l of st.stdout.split(/\r?\n/)) if (l.trim()) statusLines.push(l);
+      }
+    }
   }
-  const r = git(["add", "--", `:(literal)${p}`]);
-  if (r.status !== 0) {
-    console.error(`✗ git add 失败(${p}):${(r.stderr || r.stdout || "").trim()}`);
-    process.exit(1);
-  }
-  staged++;
+} finally {
+  try { unlinkSync(idxPath); } catch {}
+}
+if (failMsg) {
+  console.error(failMsg);
+  process.exit(1);
 }
 
-console.log(`✓ 暂存 ${staged}/${paths.length} 条` + (skipped.length ? `;跳过 ${skipped.length} 条(不在磁盘也不在索引):${skipped.join(", ")}` : ""));
-const st = git(["status", "--porcelain"]);
-if (st.status === 0 && st.stdout.trim()) {
-  console.log("git status --porcelain:");
-  for (const l of st.stdout.split(/\r?\n/)) if (l.trim()) console.log("  " + l);
+console.log(`✓ 暂存 ${staged}/${paths.length} 条(隔离索引,共享 .git/index 零写入)` + (skipped.length ? `;跳过 ${skipped.length} 条(不在磁盘也不在索引):${skipped.join(", ")}` : ""));
+if (statusLines.length) {
+  console.log("本票暂存视图(git status --porcelain):");
+  for (const l of statusLines) console.log("  " + l);
 }
 process.exit(0);

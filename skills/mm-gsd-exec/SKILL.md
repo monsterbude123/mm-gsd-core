@@ -95,7 +95,8 @@ description: "极简 GSD 执行:施工方身份 —— 照 PLAN 施工,不重做
 
 自己手搓脚本前先看这里 —— 通用件已随包装好,统一走 `mm-gsd` bin 转发命令(源仓相对路径在用户项目里不存在):
 
-- `mm-gsd stage --ticket <NN-MM>` —— 按票面 files_modified 精确暂存(`:(literal)` pathspec,`[locale]` 不被当 glob;不存在的新文件跳过不报错)。
+- `mm-gsd stage --ticket <NN-MM>` —— 按票面 files_modified 精确暂存(`:(literal)` pathspec,`[locale]` 不被当 glob;不存在的新文件跳过不报错)。**同 wave 并发暂存协议(REQ-75/D-01)**:add 只进票级隔离 `GIT_INDEX_FILE` 临时索引(基线 = 当时 HEAD),共享 `.git/index` 零写入 —— 并发子代理的暂存互不踩踏;临时索引用完即清。
+- `mm-gsd commit --ticket <NN-MM> --message <text|@file>` —— **提交必须走它,stage 后手动 `git commit` 提交不到东西**(stage 不落共享索引)。它持 `.planning/.commit.lock` 互斥锁短窗口串行落盘:持锁内从**当时 HEAD** 重建本票隔离基线、重新 add 宣言路径(兄弟票先行提交不会被本票回滚),树灌回主索引后走正常 `git commit` —— pre-commit 钩子与 red_windows 受控放行语义不变;孤儿锁(>30s 且持锁进程已退出,Windows 判活 EPERM/ESRCH 都认)自动回收。
 - `mm-gsd summary --ticket <NN-MM>` —— 生成 `.planning/<NN-MM>-SUMMARY.md` 草稿,commits 按提交主题 `(NN-MM):` scope 实测(零命中前缀兜底并 WARN);已存在则拒绝覆盖。
 - `mm-gsd wave-check --phase <NN> --wave <N>` —— 生成并跑本波批闸脚本(cwd 头 + 逐票批闸);`--baseline <树>` 给差分摘要(只呈现,不归因)。
 
