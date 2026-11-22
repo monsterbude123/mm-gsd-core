@@ -8,6 +8,38 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
+// ---- 共享正则常量(phase 34 REQ-69 收拢):此前 gsd-state-check.mjs 的本地字面量与
+// gate-selftest.mjs 的注入正则各持一份 —— 两份字面量必然走偏,phase 32 的同一课。
+// 单一定义点住这里,主脚本与自测都 import 同一份。
+// VAGUE_FILE 的 N\/A 需左右断言(\b 挡不住 admin/auth,GitHub #6)
+export const VAGUE_FILE = /相关|若干|全部|所有|等等|若干文件|…|\.\.\.|etc\b|TBD|待定|(?<![A-Za-z0-9])N\/A(?![A-Za-z0-9])/i;
+// DEP_RE 的括号要认全角 U+FF08/FF09,否则中文 STATE.md 依赖链解析为空(GitHub #7)
+export const DEP_RE = /[（(]\s*depends_on\s*[:：]\s*([^）)]*)[）)]/i;
+
+// ---- git log 有界查询 + 进程内缓存(phase 34 REQ-69):无界全史扫描是大仓下
+// gsd-state-check 的耗时大户(34-RESEARCH 第 2 条)。上限 -n 500:scope 对账只关心近期提交;
+// key = cwd+HEAD+参数(HEAD 变了历史就变了)。取数失败 → null 且不缓存(git 缺席不能判红的
+// 先例),下次仍会重试。
+const GIT_LOG_LIMIT = 500;
+const gitLogCache = new Map();
+function boundedGitLog(cwd, args) {
+  let head;
+  try {
+    const h = spawnSync("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    if (h.status !== 0) return null;
+    head = String(h.stdout || "").trim();
+  } catch { return null; }
+  const key = `${cwd}\u0000${head}\u0000${args.join(" ")}`;
+  if (gitLogCache.has(key)) return gitLogCache.get(key);
+  let out = null;
+  try {
+    const r = spawnSync("git", ["log", "-n", String(GIT_LOG_LIMIT), ...args], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    out = r.status === 0 ? String(r.stdout || "") : null;
+  } catch { out = null; }
+  if (out !== null) gitLogCache.set(key, out);
+  return out;
+}
+
 export async function stateContracts(x) {
   // validateVerification 在主文件 import 于搬移段之外 —— 模块内自行按同路径取
   const { validateVerification } = await import("../references/template-gates.mjs");
@@ -33,10 +65,8 @@ export async function stateContracts(x) {
     let subs = null;
     const gitSubjects = () => {
       if (subs !== null) return subs;
-      try {
-        const r = spawnSync("git", ["log", "--format=%s"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-        subs = r.status === 0 ? String(r.stdout || "").split(/\r?\n/).filter((x) => x.trim()) : null;
-      } catch { subs = null; }
+      const raw = boundedGitLog(root, ["--format=%s"]);
+      subs = raw === null ? null : raw.split(/\r?\n/).filter((x) => x.trim());
       return subs;
     };
     for (const s of artifactInfo.summaries) {
@@ -68,11 +98,11 @@ export async function stateContracts(x) {
           if (planFiles.size) {
             // 提交块用 %x1e(记录分隔符)切,不要靠行首 "(" 切 —— 主题开头有没有 "(" 取决于作者怎么写,
             // 靠它切块会把后面每一笔提交的文件全算到最新那笔头上(实测:别的批次的文件被报成"票外实碰")。
-            const r2 = spawnSync("git", ["log", "--name-only", "--format=%x1e%s"], { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-            if (r2.status === 0) {
+            const r2 = boundedGitLog(root, ["--name-only", "--format=%x1e%s"]);
+            if (r2 !== null) {
               const touched = new Set();
               // git log --format=%x1e%s --name-only 输出形状(实测):\x1e主题 \n 空行 \n 文件行 \n\x1e主题 …
-              for (const block of String(r2.stdout || "").split("\x1e")) {
+              for (const block of r2.split("\x1e")) {
                 const bl = block.split(/\r?\n/).map((x) => x.trim()).filter((x) => x);
                 if (!bl.length) continue;
                 if (!ids.some((id) => bl[0].includes(`(${id}):`))) continue;

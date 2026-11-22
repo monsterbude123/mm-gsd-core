@@ -96,12 +96,10 @@ function frontmatter(path) {
 }
 
 // ---- PLAN 解析(--plan / --phases / --worktrees 共用)----
-// 模糊措辞让机器无法判断并行冲突。两条正则的坑与用例见 references/gate-selftest.mjs:
-// VAGUE_FILE 的 N\/A 需左右断言(\b 挡不住 admin/auth,#6)
-// DEP_RE 的括号要认全角 U+FF08/FF09,否则中文 STATE.md 依赖链解析为空(#7)
-const VAGUE_FILE = /相关|若干|全部|所有|等等|若干文件|…|\.\.\.|etc\b|TBD|待定|(?<![A-Za-z0-9])N\/A(?![A-Za-z0-9])/i;
-// 解析与剔除共用一个常量 —— 两处各写一遍必然会走偏
-const DEP_RE = /[（(]\s*depends_on\s*[:：]\s*([^）)]*)[）)]/i;
+// 模糊措辞让机器无法判断并行冲突。两条正则的唯一实现住 references/state-derive.mjs
+// (REQ-69 收拢:此前主脚本与 gate-selftest 各持一份字面量 —— 两份必然走偏,phase 32 同一课);
+// #6/#7 的坑注释随常量住在唯一定义点,用例与理由见 references/gate-selftest.mjs。
+const { VAGUE_FILE, DEP_RE } = await import("../references/state-derive.mjs");
 // 「无 / none」是"没有依赖"的写法,中文 STATE.md 实际都这么写。
 // 不过滤就会报「phase 01 依赖了不存在的 phase 无」。
 const splitDeps = (raw) => raw.split(/[,\s]+/).map(unquote)
@@ -704,7 +702,7 @@ if (process.argv.includes("--stats")) {
 // 必须有用例证明它会红)。放独立文件是为主脚本省行数,不是怕麻烦。
 if (process.argv.includes("--selfcheck")) {
   const { runSelfTest } = await import("../references/gate-selftest.mjs");
-  process.exit(runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) ? 1 : 0);
+  process.exit(runSelfTest(splitDeps) ? 1 : 0);
 }
 
 // ---- --routes:技能路由门禁 —— 每个技能都要说清自己的下一步(D-05)----

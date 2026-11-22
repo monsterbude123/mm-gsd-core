@@ -3,6 +3,7 @@
 // depends_on 只认半角括号 / derived 只判 SHIP 文件存在不读 status)—— 不是崩溃,是安静地给错答案。
 
 import { validateVerification } from "./verification-gates.mjs";
+import { VAGUE_FILE, DEP_RE } from "./state-derive.mjs";   // REQ-69:被测正则 import 唯一定义,不再吃主脚本注入
 import { mmGsdVersion, splitByVersion } from "./version.mjs";
 import { runContractCases } from "./selftest-contracts.mjs";
 import { runPlanGateCases } from "./selftest-plan-gates.mjs";
@@ -22,7 +23,7 @@ const CHECKER = fileURLToPath(new URL("../scripts/gsd-state-check.mjs", import.m
 // 断言总数基线(phase 30 T3):与 --selfcheck 的总断言数一致;有意增删断言时人工 bump。
 const SELFTEST_CASES_TOTAL = 444;
 
-export function runSelfTest(VAGUE_FILE, DEP_RE, splitDeps) {
+export function runSelfTest(splitDeps) {
   const { eq, eqN, eqArr, st } = mkAssert();
   // 自测必须声明自己的沙箱身份(26-06 / D-11 / REQ-39):自测故意造的失败写进共享遥测文件,
   // 会让 observe 的诊断排行被自己的噪声淹没 —— 实测 1488 条门禁失败里 1303 条(87.6%)来自这里。
