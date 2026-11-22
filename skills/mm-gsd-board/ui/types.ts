@@ -136,11 +136,46 @@ export interface TelemetryDay {
   count: number;
 }
 
+/** 慢模式排行条目(runs.jsonl duration_ms 最长的若干次检查器运行) */
+export interface SlowRun {
+  ts: string;
+  mode: string;
+  cwd: string;
+  duration_ms: number;
+}
+
+/** 检查器自身运行耗时摘要(34-02;/api/state.telemetry.runs) */
+export interface TelemetryRunsSummary {
+  measured: number;
+  p50: number | null;
+  p95: number | null;
+  slow: SlowRun[];
+}
+
+/** context-thrash 热点:同会话内同路径 Read≥3 次(cwd×归一化路径分组,会话=30 分钟无活动切分) */
+export interface ThrashHotspot {
+  cwd: string;
+  path: string;
+  reads: number;
+}
+
+/** 子代理执行效率摘要(34-02;/api/state.telemetry.efficiency) */
+export interface TelemetryEfficiency {
+  agents: number;
+  resumed: number;
+  /** null = 工具入参未观测到续跑来源键,复用率不可得(预审 34-F5),绝不显示为 0% */
+  reuseRate: number | null;
+  thrashAll: number;
+  thrash: ThrashHotspot[];
+}
+
 export interface ToolTelemetry {
   series: TelemetryDay[];
   byTool: Record<string, number>;
   total: number;
   empty: boolean;
+  efficiency?: TelemetryEfficiency | null;
+  runs?: TelemetryRunsSummary | null;
 }
 
 export interface ReqGraphNode {

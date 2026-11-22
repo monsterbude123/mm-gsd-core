@@ -52,6 +52,7 @@ export function TelemetryView({ telemetry }: TelemetryViewProps) {
 
   return (
     <div className="mx-auto max-w-[1440px] space-y-5">
+      <EfficiencyCard telemetry={telemetry} />
       <section className="grid grid-cols-1 divide-y divide-slate-200 overflow-hidden rounded-xl border border-slate-200 bg-white sm:grid-cols-3 sm:divide-x sm:divide-y-0 dark:divide-slate-800 dark:border-slate-800 dark:bg-[#0F1522]">
         <div className="px-5 py-4">
           <div className="text-xs text-slate-500 dark:text-slate-400">
@@ -211,5 +212,98 @@ export function TelemetryView({ telemetry }: TelemetryViewProps) {
         </section>
       </div>
     </div>
+  );
+}
+
+/**
+ * 执行效率摘要卡片(34-02,/api/state.telemetry 的 efficiency/runs 字段):
+ * 检查器耗时 P50/P95、Agent resume 复用率(不可得时明说,不显示 0%)、同路径重复读热点。
+ * 两个数据块都可能缺(历史行无 duration_ms/target_path,或服务端旧版):都缺就整卡不渲染。
+ */
+function EfficiencyCard({ telemetry }: TelemetryViewProps) {
+  const eff = telemetry.efficiency;
+  const runs = telemetry.runs;
+  if (!eff && !runs) return null;
+  const thrash = eff?.thrash ?? [];
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-[#0F1522]">
+      <div className="mb-4">
+        <h2 className="text-sm font-semibold text-slate-900 dark:text-white">
+          执行效率摘要
+        </h2>
+        <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+          检查器耗时与子代理复用 · 观测面不判红 · 数据源 ~/.agents/mm-gsd-runs.jsonl 与
+          ~/.agents/mm-gsd-tools.jsonl
+        </p>
+      </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div className="rounded-lg border border-slate-100 px-4 py-3 dark:border-slate-800">
+          <div className="text-xs text-slate-500 dark:text-slate-400">
+            检查器耗时 P50 / P95
+          </div>
+          <div className="mt-1 font-mono text-lg font-semibold text-slate-900 tabular-nums dark:text-white">
+            {runs && runs.measured > 0
+              ? `${runs.p50}ms / ${runs.p95}ms`
+              : "暂无数据"}
+          </div>
+          <div className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
+            {runs && runs.measured > 0
+              ? `${runs.measured} 次含时长 · 最慢 ${runs.slow[0]?.duration_ms ?? "—"}ms (${runs.slow[0]?.mode ?? "—"})`
+              : "duration_ms 自 34-02 起采集"}
+          </div>
+        </div>
+        <div className="rounded-lg border border-slate-100 px-4 py-3 dark:border-slate-800">
+          <div className="text-xs text-slate-500 dark:text-slate-400">
+            Agent resume 复用率
+          </div>
+          <div
+            className={`mt-1 font-mono text-lg font-semibold tabular-nums ${
+              eff?.reuseRate == null
+                ? "text-slate-400 dark:text-slate-500"
+                : "text-emerald-600 dark:text-emerald-400"
+            }`}
+          >
+            {eff?.reuseRate == null ? "不可得" : `${eff.reuseRate}%`}
+          </div>
+          <div className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
+            {eff?.reuseRate == null
+              ? "工具入参未观测到续跑来源键,不计 0%"
+              : `${eff.resumed}/${eff.agents} 次派发为 resume`}
+          </div>
+        </div>
+        <div className="rounded-lg border border-slate-100 px-4 py-3 dark:border-slate-800">
+          <div className="text-xs text-slate-500 dark:text-slate-400">
+            同路径重复读(context-thrash)
+          </div>
+          <div className="mt-1 font-mono text-lg font-semibold text-slate-900 tabular-nums dark:text-white">
+            {eff ? eff.thrashAll : 0} 处
+          </div>
+          <div className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
+            Read≥3 次/会话 · cwd×路径分组 · 30 分钟无活动切会话
+          </div>
+        </div>
+      </div>
+      {thrash.length > 0 && (
+        <div className="mt-4 space-y-1.5">
+          <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
+            重复读热点(列前 {thrash.length} 处)
+          </div>
+          {thrash.map((t) => (
+            <div
+              key={`${t.cwd}:${t.path}`}
+              className="flex items-center justify-between gap-3 text-xs"
+            >
+              <span className="truncate font-mono text-slate-800 dark:text-slate-200">
+                {t.path}
+                <span className="ml-2 text-slate-400">{t.cwd}</span>
+              </span>
+              <span className="font-mono text-amber-600 tabular-nums dark:text-amber-400">
+                {t.reads}×
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }

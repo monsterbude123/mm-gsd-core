@@ -25,7 +25,7 @@ import { fileURLToPath } from "node:url";
 import { buildDebt } from "../../mm-gsd-loop/references/debt-panel.mjs";
 import { parseReqLedger, reqState } from "../../mm-gsd-loop/references/req-ledger.mjs";
 import { readRows } from "../../mm-gsd-loop/references/telemetry-aggregate.mjs";
-import { aggregateByDay } from "../../mm-gsd-loop/references/telemetry-view.mjs";
+import { aggregateByDay, summarizeRunsWindow, computeEfficiency } from "../../mm-gsd-loop/references/telemetry-view.mjs";
 // 拓扑口径(24-01 T1a,D-01):depends_on 解析逐字照抄 checker 基线、分层/剪环/幽灵边防御都在
 // references/phase-topo.mjs 一处 —— 同一份 STATE 行,--phases 与看板必须同答案(预审 W1/W2)。
 import { topoLevels, parseDepends } from "../../mm-gsd-loop/references/phase-topo.mjs";
@@ -80,6 +80,8 @@ function resolveProject(url) {
 // 工具遥测日志(只读):默认 ~/.agents/mm-gsd-tools.jsonl,可用环境变量覆盖(自测注入用)。
 // 现读现算、不缓存、不外发 —— 看板不因遥测向任何外部发请求(守 R-06)。
 const TELEMETRY_PATH = process.env.GSD_TOOL_TELEMETRY_PATH || join(homedir(), ".agents", "mm-gsd-tools.jsonl");
+// 检查器运行日志(34-02,耗时分位的来源;与 checker 的 GSD_TELEMETRY_PATH 同名注入点)
+const RUNS_TELEMETRY_PATH = process.env.GSD_TELEMETRY_PATH || join(homedir(), ".agents", "mm-gsd-runs.jsonl");
 
 const TYPES = ["需求遗漏", "方向不对", "验收不过", "备注"];
 
@@ -131,12 +133,19 @@ function coversOf(txt) {
 // 工具遥测(22-CONTEXT D-03):只读本机日志,现读现算 —— 不缓存(日志会一直追加),
 // 不外发(看板不对任何外部发请求,守 R-06)。
 // 口径(按本地日切桶 + cwd 归一后等值比较)只在 references/telemetry-view.mjs 一处。
+// 34-02(REQ-71):效率指标同源透传 —— runs 耗时分位走 summarizeRunsWindow(读 runs 日志),
+// resume 复用率与 context-thrash 走 computeEfficiency(读 tools 日志),与终端 --stats 同一批纯函数。
 function readTelemetry(root) {
   try {
-    return aggregateByDay(readRows(TELEMETRY_PATH), root);
+    const rows = readRows(TELEMETRY_PATH);
+    return {
+      ...aggregateByDay(rows, root),
+      efficiency: computeEfficiency(rows, root),
+      runs: summarizeRunsWindow(readRows(RUNS_TELEMETRY_PATH), root),
+    };
   } catch {
     // 遥测读不到不是看板的错 —— 屏上给空态文案,不报 500。
-    return { series: [], byTool: {}, total: 0, empty: true };
+    return { series: [], byTool: {}, total: 0, empty: true, efficiency: null, runs: null };
   }
 }
 
