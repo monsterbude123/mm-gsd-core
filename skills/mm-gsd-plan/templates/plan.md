@@ -17,6 +17,7 @@ depends_on: []
 cwd: .   # 执行树根;verify/batch_verify 里的 cd 必须与它一致,或干脆不写 cd(多 worktree 项目写实际树根,主检出不算)
 batch_verify: <批级检查命令(有界:具名文件或子目录树;全量归 push 阶段 —— 批闸是每批都跑的,存量红会淹没信号;这一批跑一次,失败一次修完再跑一次)>
 wave: 1   <!-- 批内序号:同 wave 的票必须零文件重叠,否则拆批 -->
+wiring: []   # 同波共享接线点声明(聚合出口/路由表等;内联 [a.ts, b.ts] 或块式 - 路径);两票同声明 → 批图拦停,拆出后置 Wiring Ticket;没有留空
 <!-- 跨波红窗(守卫/测试会跨波保持变红时才启用;整块是注释示例,启用时去掉每行行首的 # 落回 frontmatter):
 # red_windows:
 #   - guards/auth.guard.mjs | wave 3 | ticket 02-02 | close: 02-02 的 verify 转绿

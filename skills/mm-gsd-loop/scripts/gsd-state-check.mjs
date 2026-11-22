@@ -90,7 +90,7 @@ function die(message, fix) {
 // ---- 极简 frontmatter 解析(不引 YAML 依赖);剥行尾 # 注释,否则模板照抄即报错 ----
 // REQ-67:实现唯一化 —— 逻辑住 references/ssot.mjs(contractFrontmatter);
 // REQ-68:STATE/PLAN 走 format-aware 读(镜像新鲜用 JSON,陈旧回落 Markdown)。
-const { contractFrontmatter, normalizeTier } = await import("../references/ssot.mjs");
+const { contractFrontmatter, normalizeTier, parsePlanFrontmatter } = await import("../references/ssot.mjs");
 function frontmatter(path) {
   return contractFrontmatter(join(root, ".planning"), path);
 }
@@ -154,7 +154,9 @@ function parsePlanFile(txt) {
   }
   for (const m of txt.matchAll(/\bREQ-[A-Za-z0-9._-]+/g)) reqs.add(m[0]);
   for (const m of txt.matchAll(/\bD-\d+\b/g)) decisions.add(m[0]);
-  return { files: [...files], reqs: [...reqs], decisions: [...decisions], cwd, batchVerify, redWindows };
+  // wiring 共享接线点声明(G-36-1):解析住 ssot 的 parsePlanFrontmatter(REQ-67 单一实现),这里只透传
+  const wiring = parsePlanFrontmatter(txt)?.wiring ?? [];
+  return { files: [...files], reqs: [...reqs], decisions: [...decisions], cwd, batchVerify, redWindows, wiring };
 }
 
 /** 列出 .planning 下的 PLAN 文件(双布局) */
@@ -482,7 +484,7 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
     // R 票不进批图(D-06):修复是原 phase 收尾后的串行补票,不是新的并行面 ——
     // 两张 R 票碰同一个被修文件是常态,卷进批图会误判「并行撞文件」。
     if (!isRepair)
-      batchPlans.push({ id: name.replace(/-PLAN\.md$/, ""), phase: phaseNo, files: parsed.files, depends: depsFromPlanText(txt), wave: String(fm.wave ?? "").trim() === "" ? null : Number(fm.wave), dir: dirname(path) });
+      batchPlans.push({ id: name.replace(/-PLAN\.md$/, ""), phase: phaseNo, files: parsed.files, depends: depsFromPlanText(txt), wave: String(fm.wave ?? "").trim() === "" ? null : Number(fm.wave), dir: dirname(path), wiring: parsed.wiring });
   }
   {
     const wv = await import("../references/worktree-view.mjs");

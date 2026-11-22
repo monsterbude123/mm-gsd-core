@@ -5,6 +5,7 @@
 import { checkResearchSummary } from "./research-gates.mjs";
 import { checkIssueLedger, checkReqClaims, checkReqCoverage, checkTicketLoad, checkTicketPremises } from "./verification-gates.mjs";
 import { checkBatchGraph, checkTicketBudget } from "./worktree-view.mjs";
+import { parsePlanFrontmatter } from "./ssot.mjs";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, readdirSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -34,6 +35,29 @@ export function runPlanGateCases(t, x) {
     eqN(decl.length === 1 && decl[0].includes("Wiring Ticket"), true, "两票显式标明同一 wiring 共享点(文件不重叠)→ 判红引导接线票");
     eqN(checkBatchGraph([{ id: "A", files: ["src/a/index.ts"], depends: [] }, { id: "B", files: ["src/b/index.ts"], depends: [] }]).length, 0, "不同目录各自的 barrel 出口 → 不误伤");
     eqN(checkBatchGraph([{ id: "A", files: ["a.ts"], wiring: ["agg.ts"], depends: [] }, { id: "B", files: ["b.ts"], wiring: ["other.ts"], depends: [] }]).length, 0, "wiring 声明不相交 → 转绿");
+  }
+  // ---- G-36-1:wiring 声明通道走生产链路(ssot parsePlanFrontmatter → parsePlanFile → batchPlans → checkBatchGraph) ----
+  {
+    // 解析孪生(解析唯一实现住 ssot,REQ-67):内联与块式都认
+    eqArr(parsePlanFrontmatter('---\nphase: "14"\nwiring: [agg.ts, routes.ts] # 注释剥\n---\n').wiring, ["agg.ts", "routes.ts"], "wiring 内联列表解析(注释剥、括号剥)");
+    eqArr(parsePlanFrontmatter('---\nphase: "14"\nwiring:\n  - agg.ts\n  - "other.ts"\nfiles_modified:\n  - a.ts\n---\n').wiring, ["agg.ts", "other.ts"], "wiring 块式列表解析(列表项逐条收,遇新键停)");
+    // 生产链路孪生:夹具 PLAN 标 wiring → CHECKER --plan 门禁判红引导 Wiring Ticket;无声明对照不误标
+    const d = mkdtempSync(join(tmpdir(), "mm-gsd-wiring-"));
+    mkdirSync(join(d, ".planning"), { recursive: true });
+    writeFileSync(join(d, "agg.ts"), "x\n"); writeFileSync(join(d, "a.ts"), "x\n"); writeFileSync(join(d, "b.ts"), "x\n");
+    const mk = (n, own, w) => '---\nphase: "14"\nplan: "' + n + '"\n' + (w ? 'wiring: [agg.ts]\n' : '') + 'goal: g\nrollback: r\nfiles_modified:\n  - ' + own + '\n  - agg.ts\ndepends_on: []\n---\n\n### T1 事\n- **files**: ' + own + ', agg.ts\n- **read_first**: ' + own + '\n- **action**: 做\n- **verify**: node ' + own + '\n- **fails_when**: 退出码非 0(无 ok)\n- **done**: ok\n';
+    writeFileSync(join(d, ".planning", "14-01-PLAN.md"), mk("01", "a.ts", true));
+    writeFileSync(join(d, ".planning", "14-02-PLAN.md"), mk("02", "b.ts", true));
+    let out = "", code = 0;
+    try { out = execFileSync(process.execPath, [CHECKER, "--plan", join(d, ".planning", "14-01-PLAN.md"), join(d, ".planning", "14-02-PLAN.md")], { cwd: d, encoding: "utf8", stdio: "pipe" }); }
+    catch (e) { code = e.status ?? 1; out = String(e.stdout || "") + String(e.stderr || ""); }
+    eqN(code === 1 && out.includes("Wiring Ticket"), true, "wiring 声明经生产 --plan 门禁判红(声明通道全链:解析→批图→拦停)");
+    writeFileSync(join(d, ".planning", "14-01-PLAN.md"), mk("01", "a.ts", false));
+    writeFileSync(join(d, ".planning", "14-02-PLAN.md"), mk("02", "b.ts", false));
+    try { out = execFileSync(process.execPath, [CHECKER, "--plan", join(d, ".planning", "14-01-PLAN.md"), join(d, ".planning", "14-02-PLAN.md")], { cwd: d, encoding: "utf8", stdio: "pipe" }); }
+    catch (e) { code = e.status ?? 1; out = String(e.stdout || "") + String(e.stderr || ""); }
+    eqN(code === 1 && out.includes("撞了文件") && !out.includes("Wiring Ticket"), true, "无声明对照不误标(agg.ts 非聚合形状 → 仍走旧口径,声明与形状通道分工)");
+    rmSync(d, { recursive: true, force: true });
   }
   // ---- 并发隔离真跑用例(phase 36 T1,REQ-75/D-01):临时真仓里跑 stage/commit 脚本本尊 ----
   // 断言共享主索引零踩踏、.commit.lock 持锁提交与孤儿锁回收、兄弟票先行提交不被交错回滚。

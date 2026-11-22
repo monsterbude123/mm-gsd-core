@@ -143,9 +143,48 @@ export { parseReqLedger } from "./req-ledger.mjs";
 /** artifact-ledger(markdown 表)→ [{file, gap, commit}];转发 artifact-ledger.mjs 的规范实现(同上) */
 export { parseAccounting } from "./artifact-ledger.mjs";
 
-/** PLAN 文本 → frontmatter kv(四件套/depends_on/wave 的唯一取值口);无法解析返回 null */
+/** PLAN 文本 → frontmatter kv(四件套/depends_on/wave/wiring 的唯一取值口);无法解析返回 null */
 export function parsePlanFrontmatter(text) {
-  return parseFrontmatterRaw(String(text ?? ""));
+  const fm = parseFrontmatterRaw(String(text ?? ""));
+  if (fm) fm.wiring = planWiringFromText(String(text ?? ""));
+  return fm;
+}
+
+/**
+ * PLAN frontmatter 的 `wiring:` 共享接线点声明(G-36-1,REQ-76)→ 路径数组;缺省 []。
+ * 内联(`wiring: [a.ts, b.ts]` / 裸值 `wiring: a.ts`)与块式(`wiring:` 后跟 `  - 路径`)都认;
+ * 注释(# 与行尾说明)与引号逐项剥掉。解析只住这里(REQ-67 单一实现)——
+ * 消费方(gsd-state-check 的 parsePlanFile → batchPlans → checkBatchGraph)透传,不各抄正则。
+ */
+export function planWiringFromText(text) {
+  const m = String(text ?? "").match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!m) return [];
+  const out = [];
+  const clean = (v) => {
+    let s = v.trim();
+    const hash = s.indexOf("#");
+    if (hash > 0 && !/^["']/.test(s)) s = s.slice(0, hash).trim();
+    return s.replace(/^["']|["']$/g, "").trim();
+  };
+  let inList = false;
+  for (const raw of m[1].split(/\r?\n/)) {
+    const kv = raw.match(/^([A-Za-z_][\w-]*):\s*(.*)$/);
+    if (kv) {
+      inList = kv[1].toLowerCase() === "wiring";
+      if (!inList) continue;
+      const v = clean(kv[2]).replace(/^\[/, "").replace(/\]$/, "").trim();
+      if (!v) continue;
+      for (const f of v.split(/[,\s]+/)) { const p = clean(f); if (p) out.push(p); }
+      continue;
+    }
+    if (inList) {
+      if (!raw.trim()) continue;
+      const li = raw.match(/^\s+-\s+(.+?)\s*$/);
+      if (li) { const p = clean(li[1]); if (p) out.push(p); }
+      else inList = false;
+    }
+  }
+  return out;
 }
 
 /**
