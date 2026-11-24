@@ -4,7 +4,7 @@
 // 宿主无关是 mm-gsd 的原则:技能本体是纯文本 SKILL.md,检查器是纯 node 脚本。
 // 本脚本只做两件宿主相关的事:
 //   1) 技能分发 —— 主仓 ~/.agents/skills/,向各宿主 skills 目录建符号链接(junction)
-//   2) 危险 git 拦截 —— 按各宿主的 hooks 格式分别安装
+//   2) 破坏性命令拦截(危险 git + 越树递归删除)—— 按各宿主的 hooks 格式分别安装
 // 不做冷启动(那是 mm-gsd-discuss 的职责,不重复造第二条路径)。
 //
 // 用法:
@@ -48,6 +48,7 @@ const SKILLS = (() => {
   catch { return []; }
 })();
 const GUARD_SRC = join(MASTER, "mm-gsd-loop", "hooks", "guard-dangerous-git.mjs");
+const RM_GUARD_SRC = join(MASTER, "mm-gsd-loop", "hooks", "guard-dangerous-rm.mjs");
 const PRECOMMIT_SRC = join(MASTER, "mm-gsd-loop", "hooks", "pre-commit");
 
 // ---- 宿主适配表 ----
@@ -160,14 +161,16 @@ if (!HOOKS_ONLY && !AGENTS_ONLY) {
 }
 
 // ---------- 动作 2:宿主 hook(危险 git 拦截 + 工具遥测,按宿主格式) ----------
-// 幂等按条目名(20 预审 F1):守卫与遥测各自按命令特征串检测已装与否,缺哪个补哪个。
-// 旧检查只认 guard-dangerous-git 且已装即整段跳过 —— 守卫已装的机器上遥测永远装不上(20-RESEARCH §3)。
+// 幂等按条目名(20 预审 F1):守卫、删除守卫与遥测各自按命令特征串检测已装与否,缺哪个补哪个。
+// 旧检查只认 guard-dangerous-git 且已装即整段跳过 —— 守卫已装的机器上遥测永远装不上(20-RESEARCH §3);
+// 同型事故不得在删除守卫上重演(37 预审 I1):两旧 hook 已装时跳过条件必须纳入新守卫,否则它永远装不上。
 if (!SKILLS_ONLY && !AGENTS_ONLY) {
   const hooksDir = H(".agents", "hooks");                              // 脚本放公共区,各宿主配置指向它(守卫先例,F8)
   const guardDest = join(hooksDir, "guard-dangerous-git.mjs");
+  const rmDest = join(hooksDir, "guard-dangerous-rm.mjs");
   const teleDest = join(hooksDir, "mm-gsd-tool-telemetry.mjs");
   const TELEMETRY_SRC = join(MASTER, "mm-gsd-loop", "hooks", "mm-gsd-tool-telemetry.mjs");
-  const SRCS = [["守卫", GUARD_SRC, guardDest], ["工具遥测", TELEMETRY_SRC, teleDest]];
+  const SRCS = [["守卫", GUARD_SRC, guardDest], ["删除守卫", RM_GUARD_SRC, rmDest], ["工具遥测", TELEMETRY_SRC, teleDest]];
   if (!SRCS.some(([, src]) => existsSync(src))) {
     warns.push("未找到任何 hook 脚本(技能主仓不完整)——为避免装出指向不存在脚本的死配置,跳过所有 hooks 安装");
   } else {
@@ -188,15 +191,16 @@ if (!SKILLS_ONLY && !AGENTS_ONLY) {
         : (cfg?.hooks?.events ?? null);                                                                            // zcode: hooks.events.PreToolUse
       const list = eventsMap?.PreToolUse;
       const has = (needle) => Array.isArray(list) && JSON.stringify(list).includes(needle);
-      const guardIn = has("guard-dangerous-git"), teleIn = has("mm-gsd-tool-telemetry");
-      if (guardIn && teleIn) { oks.push(name + " hooks:危险 git 拦截 + 工具遥测已启用"); continue; }
-      const missing = [!guardIn && "危险 git 拦截(reset --hard / force push 等先拦)", !teleIn && "工具遥测(机械记录工具调用,零上下文污染)"].filter(Boolean).join(" + ");
+      const guardIn = has("guard-dangerous-git"), rmIn = has("guard-dangerous-rm"), teleIn = has("mm-gsd-tool-telemetry");
+      if (guardIn && rmIn && teleIn) { oks.push(name + " hooks:危险 git/删除拦截 + 工具遥测已启用"); continue; }
+      const missing = [!guardIn && "危险 git 拦截(reset --hard / force push 等先拦)", !rmIn && "越树递归删除拦截(rm -r 族越 cwd 且越 Temp 先拦)", !teleIn && "工具遥测(机械记录工具调用,零上下文污染)"].filter(Boolean).join(" + ");
       const want = await confirm(`给 ${name} 安装宿主 hook?缺的补:${missing}`, true);
       if (!want) { skips.push(name + " hooks:未补齐(缺:" + missing + ")"); continue; }
 
       // 只补缺的:源在(上面已复制)才进清单,避免装出指向不存在脚本的死配置
       const addCmds = [];
       if (!guardIn && existsSync(guardDest)) addCmds.push("node \"" + guardDest + "\"");
+      if (!rmIn && existsSync(rmDest)) addCmds.push("node \"" + rmDest + "\"");
       if (!teleIn && existsSync(teleDest)) addCmds.push("node \"" + teleDest + "\"");
       const hookOf = (cmd) => v.hook === "zcode" ? { type: "command", command: cmd, timeout: 10 } : { type: "command", command: cmd };
       const wire = (arr) => {

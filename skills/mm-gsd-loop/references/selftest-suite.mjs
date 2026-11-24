@@ -706,8 +706,20 @@ export function runBoundaryCases(st) {
   eqN(guardRc("git stash"), 2, "守卫拦 stash 全族");
   eqN(guardRc("git checkout ."), 2, "守卫拦 checkout .(全量重置工作区)");
   eqN(guardRc("git push origin main --force"), 2, "守卫拦强推保护分支");
-  eqN(guardRc("git push origin main --force-with-lease"), 0, "守卫放行 lease 强推(留的出路)");
+    eqN(guardRc("git push origin main --force-with-lease"), 0, "守卫放行 lease 强推(留的出路)");
     eqN(guardRc("git status"), 0, "守卫放行普通命令");
+  // 删除守卫孪生(37-01,REQ-79/D-01):白名单两支柱 —— cwd 内放行、系统 Temp 内放行;
+  // 越两支柱的递归删除拦并 exit 2;判定面外(非删除命令)零触碰
+  const rmGuard = fileURLToPath(new URL("../hooks/guard-dangerous-rm.mjs", import.meta.url));
+  const rmGuardRc = (cmd, cwd) => {
+    try { execFileSync(process.execPath, [rmGuard], { input: JSON.stringify({ cwd, tool_input: { command: cmd } }), stdio: "pipe" }); return 0; }
+    catch (e) { return e.status ?? 1; }
+  };
+  eqN(rmGuardRc("rm -rf src", dir), 0, "rm 守卫放行 cwd 内递归删除(支柱一)");
+  // 越树样本用 MSYS 形:win32 上归一成 D:\...,POSIX 上 /d/... 本就是根级绝对路径 —— 两平台都落两支柱之外
+  eqN(rmGuardRc("rm -rf /d/mm-gsd-rm-probe/elsewhere", dir), 2, "rm 守卫拦越 cwd 且越 Temp 的递归删除(两支柱之外)");
+  eqN(rmGuardRc(`rm -rf ${join(tmpdir(), "mm-gsd-rm-probe-temp")}`, dir), 0, "rm 守卫放行系统 Temp 内递归删除(支柱二,越 cwd 不误伤)");
+  eqN(rmGuardRc("git status", dir), 0, "rm 守卫零触碰非删除命令(判定面不扩大)");
   rmSync(dir, { recursive: true, force: true });
 }
 
