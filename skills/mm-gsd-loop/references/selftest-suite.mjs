@@ -110,6 +110,9 @@ export function runConvergenceCases({ eqN }) {
   eqN(JSON.stringify(depsFromPlanText(LIST_MULTI)), '["30-01","30-02"]', "wave-dag-deps-2 列表形多值,遇非列表行停止");
   eqN(JSON.stringify(depsFromPlanText(INLINE_MULTI)), '["30-01","30-02"]', "wave-dag-deps-3 内联多值(旧口径不回归)");
   eqN(JSON.stringify(depsFromPlanText(EMPTY_ARR)), '[]', "wave-dag-deps-4 空数组");
+  // ---- R 票票号孪生(36-R2,I-023):deps 解析认点修 <NN>-Rk 整票号;常规 NN-MM 零变化(上四条即锚) ----
+  eqN(JSON.stringify(depsFromPlanText('depends_on: "36-R1"')), '["36-R1"]', "wave-dag-deps-5 内联 R 票认点修格式(整票号)");
+  eqN(JSON.stringify(depsFromPlanText('depends_on:\n  - "36-R1"\n  - 30-02')), '["36-R1","30-02"]', "wave-dag-deps-6 列表形 R 票认点修格式(常规票同列表零变化)");
   const legacy = checkPlanReady({ planPath: join(dir, ".planning", "99-01-PLAN" + MD) });
   eqN(legacy.state === "blocked" || legacy.state === "missing", true, "rcv-4b 祖父路径:无收敛工件时保持票级旧判");
   // rcv-5/6/7/8:逐票预审工件契约门必须与 checkPlanReady 同一 superseded 口径(R-26)。
@@ -492,6 +495,10 @@ export function runCoverageCases({ eqN, eqArr }) {
   eqArr(phaseCovered(dir, "06").sort(), ["D-01", "D-09"], "phase union 取本 phase 各票 covers 的并集");
   eqN(planExists(dir, "06-01"), true, "接替票存在性:真实存在的 PLAN 算存在");
   eqN(planExists(dir, "06-99"), false, "不存在的票不算存在");
+  // ---- R 票票号孪生(36-R2,I-023):判活票名解析认点修 <NN>-Rk 整票号 —— 修前解析 null,已收口 R 票豁免永不生效(活票误红) ----
+  mkPlan("06-R1-PLAN.md", "D-01, D-09");
+  writeFileSync(join(planning, "06-R1-SUMMARY.md"), '---\nphase: "06"\nplan: "R1"\nstatus: complete\ncommits: 1\n---\n');
+  eqN(run("06-R1-PLAN.md").errs.length, 0, "R 票名解析认点修格式:已收口 R 票走判活豁免(修前解析 null 判活误红)");
   rmSync(dir, { recursive: true, force: true });
 }
 

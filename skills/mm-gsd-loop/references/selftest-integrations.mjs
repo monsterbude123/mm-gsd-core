@@ -108,6 +108,20 @@ export function runIntegrationCases(t) {
     let rF = runCk(dF, ["--plan", ".planning/01-R1-PLAN.md", ".planning/01-R2-PLAN.md", ".planning/01-R3-PLAN.md"]);
     eqN(rF.code === 0 && rF.out.includes("强制升级"), true, "R 票 ≥3 → 强制升级黄提醒");
     rmSync(dF, { recursive: true, force: true });
+    // ⑦⑧ 收口豁免认点修 R 票(36-R2,I-023):gsd-state-check 判活票名解析认 <NN>-Rk 整票号 ——
+    // 修前解析 null,已收口 R 票豁免永不生效(活票误红);⑧ 常规票同路径零变化锚。
+    const dG = mkRDir(["R1"]);
+    writeFileSync(join(dG, ".planning", "01-R1-PLAN.md"), '---\nphase: "01"\nplan: "R1"\n---\n');   // 去掉 goal:活票会判红「缺 goal」
+    writeFileSync(join(dG, ".planning", "01-R1-SUMMARY.md"), '---\nphase: "01"\nplan: "R1"\nstatus: complete\ncommits: 1\n---\n');
+    const rG = runCk(dG, ["--plan", ".planning/01-R1-PLAN.md"]);
+    eqN(rG.code === 0 && !rG.out.includes("缺 goal"), true, "R 票已收口 → 退出全部门禁(判活解析认 R 票,修前判活误红)");
+    rmSync(dG, { recursive: true, force: true });
+    const dH = mkRDir([]);
+    writeFileSync(join(dH, ".planning", "01-02-PLAN.md"), '---\nphase: "01"\nplan: "02"\n---\n');   // 同款无 goal 常规票
+    writeFileSync(join(dH, ".planning", "01-02-SUMMARY.md"), '---\nphase: "01"\nplan: "02"\nstatus: complete\ncommits: 1\n---\n');
+    const rH = runCk(dH, ["--plan", ".planning/01-02-PLAN.md"]);
+    eqN(rH.code === 0 && !rH.out.includes("缺 goal"), true, "常规票收口豁免照旧(捕获整票号,行为零变化)");
+    rmSync(dH, { recursive: true, force: true });
   }
   // ---- 债面板口径(phase 22 D-02/D-05 + 23 D-03 分类感知):parked/deferred 分列 + 台账处置为准(纯函数断言,不写盘不起服务) ----
   {

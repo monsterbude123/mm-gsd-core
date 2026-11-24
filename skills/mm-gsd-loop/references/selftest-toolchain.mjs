@@ -127,11 +127,18 @@ export function runToolchainCases(t) {
     commit("fix(14-02): bin 转发");
     commit("chore: 提到 14-02 但没写 scope");   // 精确匹配不得把它算进去(--grep 子串就栽在这)
     commit("14-03 草稿:还没补 scope");          // 前缀兜底用例的靶子
+    commit("fix(13-R1): R 票 scope 落地");       // R 票 scope 计数靶子(36-R2 孪生)
     const SUMMARY = fileURLToPath(new URL("../../mm-gsd-exec/scripts/mm-gsd-summary.mjs", import.meta.url));
     let r2 = runTool(SUMMARY, ["--ticket", "14-02"]);
     eqN(r2.code === 0 && readFileSync(join(d, ".planning", "14-02-SUMMARY.md"), "utf8").includes("commits: 2") && !r2.out.includes("WARN"), true, "summary 按 scope 精确实测 commits");
     r2 = runTool(SUMMARY, ["--ticket", "14-03"]);
     eqN(r2.code === 0 && readFileSync(join(d, ".planning", "14-03-SUMMARY.md"), "utf8").includes("commits: 1") && r2.out.includes("WARN"), true, "summary 零命中按前缀兜底并 WARN");
+    // ---- R 票票号格式孪生(36-R2,I-023):summary 正则认点修 <NN>-Rk;frontmatter split 出 plan:R1;常规照旧(上面 14-02/14-03 即锚);杂牌照拒 ----
+    r2 = runTool(SUMMARY, ["--ticket", "13-R1"]);
+    const s13 = readFileSync(join(d, ".planning", "13-R1-SUMMARY.md"), "utf8");
+    eqN(r2.code === 0 && s13.includes('plan: "R1"') && s13.includes("commits: 1") && !r2.out.includes("WARN"), true, "summary 票号认点修 R 票格式(13-R1 scope 精确计数,frontmatter split 出 plan:R1)");
+    r2 = runTool(SUMMARY, ["--ticket", "abc"]);
+    eqN(r2.code === 1 && r2.out.includes("用法"), true, "summary 杂牌票号 abc 照拒");
     r2 = runTool(SUMMARY, ["--ticket", "14-02"]);
     eqN(r2.code === 1 && r2.out.includes("拒绝覆盖"), true, "summary 拒绝覆盖已存在");
     rmSync(d, { recursive: true, force: true });
