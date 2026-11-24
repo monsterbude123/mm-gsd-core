@@ -447,7 +447,8 @@ export function checkWaveFromDag(report) {
       const fm = readFileSync(R(".planning", n), "utf8").split(/^---$/m)[1] ?? "";
       const waveM = fm.match(/^wave:\s*(\d+)\s*$/m);
       const depM = fm.match(/^depends_on:\s*(.+)$/m);
-      plans.push({ id, wave: waveM ? Number(waveM[1]) : null, depends: depM ? (depM[1].match(/\d+-\d+/g) ?? []) : [] });
+      // 票号认点修 <NN>-Rk(36-R2,I-023):常规票 depends_on 指向 R 票时修前漏解析 → 波次推导误红;形状同 depsFromPlanText(--selfcheck 有孪生,本门无自测通道、由 health 真仓自跑)
+      plans.push({ id, wave: waveM ? Number(waveM[1]) : null, depends: depM ? (depM[1].match(/\d+-(?:R\d+|\d+)/g) ?? []) : [] });
     }
     const derived = deriveWaves(plans);
     let pass = true;

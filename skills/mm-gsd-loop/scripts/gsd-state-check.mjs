@@ -331,7 +331,8 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
 
     // ---- 已收口票:先算 covered,再跑「完成后腐坏探测器」,最后才豁免(phase 26 T3 ①)----
     // 执行顺序写死:解析 → covered → 新门 → skip。
-    const ticketId = name.match(/^(\d+-\d+)/)?.[1];
+    // 捕获整票号(36-R2 认点修 <NN>-Rk):ticketsCovered 要完整票号比对,phase-only 捕获会让常规票也解析成裸 phase(36-R1 偏差 2)
+    const ticketId = name.match(/^(\d+-(?:R\d+|\d+))/)?.[1];
     const covered = ticketId ? ticketsCovered(summaries, ticketId, { requireStatus: "complete" }) : false;
     if (covered) {
       // 票面 verify 引用的自测用例名还在不在(phase 26 D-19 / REQ-46,G-26-10):

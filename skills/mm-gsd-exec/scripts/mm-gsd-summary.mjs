@@ -24,7 +24,7 @@ if (has("--help") || has("-h")) {
 用法:
   node mm-gsd-summary.mjs --ticket <NN-MM> [--notes <file.json>]
 
-  --ticket <NN-MM>   票号,如 14-02(必需)
+  --ticket <NN-MM>   票号,常规 14-02 / 点修 14-R1(必需)
   --notes <file.json>  人工备注(JSON),校验过才填进 SUMMARY 对应节;文件必须存在
   --help             本说明
 
@@ -49,7 +49,7 @@ SUMMARY 落盘不 commit —— 流程记忆属本地工件(exec SKILL「SUMMARY
 }
 
 const ticket = val("--ticket");
-if (!ticket || !/^\d+-\d+$/.test(ticket)) {
+if (!ticket || !/^\d+-(?:R\d+|\d+)$/.test(ticket)) {
   console.error("✗ 用法:node mm-gsd-summary.mjs --ticket <NN-MM>(--help 看详情)");
   process.exit(1);
 }

@@ -27,7 +27,8 @@ export function runDecisionContracts({ name, planPath, ctxs, root, readFile, e, 
   const { checkReversibility, checkPhaseCoverage, checkDrift } = check;
   for (const c of ctxs) checkReversibility({ ctxName: c.file, ctxText: readFile(c.path), e });
   const phaseOf = name.match(/^(\d+)/)?.[1];
-  const ticket = name.match(/^(\d+-\d+)/)?.[1];
+  // 捕获整票号(36-R2 认点修 <NN>-Rk):ticketsCovered 要完整票号比对,phase-only 捕获会让常规票也解析成裸 phase(36-R1 偏差 2)
+  const ticket = name.match(/^(\d+-(?:R\d+|\d+))/)?.[1];
   // 判活**不按文件名猜**:一份 SUMMARY 可覆盖多张票(本仓 02-03-05 的 plan: "03,04,05"),
   // 按同名判会把三张已完成的票全判成未完成。
   const done = ticket ? ticketsCovered(readSummaries(root), ticket) : false;
