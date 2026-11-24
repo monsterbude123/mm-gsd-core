@@ -21,6 +21,7 @@ import { execSync, spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { createHash } from "node:crypto";
 import { mmGsdVersion } from "../references/version.mjs";
+import { out } from "../references/line-out.mjs";
 import { fileURLToPath } from "node:url";
 
 // reopened = 已交付 phase 开了点修 R 票(D-09):重验 passed 后回 shipped;STATE 不许说谎,声明要与推导一致
@@ -81,8 +82,8 @@ const warn = (m, fix) => { warnings.push({ message: m, fix: fix ?? "" }); runRec
  * 一片无原因的失败,抓不到「同一处反复失败」。门禁失明了,observe 环就跟着失明。
  */
 function die(message, fix) {
-  if (message) console.log(message);
-  if (fix) console.log(fix);
+  if (message) out(message);
+  if (fix) out(fix);
   err(message, fix);
   process.exit(1);
 }
@@ -214,7 +215,7 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
       const others = all.filter((f) => !scoped.includes(f));
       if (others.length) {
         const ph = [...new Set(others.map((f) => f.split(/[\\/]/).pop().slice(0, 2)))].join("/");
-        console.log("  · active_phase=" + active + ";另有 " + others.length + " 份其它 phase(" + ph + ")的计划未检查 —— 用 --plan <路径…> 显式圈定(issue #14)");
+        out("  · active_phase=" + active + ";另有 " + others.length + " 份其它 phase(" + ph + ")的计划未检查 —— 用 --plan <路径…> 显式圈定(issue #14)");
       }
       return scoped.length ? scoped : all;
     })();
@@ -557,14 +558,14 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
   }
 
   if (PLAN_CHECK) errs.push(...reviewErrs);
-  console.log("\n=== mm-gsd 计划门禁(" + targets.length + " 份) ===");
-  for (const t of targets) console.log("  " + t.split(/[\\/]/).pop());
-  for (const x of errs) console.log(`  ✗ ${x.message}${x.fix ? `\n      → ${x.fix}` : ""}`);
-  for (const x of warns) console.log(`  ! ${x.message}${x.fix ? `\n      → ${x.fix}` : ""}`);
-  // 收口票免判的交代行(phase 26 D-14):用 console.log 而不是 w() ——
+  out("\n=== mm-gsd 计划门禁(" + targets.length + " 份) ===");
+  for (const t of targets) out("  " + t.split(/[\\/]/).pop());
+  for (const x of errs) out(`  ✗ ${x.message}${x.fix ? `\n      → ${x.fix}` : ""}`);
+  for (const x of warns) out(`  ! ${x.message}${x.fix ? `\n      → ${x.fix}` : ""}`);
+  // 收口票免判的交代行(phase 26 D-14):用 out() 直写而不是 w() ——
   // 有 warns 时 w() 通道会让「✓ 四件套完整…」那行不打印,收口不是警告。
-  console.log(`  · skipped-done: ${skippedDone} 份已收口的计划(SUMMARY status=complete)免判票级门与批图门,只跑完成后腐坏探测器`);
-  if (!errs.length && !warns.length) console.log("  ✓ 四件套完整、失败方向明确、文件清单可解析、预算未超");
+  out(`  · skipped-done: ${skippedDone} 份已收口的计划(SUMMARY status=complete)免判票级门与批图门,只跑完成后腐坏探测器`);
+  if (!errs.length && !warns.length) out("  ✓ 四件套完整、失败方向明确、文件清单可解析、预算未超");
   // ---- 本 phase 的过程健康三数(D-04):票数 / 受阻票数 / 缺口数 ----
   // 量来自工件历史,不是遥测(遥测不记 phase 维度,那是用户的口径);
   // 它测过程健康,不是质量分 —— 标注必须跟着数字一起出现。
@@ -572,12 +573,12 @@ if (process.argv.includes("--plan") || PLAN_CHECK) {
     const { phaseHealth } = await import("../references/telemetry-aggregate.mjs");
     for (const ph of [...new Set(targets.map((t) => t.split(/[\\/]/).pop().slice(0, 2)))]) {
       const h = phaseHealth(root, ph);
-      console.log(`  · phase ${ph} 过程健康:票 ${h.tickets} / 受阻 ${h.blocked} / 缺口 ${h.gaps}(过程健康,不是质量分)`);
+      out(`  · phase ${ph} 过程健康:票 ${h.tickets} / 受阻 ${h.blocked} / 缺口 ${h.gaps}(过程健康,不是质量分)`);
     }
   }
   if (PLAN_CHECK) {
     const { renderPlanReady } = await import("../references/plan-ready.mjs");
-    console.log(renderPlanReady({ review, ok: !errs.length }));
+    out(renderPlanReady({ review, ok: !errs.length }));
   }
   process.exit(errs.length ? 1 : 0);
 }
@@ -608,7 +609,7 @@ if (process.argv.includes("--phases")) {
   }
 
   const byId = new Map(phases.map((p) => [p.id, p]));
-  for (const p of phases) for (const d of p.deps) if (!byId.has(d)) console.log(`  ! phase ${p.id} 依赖了不存在的 phase ${d}`);
+  for (const p of phases) for (const d of p.deps) if (!byId.has(d)) out(`  ! phase ${p.id} 依赖了不存在的 phase ${d}`);
 
   // 环依赖必须先拦下:否则波次算成 Infinity,输出一个毫无意义的 "wave Infinity"
   const state = new Map(), cycles = [];
@@ -621,8 +622,8 @@ if (process.argv.includes("--phases")) {
   };
   phases.forEach((p) => visit(p.id, []));
   if (cycles.length) {
-    console.log("\n=== mm-gsd phase 波次 ===");
-    for (const c of cycles) console.log(`  ✗ depends_on 成环: ${c.join(" → ")} —— 没有合法的执行顺序`);
+    out("\n=== mm-gsd phase 波次 ===");
+    for (const c of cycles) out(`  ✗ depends_on 成环: ${c.join(" → ")} —— 没有合法的执行顺序`);
     die("depends_on 成环:没有合法的执行顺序", "断环:里面至少一个依赖是错的,或两个 phase 其实该合并成一个。");
   }
 
@@ -636,7 +637,7 @@ if (process.argv.includes("--phases")) {
   };
   phases.forEach((p) => calc(p.id));
 
-  console.log(`\n=== mm-gsd phase 波次(来自 STATE ## Phases,共 ${phases.length} 个) ===`);
+  out(`\n=== mm-gsd phase 波次(来自 STATE ## Phases,共 ${phases.length} 个) ===`);
   const errs = [];
   const byWave = new Map();
   for (const p of phases) {
@@ -646,7 +647,7 @@ if (process.argv.includes("--phases")) {
   }
   for (const w of [...byWave.keys()].sort((a, b) => a - b)) {
     const group = byWave.get(w);
-    console.log(`\n  wave ${w}: ${group.map((p) => p.id + " " + (p.title || "") + (p.done ? " [已完成]" : "")).join("  |  ")}`);
+    out(`\n  wave ${w}: ${group.map((p) => p.id + " " + (p.title || "") + (p.done ? " [已完成]" : "")).join("  |  ")}`);
     // 同波次零重叠校验
     const filesOf = new Map();
     for (const p of group) {
@@ -662,7 +663,7 @@ if (process.argv.includes("--phases")) {
         const ov = [...filesOf.get(group[i].id)].filter((f) => filesOf.get(group[j].id).has(f));
         if (ov.length) {
           const msg = `wave ${w} 冲突: ${ov.join(", ")} 被 ${group[i].id} 与 ${group[j].id} 同时声明 —— 不能并行`;
-          console.log(`    ⚠ ${msg}`); err(msg); errs.push(1);
+          out(`    ⚠ ${msg}`); err(msg); errs.push(1);
         }
       }
     }
@@ -677,18 +678,18 @@ if (process.argv.includes("--phases")) {
         const s = filesOf.get(p.id);
         if (!s || s.size === 0 || [...s].every((f) => VAGUE_FILE.test(f))) {
           hasUnverifiable = true;
-          console.log(`    ⚠ ${p.id} 的 files_modified 缺失或全为模糊语，本轮无法核验文件冲突——请补充精确路径`);
+          out(`    ⚠ ${p.id} 的 files_modified 缺失或全为模糊语，本轮无法核验文件冲突——请补充精确路径`);
           warn(`${p.id} 的 files_modified 缺失或全为模糊语，本轮无法核验文件冲突`);
         }
       }
     }
     if (group.length > 1 && !errs.length) {
-      if (hasUnverifiable) console.log(`    ⚠ wave ${w} 存在未声明修改文件的 phase，无法保证可安全并行`);
-      else console.log(`    ✓ 同波次 files_modified 零重叠 —— wave ${w} 可并行`);
+      if (hasUnverifiable) out(`    ⚠ wave ${w} 存在未声明修改文件的 phase，无法保证可安全并行`);
+      else out(`    ✓ 同波次 files_modified 零重叠 —— wave ${w} 可并行`);
     }
   }
   const pending = phases.filter((p) => !p.done);
-  console.log(`\n  下一步:${pending.length ? pending[0].id + " " + (pending[0].title || "") : "(全部已完成)"}${pending[0]?.deps.length ? "  依赖: " + pending[0].deps.join(", ") : ""}`);
+  out(`\n  下一步:${pending.length ? pending[0].id + " " + (pending[0].title || "") : "(全部已完成)"}${pending[0]?.deps.length ? "  依赖: " + pending[0].deps.join(", ") : ""}`);
   process.exit(errs.length ? 1 : 0);
 }
 
@@ -712,13 +713,13 @@ if (process.argv.includes("--selfcheck")) {
 if (process.argv.includes("--routes")) {
   const { checkRoutes } = await import("../references/agent-routing.mjs");
   const problems = checkRoutes(join(SKILL_DIR, ".."));
-  console.log("\n=== mm-gsd 技能路由门禁 ===");
-  for (const p of problems) console.log(`  ✗ ${p.skill}: ${p.problem}\n      → ${p.fix}`);
+  out("\n=== mm-gsd 技能路由门禁 ===");
+  for (const p of problems) out(`  ✗ ${p.skill}: ${p.problem}\n      → ${p.fix}`);
   if (problems.length) {
-    console.log("  " + problems.length + " 处没写清下一步 —— 每条上面都写了怎么改,改完重跑即可。");
+    out("  " + problems.length + " 处没写清下一步 —— 每条上面都写了怎么改,改完重跑即可。");
     die(new Set(problems.map((p) => p.skill)).size + " 个技能的「完成后」没写清", "每条上面都写了缺什么和怎么改,补完重跑即可。");
   }
-  console.log("  ✓ 每个技能都说清了自己的下一步");
+  out("  ✓ 每个技能都说清了自己的下一步");
   process.exit(0);
 }
 
@@ -776,7 +777,7 @@ if (process.argv.includes("--route")) {
       for (const c of b.quick.caps) L.push(`        ${c.pattern} ≤ ${c.max}`);
     }
   }
-  console.log("\n" + L.join("\n"));
+  out("\n" + L.join("\n"));
   process.exit(0);
 }
 
@@ -794,7 +795,7 @@ if (process.argv.includes("--templates")) {
 // 之前 agent 卡在这里:门禁说"转绿才准继续",可转绿要的东西它这一步造不出来,只能停。
 // --init 把造 STATE 变成一条命令,任何步骤都能自救。
 if (process.argv.includes("--init")) {
-  if (existsSync(P("STATE.md"))) { console.log("已有 .planning/STATE.md —— 不覆盖。删掉它重来,或直接跑默认检查。"); process.exit(0); }
+  if (existsSync(P("STATE.md"))) { out("已有 .planning/STATE.md —— 不覆盖。删掉它重来,或直接跑默认检查。"); process.exit(0); }
   mkdirSync(P("."), { recursive: true });
   const goal = process.argv[process.argv.indexOf("--init") + 1]?.startsWith("--") ? "<一句话项目目标>" : process.argv[process.argv.indexOf("--init") + 1];
   const today = new Date().toISOString().slice(0, 10);
@@ -852,11 +853,11 @@ if (process.argv.includes("--init")) {
     "",
   ].join("\n");
   writeFileSync(P("STATE.md"), body);
-  console.log("已创建 .planning/STATE.md(status=discussing, active_phase=01)");
-  if (hasCtx) console.log(`检测到已有 ${ctxName} —— 讨论已完成的部分直接用,不必重来。`);
-  console.log("需求与决策在 discuss 落盘(REQ 进 REQUIREMENTS.md,D-NN 进 CONTEXT):调用 mm-gsd-discuss。");
-  console.log("接着做:填 Project Reference 的 Current focus 与 ## Phases 清单,再跑 --phases 看波次。");
-  console.log("(占位项是给你改的;检查器不拦 STATE 正文,只拦 frontmatter 契约与工件一致性)");
+  out("已创建 .planning/STATE.md(status=discussing, active_phase=01)");
+  if (hasCtx) out(`检测到已有 ${ctxName} —— 讨论已完成的部分直接用,不必重来。`);
+  out("需求与决策在 discuss 落盘(REQ 进 REQUIREMENTS.md,D-NN 进 CONTEXT):调用 mm-gsd-discuss。");
+  out("接着做:填 Project Reference 的 Current focus 与 ## Phases 清单,再跑 --phases 看波次。");
+  out("(占位项是给你改的;检查器不拦 STATE 正文,只拦 frontmatter 契约与工件一致性)");
   process.exit(0);
 }
 
@@ -873,11 +874,11 @@ if (!existsSync(P("STATE.md"))) {
   if (process.argv.includes("--json")) {
     console.log(JSON.stringify({ state: null, derived: null, errors: [{ message: ".planning/STATE.md 不存在", fix: "跑 gsd-state-check.mjs --init 一条命令建好,别手搓" }], warnings }));
   } else {
-    console.log("mm-gsd 状态机:未初始化(无 .planning/STATE.md)。");
-    console.log("  → 跑 `node <本脚本> --init \"<项目目标>\" 即可建好,不必手搓模板。");
-    console.log("    (建 STATE 不是门禁的执行方该干的活 —— 门禁要的东西做不到,门禁就是死锁而不是门禁。)");
+    out("mm-gsd 状态机:未初始化(无 .planning/STATE.md)。");
+    out("  → 跑 `node <本脚本> --init \"<项目目标>\" 即可建好,不必手搓模板。");
+    out("    (建 STATE 不是门禁的执行方该干的活 —— 门禁要的东西做不到,门禁就是死锁而不是门禁。)");
     // 早退路径也要把已产生的警告带出去(批注提醒在这里产生,不打印等于没提醒)
-    for (const w of warnings) console.log(`  ! ${w.message}${w.fix ? `\n      → ${w.fix}` : ""}`);
+    for (const w of warnings) out(`  ! ${w.message}${w.fix ? `\n      → ${w.fix}` : ""}`);
   }
   err(".planning/STATE.md 不存在", "跑 gsd-state-check.mjs --init 一条命令建好,别手搓");
   process.exit(1);
@@ -988,10 +989,10 @@ if (process.argv.includes("--json")) {
     errors, warnings,
   }));
 } else if (!process.argv.includes("--quiet")) {
-  console.log(`mm-gsd 状态机  phase=${phasePath ?? (phaseDir || "(未声明)")}  布局=${artifactInfo.layout}  声明=${declared || "(空)"}  推导=${derived || "(无工件)"}`);
-  if (artifactInfo.context) console.log(`  CONTEXT ${artifactInfo.context} · PLAN ${artifactInfo.plans.length} · SUMMARY ${artifactInfo.summaries.length} · VERIFICATION ${artifactInfo.verification ?? "—"} · SHIP ${artifactInfo.shipment ?? "—(未交付)"}`);
-  for (const e of errors) console.log(`  ✗ ${e.message}${e.fix ? `\n      → ${e.fix}` : ""}`);
-  for (const w of warnings) console.log(`  ! ${w.message}${w.fix ? `\n      → ${w.fix}` : ""}`);
-  if (errors.length === 0 && warnings.length === 0) console.log("  ✓ 状态一致,工件契约完整");
+  out(`mm-gsd 状态机  phase=${phasePath ?? (phaseDir || "(未声明)")}  布局=${artifactInfo.layout}  声明=${declared || "(空)"}  推导=${derived || "(无工件)"}`);
+  if (artifactInfo.context) out(`  CONTEXT ${artifactInfo.context} · PLAN ${artifactInfo.plans.length} · SUMMARY ${artifactInfo.summaries.length} · VERIFICATION ${artifactInfo.verification ?? "—"} · SHIP ${artifactInfo.shipment ?? "—(未交付)"}`);
+  for (const e of errors) out(`  ✗ ${e.message}${e.fix ? `\n      → ${e.fix}` : ""}`);
+  for (const w of warnings) out(`  ! ${w.message}${w.fix ? `\n      → ${w.fix}` : ""}`);
+  if (errors.length === 0 && warnings.length === 0) out("  ✓ 状态一致,工件契约完整");
 }
 process.exit(errors.length > 0 ? 1 : 0);
