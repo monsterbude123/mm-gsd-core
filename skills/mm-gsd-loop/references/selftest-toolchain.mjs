@@ -109,6 +109,18 @@ export function runToolchainCases(t) {
     // phase 36(REQ-75/D-01):stage 改走票级隔离索引 —— 暂存视图从工具自己的输出看,共享主索引零写入
     eqN(r1.code === 0 && r1.out.includes("A  src/app/[locale]/a.css") && sh(["diff", "--cached", "--name-only"]).trim() === "", true, "stage 按票面 literal 暂存走隔离索引(共享主索引零写入)");
     eqN(r1.code === 0 && r1.out.includes("跳过"), true, "stage 对不存在路径跳过不报错");
+    // ---- R 票票号格式孪生(36-R1,I-023):正则认点修 <NN>-Rk;常规 NN-MM 零变化;杂牌照拒 ----
+    writeFileSync(join(d, "c.txt"), "c\n");
+    const mkT = (n) => writeFileSync(join(d, ".planning", `${n}-PLAN.md`), `---\nphase: "${n.split("-")[0]}"\nplan: "${n.split("-")[1]}"\nfiles_modified:\n  - c.txt\n---\n\n### T1 事\n- **files**: c.txt\n`);
+    mkT("13-R1"); mkT("07-R1"); mkT("12-34");
+    const tR1 = runTool(STAGE, ["--ticket", "13-R1"]);
+    eqN(tR1.code === 0 && tR1.out.includes("暂存 1/1"), true, "stage 票号认点修 R 票格式(13-R1)");
+    const tR2 = runTool(STAGE, ["--ticket", "07-R1"]);
+    eqN(tR2.code === 0 && tR2.out.includes("暂存 1/1"), true, "stage 票号认点修 R 票格式(07-R1)");
+    const tMM = runTool(STAGE, ["--ticket", "12-34"]);
+    eqN(tMM.code === 0 && tMM.out.includes("暂存 1/1"), true, "stage 常规票号 12-34 照旧认(行为零变化)");
+    const tBad = runTool(STAGE, ["--ticket", "abc"]);
+    eqN(tBad.code === 1 && tBad.out.includes("用法"), true, "stage 杂牌票号 abc 照拒");
     // ---- summary 工具(phase 14 D-04/D-05,#19):scope 精确 / 前缀兜底 WARN / 拒绝覆盖,同一真仓 fixture ----
     const commit = (m) => sh(["commit", "--allow-empty", "-q", "-m", m]);
     commit("feat(14-02): stage 工具");
@@ -127,7 +139,7 @@ export function runToolchainCases(t) {
   // ---- commit 工具(phase 14 D-02,#18):受限放行 —— 真仓 + core.hooksPath 必败钩子:清单内 FAST_PATH --no-verify 重试;清单外/提取空集 exit 2 停下 ----
   {
     const COMMIT = fileURLToPath(new URL("../../mm-gsd-exec/scripts/mm-gsd-commit.mjs", import.meta.url));
-    const mkRepo = (hookBody, rwEntry) => {
+    const mkRepo = (hookBody, rwEntry, ticket = "14-01") => {
       const d = mkdtempSync(join(tmpdir(), "mm-gsd-cmt-"));
       const sh = (args) => { const r = spawnSync("git", args, { cwd: d, encoding: "utf8" }); if (r.status !== 0) throw new Error("git " + args.join(" ") + ": " + r.stderr); return r.stdout; };
       sh(["init", "-q"]); sh(["config", "user.name", "t"]); sh(["config", "user.email", "t@t"]);
@@ -138,10 +150,10 @@ export function runToolchainCases(t) {
       }
       mkdirSync(join(d, ".planning"), { recursive: true });
       writeFileSync(join(d, "a.mjs"), "x\n");
-      writeFileSync(join(d, ".planning", "14-01-PLAN.md"), '---\nphase: "14"\nplan: "01"\nfiles_modified:\n  - a.mjs\ndepends_on: []\n' + rwEntry + '---\n\n### T1 事\n- **files**: a.mjs\n- **read_first**: a.mjs\n- **action**: 做\n- **verify**: node a.mjs\n- **fails_when**: 退出码非 0\n- **done**: ok\n');
+      writeFileSync(join(d, ".planning", `${ticket}-PLAN.md`), `---\nphase: "${ticket.split("-")[0]}"\nplan: "${ticket.split("-")[1]}"\nfiles_modified:\n  - a.mjs\ndepends_on: []\n` + rwEntry + '---\n\n### T1 事\n- **files**: a.mjs\n- **read_first**: a.mjs\n- **action**: 做\n- **verify**: node a.mjs\n- **fails_when**: 退出码非 0\n- **done**: ok\n');
       sh(["commit", "--allow-empty", "-q", "-m", "init"]);   // 先落 init:hooksPath 还没配,必败钩子不拦空提交
       if (hooksPath) sh(["config", "core.hooksPath", hooksPath]);
-      const run = () => { const r = spawnSync(process.execPath, [COMMIT, "--ticket", "14-01", "--message", "feat(14-01): c1"], { cwd: d, encoding: "utf8" }); return { code: r.status, out: String(r.stdout || "") + String(r.stderr || "") }; };
+      const run = () => { const r = spawnSync(process.execPath, [COMMIT, "--ticket", ticket, "--message", `feat(${ticket}): c1`], { cwd: d, encoding: "utf8" }); return { code: r.status, out: String(r.stdout || "") + String(r.stderr || "") }; };
       return { d, sh, run, clean: () => rmSync(d, { recursive: true, force: true }) };
     };
     const A = mkRepo(`echo "guard 'no-force-push'" >&2`, "red_windows:\n  - no-force-push | wave 2 | ticket 14-01 | close: 守卫修复票\n");
@@ -160,6 +172,13 @@ export function runToolchainCases(t) {
     r = D.run();
     eqN(r.code === 0 && !r.out.includes("FAST_PATH") && D.sh(["rev-list", "--count", "HEAD"]).trim() === "2", true, "commit 正常提交优先(无守卫拦截时不走 --no-verify)");
     D.clean();
+    // ---- R 票票号格式孪生(36-R1,I-023):commit 同族正则认 R 票(正常通道提交落地);杂牌照拒 ----
+    const E = mkRepo(null, "", "13-R1");
+    r = E.run();
+    eqN(r.code === 0 && E.sh(["rev-list", "--count", "HEAD"]).trim() === "2", true, "commit 票号认点修 R 票格式(13-R1 正常通道提交落地)");
+    E.clean();
+    const cBad = (() => { const s = spawnSync(process.execPath, [COMMIT, "--ticket", "abc", "--message", "x"], { cwd: tmpdir(), encoding: "utf8" }); return { code: s.status, out: String(s.stdout || "") + String(s.stderr || "") }; })();
+    eqN(cBad.code === 1 && cBad.out.includes("用法"), true, "commit 杂牌票号 abc 照拒");
   }
   // ---- wave-check 工具(phase 14 D-03/D-04,#17):生成脚本以 cd 头;--baseline 差分摘要(只呈现,不归因) ----
   {

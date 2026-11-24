@@ -88,7 +88,7 @@ export function findResearch(root, phase, planDir) {
  * 判红就是恒红(T-13)。判活的判据与漂移门同一套(ticketsCovered)。
  */
 export function checkResearch({ name, goal = "", files = [], phase, root, planDir, e, w }) {
-  const ticket = name.match(/^(\d+-\d+)/)?.[1];
+  const ticket = name.match(/^(\d+-(?:R\d+|\d+))/)?.[1];
   if (ticket && ticketsCovered(readSummaries(root), ticket)) return;
   const unseen = unfamiliarDirs(root, files);
   if (unseen === null) { w(`${name}: 不在 git 仓库里,判不了「是否陌生领域」—— 只按其余条件判`, "确认项目根是 git 仓库;否则这条触发条件形同虚设"); }
@@ -119,7 +119,7 @@ export function checkResearch({ name, goal = "", files = [], phase, root, planDi
  * 「票里引用了它」是规划期就能判的事实 —— 引用了,执行端就有义务去读。
  */
 export function checkResearchConsumed({ name, phase, root, planDir, text = "", e, w }) {
-  const ticket = name.match(/^(\d+-\d+)/)?.[1];
+  const ticket = name.match(/^(\d+-(?:R\d+|\d+))/)?.[1];
   if (ticket && ticketsCovered(readSummaries(root), ticket)) return true;
   const artifact = findResearch(root, phase, planDir);
   if (!artifact) return true;                       // 没有研究产物 → 无从消费,不判

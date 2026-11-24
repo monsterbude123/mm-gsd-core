@@ -21,7 +21,7 @@ const CHECKER = fileURLToPath(new URL("../scripts/gsd-state-check.mjs", import.m
 
 /** 跑一遍自测,返回失败条数 */
 // 断言总数基线(phase 30 T3):与 --selfcheck 的总断言数一致;有意增删断言时人工 bump。
-const SELFTEST_CASES_TOTAL = 484;
+const SELFTEST_CASES_TOTAL = 495;
 
 export function runSelfTest(splitDeps) {
   const { eq, eqN, eqArr, st } = mkAssert();

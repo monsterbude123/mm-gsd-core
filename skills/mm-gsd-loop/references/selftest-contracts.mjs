@@ -4,7 +4,7 @@
 
 import { buildRouteBrief, listSkills, pointerCard } from "./agent-routing.mjs";
 import { checkConclusionDrift, checkDecisions, checkDrift, locateContexts } from "./decision-gates.mjs";
-import { checkResearchConsumed, researchCompliant, researchRequired } from "./research-gates.mjs";
+import { checkResearch, checkResearchConsumed, researchCompliant, researchRequired } from "./research-gates.mjs";
 import { extractTemplateBlock } from "./template-gates.mjs";
 import { ticketsCovered } from "./ticket-alive.mjs";
 import { checkReqCoverage } from "./verification-gates.mjs";
@@ -190,6 +190,20 @@ export function runContractCases(t, x) {
   const rc = (txt) => { const errs = []; checkResearchConsumed({ name: "08-01-PLAN.md", phase: "08", root: d3, text: txt, e: (m) => errs.push(m), w: () => {} }); return errs; };
   eqN(rc("read_first: src/a.mjs").length, 1, "有研究产物 + 票没引用它 → 判红(研究落盘了没人读)");
   eqN(rc("read_first: .planning/08-RESEARCH.md, src/a.mjs").length, 0, "票里点名了研究产物 → 转绿"); rmSync(d3, { recursive: true, force: true });
+  // ---- R 票票号解析孪生(36-R1,I-023):研究两门认点修 <NN>-Rk —— 修前 name 解析 null,R 票收口豁免永不生效(health 恒红不自愈) ----
+  const dR = mkdtempSync(join(tmpdir(), "mm-gsd-rcons-r-"));
+  mkdirSync(join(dR, ".planning"), { recursive: true });
+  for (const ph of ["07", "12", "13"]) writeFileSync(join(dR, ".planning", `${ph}-RESEARCH.md`), "见 src/a.cts:3 的结论\n");
+  const rcons = (name, txt = "read_first: src/a.mjs") => { const errs = []; checkResearchConsumed({ name, phase: name.slice(0, 2), root: dR, text: txt, e: (m) => errs.push(m), w: () => {} }); return errs; };
+  eqN(rcons("07-R1-PLAN.md").length, 1, "研究消费门:R 票 07-R1 未收口 → 照判不豁免");
+  writeFileSync(join(dR, ".planning", "13-R1-SUMMARY.md"), '---\nphase: "13"\nplan: "R1"\nstatus: complete\ncommits: 1\n---\n');
+  eqN(rcons("13-R1-PLAN.md").length, 0, "研究消费门:R 票 13-R1 已收口 → 豁免生效(修前解析 null,豁免对 R 票永不生效)");
+  writeFileSync(join(dR, ".planning", "12-34-SUMMARY.md"), '---\nphase: "12"\nplan: "34"\nstatus: complete\ncommits: 1\n---\n');
+  eqN(rcons("12-34-PLAN.md").length, 0, "研究消费门:常规票 12-34 收口豁免照旧(捕获整票号,行为零变化)");
+  const rreq = (name) => { const errs = []; checkResearch({ name, phase: name.slice(0, 2), root: dR, files: ["a/x.ts", "b/y.ts", "c/z.ts"], goal: "先深入了解清楚", e: (m) => errs.push(m), w: () => {} }); return errs; };
+  eqN(rreq("13-R1-PLAN.md").length, 0, "研究触发门:R 票 13-R1 已收口 → 豁免生效");
+  eqN(rreq("07-R1-PLAN.md").length, 1, "研究触发门:R 票 07-R1 未收口 → 照判(触发成立且研究产物无摘要节)");
+  rmSync(dR, { recursive: true, force: true });
   // ---- 全角括号基线(G-35-1,35-01 独立验证 gap):（baseline） 与半角同权豁免,不误红 ----
   const dFW = mkdtempSync(join(tmpdir(), "mm-gsd-baseline-fw-"));
   mkdirSync(join(dFW, ".planning"), { recursive: true });

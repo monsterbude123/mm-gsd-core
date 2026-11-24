@@ -27,7 +27,7 @@ if (has("--help") || has("-h")) {
 用法:
   node mm-gsd-stage.mjs --ticket <NN-MM> [--plan <PLAN 路径>]
 
-  --ticket <NN-MM>   票号,如 14-02(必需)
+  --ticket <NN-MM>   票号,常规 14-02 / 点修 14-R1(必需)
   --plan <路径>      PLAN 文件;缺省找 .planning/<NN-MM>-PLAN.md
   --help             本说明
 
@@ -47,7 +47,7 @@ if (has("--help") || has("-h")) {
 }
 
 const ticket = val("--ticket");
-if (!ticket || !/^\d+-\d+$/.test(ticket)) {
+if (!ticket || !/^\d+-(?:R\d+|\d+)$/.test(ticket)) {
   console.error("✗ 用法:node mm-gsd-stage.mjs --ticket <NN-MM> [--plan <PLAN 路径>](--help 看详情)");
   process.exit(1);
 }

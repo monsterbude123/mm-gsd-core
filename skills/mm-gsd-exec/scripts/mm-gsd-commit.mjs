@@ -37,7 +37,7 @@ if (has("--help") || has("-h")) {
 用法:
   node mm-gsd-commit.mjs --ticket <NN-MM> --message <text|@file>
 
-  --ticket <NN-MM>     票号,如 14-02(必需)
+  --ticket <NN-MM>     票号,常规 14-02 / 点修 14-R1(必需)
   --message <text|@file>  提交信息;@<路径> 表示从文件读全文(必需)
   --help               本说明
 
@@ -58,7 +58,7 @@ red_windows 格式(PLAN frontmatter):- <守卫或测试路径> | wave <N> | tick
 
 const ticket = val("--ticket");
 let message = val("--message");
-if (!ticket || !/^\d+-\d+$/.test(ticket) || message === undefined) {
+if (!ticket || !/^\d+-(?:R\d+|\d+)$/.test(ticket) || message === undefined) {
   console.error("✗ 用法:node mm-gsd-commit.mjs --ticket <NN-MM> --message <text|@file>(--help 看详情)");
   process.exit(1);
 }
