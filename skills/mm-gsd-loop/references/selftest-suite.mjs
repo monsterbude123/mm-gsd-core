@@ -184,6 +184,35 @@ export function runConvergenceCases({ eqN }) {
   eqN(!!phJson, true, "rcv-10a phases 布局:检查器跑完了并输出 JSON");
   eqN((phJson?.errors ?? []).some((e) => String(e.message).includes("已经开工却没有预审结论")), false, "rcv-10b phases 布局:收敛工件落在 phase 目录里时,票级「缺预审工件」不报 —— 两种布局同一口径");
   rmSync(phDir, { recursive: true, force: true });
+  // ---- 13-R1 孪生(I-021 类级修复):BLOCKER 扫描认全真实格式 + 轮次上限落地 ----
+  // 夹具吃真实产出现场样本(T-22),不再按实现形状自造 —— 夹具与实现同盲是 I-021 复发的直接机制:
+  // · 标题形 = mm-gsd-plan-reviewer 卡原生输出(**F1 [BLOCKER] …**;宿主侧卡不进版本控制,
+  //   逐字样本按 .planning/issues/I-021.md「根因」节引用的形态自造)
+  // · 列表形 = 本仓 .planning/36-REVIEW-CONVERGENCE.md「BLOCKER 处置」节真实列表行(F1,逐字)
+  //   + PLAN-CHECK 工件的 severity 记号(- [BLOCKER] )成工件形状
+  const shapeDir = mkdtempSync(join(tmpdir(), "ar-conv-shape-"));
+  mkdirSync(join(shapeDir, ".planning"), { recursive: true });
+  const shapeCf = (n) => join(shapeDir, ".planning", n + MD);
+  const headingForm = "**F1 [BLOCKER] 34-01 T2「清理 gsd-state-check.mjs 正则」子句零认领 —— state-derive 必须单一导出 VAGUE_FILE/DEP_RE";
+  const listForm = "- [BLOCKER] **F1 commit-tree 路线静默拆除 pre-commit 门禁** → T1 改回「正常 git commit」(钩子照跑)";
+  const proseMention = "复核结论:四件套齐、前提存在、判据有判别力,机械判据零 ✗;".repeat(4) + "全文无 [BLOCKER] 级发现。";
+  writeFileSync(shapeCf("hd"), headingForm);
+  eqN(classifyArtifactBlockers(shapeCf("hd")).total, 1, "13R1-a 标题形计数:reviewer 卡原生 **F1 [BLOCKER]** 行计入(列表项不再垄断)");
+  writeFileSync(shapeCf("li"), listForm);
+  eqN(classifyArtifactBlockers(shapeCf("li")).total, 1, "13R1-b 列表形计数:- [BLOCKER] 列表行照旧计入(28-11 口径不回归)");
+  writeFileSync(shapeCf("pr"), proseMention);
+  eqN(classifyArtifactBlockers(shapeCf("pr")).total, 0, "13R1-c 散文提及不计负例:记号在行首区域(去空白后 80 字符)之外 → 零计数(W8 假红方向)");
+  // 轮次上限:作用域钉死票级 PLAN-CHECK;收敛工件自己的 round 语义(readPhaseConvergence)不动
+  const shapePlan = join(shapeDir, ".planning", "13-R1-PLAN" + MD);
+  writeFileSync(shapePlan, '---\nphase: "13"\n---\n');
+  const putShapeCheck = (o) => writeFileSync(shapeCf("13-R1-PLAN-CHECK"), fm(o));
+  putShapeCheck({ status: "passed", blockers: 0, warnings: 0, round: 3 });
+  eqN(checkPlanReady({ planPath: shapePlan }).state, "blocked", "13R1-d round>2 判红:整改轮次到顶,升级到人");
+  putShapeCheck({ status: "passed", blockers: 0, warnings: 0 });
+  eqN(checkPlanReady({ planPath: shapePlan }).state, "passed", "13R1-e 无 round 字段不判(历史工件零误伤)");
+  putShapeCheck({ status: "passed", blockers: 2, warnings: 0 });
+  eqN(checkPlanReady({ planPath: shapePlan }).state, "blocked", "13R1-f status=passed 且 blockers≠0 照红(:567 不变式在宽化后原样保留)");
+  rmSync(shapeDir, { recursive: true, force: true });
 }
 
 /** 可选包机制用例组(28-01,D-03/D-07/REQ-58):判定只认 packs.mjs 公开 API,夹具唯一来自 makePackFixture */

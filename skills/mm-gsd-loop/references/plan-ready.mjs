@@ -73,7 +73,11 @@ export function classifyArtifactBlockers(cfPath) {
   const machineLines = [];
   let total = 0;
   for (const line of text.split(/\r?\n/)) {
-    if (!/^\s*-\s*\[BLOCKER\]/.test(line)) continue;
+    // 13-R1(I-021):行首区域(去空白后前 80 字符)含 [BLOCKER] 记号即计入 —— 列表项 `- [BLOCKER] …`
+    // 与标题形 `**F1 [BLOCKER]** …`(reviewer 卡原生输出)同权;散文正文提及(记号在行中后段)不计。
+    // 两个误计方向各有孪生负例看护(selftest-suite.mjs runConvergenceCases 13R1-a/b/c)。
+    const head = line.replace(/^\s+/, "").slice(0, 80);
+    if (!head.includes("[BLOCKER]")) continue;
     total++;
     if (MACHINE_SIGNS.test(line)) machineLines.push(line.trim());
   }
@@ -99,6 +103,7 @@ export const REVIEW_PROMPT = [
   "  · 工具限 Read/Grep/Glob(物理只读 —— 有 mm-gsd-plan-reviewer 卡就用卡派)",
   "  · 只读 CONTEXT / PLAN / REQ,不看写它的过程(自己写自己审不算数)",
   "  · 每条发现带 severity(BLOCKER/WARNING/INFO);缺 severity 一律当 BLOCKER",
+  "  · 格式契约:BLOCKER 行用 `- [BLOCKER] ` 列表行开头 —— 扫描按行首区域记号计数,散文提及不计(I-021)",
   "  · 只报发现,不处方 —— 改法归写票的人",
   "  · 发现清单以文本返回,不写任何文件;PLAN-CHECK 工件由调用方落盘:",
   "    status(passed|blocked)/blockers/warnings/plan",
@@ -127,6 +132,11 @@ export function checkPlanReady({ planPath }, phaseCtx = {}) {
   }
   const blockers = Number(fm.blockers ?? 0) || 0, warnings = Number(fm.warnings ?? 0) || 0;
   if (fm.plan && fm.plan !== base.replace(/-PLAN\.md$/, "")) problems.push({ msg: `${base}: 预审结论指向别的票(plan: ${fm.plan})`, fix: "别复用别的票的结论 —— 重审这张票" });
+  // 13-R1(I-021):轮次上限在票级路径落地 —— plan-check 收敛判据明文「上限 2,到顶升级到人」。
+  // 作用域钉死票级 PLAN-CHECK:收敛工件有自己的 round 语义(3→3→1=收敛合法),不并入本判定;
+  // 无 round 字段不判(历史工件零误伤)。
+  const round = Number(fm.round ?? 0) || 0;
+  if (round > 2) problems.push({ msg: `${base}: 预审轮次 round=${round} > 上限 2 —— 整改轮次到顶`, fix: "升级到人裁决分歧,agent 不再自开下一轮复审(plan-check 收敛判据)" });
   // 机器可判发现分类降级(R-25):命中签名的 BLOCKER 行不计入拦工,拦工交给 14 族机器门(--plan)
   const cls = classifyArtifactBlockers(cf);
   classified.push(...cls.machineLines.map((l) => "[MACHINE-CLASSIFIABLE] " + l));
@@ -134,7 +144,8 @@ export function checkPlanReady({ planPath }, phaseCtx = {}) {
     if (superseded) {
       const effective = Math.max(0, cls.total - cls.machineLines.length);
       if (effective === 0) {
-        return { state: "passed", problems, classified, superseded: true, effective };
+        // round>2 的问题项已在上面入列 —— state 跟 problems 走,fail-closed 不在取代路径上漏
+        return { state: problems.length ? "blocked" : "passed", problems, classified, superseded: true, effective };
       }
       problems.push({ msg: `${base}: 预审 status=blocked —— ${effective} 条判断题 BLOCKER 未清零(另有 ${cls.machineLines.length} 条机器可判发现已下沉机器层)`, fix: "把判断题 findings 交回 mm-gsd-plan 修,复审一次(≤2 轮)再跑本命令" });
     } else {
