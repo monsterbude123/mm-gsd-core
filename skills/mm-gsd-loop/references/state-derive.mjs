@@ -20,8 +20,30 @@ export const DEP_RE = /[（(]\s*depends_on\s*[:：]\s*([^）)]*)[）)]/i;
 // ---- 三级路由档位推导(REQ-73,phase 35):声明通道 = STATE.md / PLAN frontmatter 的 tier 字段。
 // 不新增状态枚举 —— 档位只改「工件缺席要不要拦」,终态词表照旧;缺省/非法 → L3 全环(历史零回归)。
 // 值的解析住 ssot.mjs(normalizeTier),档位推导住这里(R-32),主脚本只导入传参。
+// phase 38(REQ-80)起 resolveTier 只喂项目级语义(SHIP 免除/L1 零工件,消费源照旧不动);
+// 票级门改吃下面的 effectiveTier —— 逐票解析,PLAN 可升不可降。
 export function resolveTier(stateFm, planFms = []) {
   return normalizeTier(stateFm?.tier) ?? planFms.map((fm) => normalizeTier(fm?.tier)).find(Boolean) ?? "L3";
+}
+
+// ---- 逐票 effectiveTier(REQ-80,phase 38):PLAN 可升不可降,STATE 是项目缺省。
+// 项目缺省 = STATE tier ?? L3 —— STATE 是用户对项目节奏的拍板,agent 逐票自行降档等于自我豁免。
+// PLAN tier 合法且不轻于项目缺省 → 用 PLAN tier(升档);合法但更轻 → downgrade=true
+// (档位回落项目缺省,判红与话术交给调用方 —— 唯一合法通道是改 STATE,见 D-01);
+// STATE 无 tier(无锁)→ PLAN 任意合法值生效,不存在降档;PLAN 无声明 → 项目缺省;
+// 非法值 fail-closed 按 L3。严格度序 L1<L2<L3(ROUTE_TIERS)。
+const ROUTE_TIERS = { L1: 1, L2: 2, L3: 3 };
+export function effectiveTier(planFm, stateFm = {}) {
+  const stateTier = normalizeTier(stateFm?.tier);
+  const projectDefault = stateTier ?? "L3";
+  const raw = planFm?.tier;
+  const declared = raw != null && String(raw).trim() !== "";
+  const pt = normalizeTier(raw);
+  if (!declared) return { tier: projectDefault, downgrade: false, planTier: null, stateTier };
+  if (!pt) return { tier: "L3", downgrade: false, planTier: String(raw).trim(), stateTier }; // 非法值 fail-closed
+  if (stateTier && ROUTE_TIERS[pt] < ROUTE_TIERS[stateTier])
+    return { tier: projectDefault, downgrade: true, planTier: pt, stateTier }; // 降档不许
+  return { tier: pt, downgrade: false, planTier: pt, stateTier };
 }
 
 // ---- git log 有界查询 + 进程内缓存(phase 34 REQ-69):无界全史扫描是大仓下
@@ -155,10 +177,20 @@ export async function stateContracts(x) {
       if (!ph || supersededPhases.has(ph)) continue;
       if (readPhaseConvergence(base, ph).present) supersededPhases.add(ph);
     }
-    // tier: L2 免票级预审收敛门(REQ-73,phase 35):L2 免独立 Judge 预审 —— 开工无 PLAN-CHECK 不判红。
-    // 档位由主脚本 resolveTier 解析传入(R-32);缺省(L3)与历史行为逐字一致。
-    if (tier !== "L2")
-      for (const m of checkPlanCheckArtifacts({ dir: base, plans: artifactInfo.plans, summaries: artifactInfo.summaries, frontmatter, supersededPhases }))
+    // tier: L2 免票级预审收敛门(REQ-73,phase 35;REQ-80,phase 38 改逐票升档):
+    // 逐票 effectiveTier = PLAN tier 若合法且不轻于项目缺省(STATE tier ?? L3),PLAN 更轻判红
+    // 「STATE 已锁 Lx,降档需改 STATE」(档位回落项目缺省),STATE 无 tier → PLAN 任意生效,
+    // 非法值 fail-closed 按 L3。STATE fm 在这里自读(主脚本传入的 tier 是项目级,不喂票级门)。
+    // 无任何 tier 声明 → 全部 L3、门照跑 —— 与历史行为逐字一致(零漂移锚:selftest 升档制六夹具)。
+    // 项目级语义(SHIP 免除 :189 / L1 零工件 :199)不随票级联动 —— 照旧吃传入的 resolveTier 档。
+    const stateFmForTier = existsSync(P("STATE.md")) ? (frontmatter(P("STATE.md")) ?? {}) : {};
+    const planTiers = artifactInfo.plans.map((pf) => ({ pf, ...effectiveTier(frontmatter(J(pf)), stateFmForTier) }));
+    for (const { pf, downgrade, planTier, stateTier } of planTiers)
+      if (downgrade)
+        err(`${pf}: PLAN tier ${planTier} 轻于 STATE 已锁的 ${stateTier} —— 降档需改 STATE(PLAN 只可升不可降;项目节奏的拍板在 STATE,不在逐票 PLAN)`, `把 .planning/STATE.md 的 tier 改到 ${planTier} 或更低;或删掉这张 PLAN 的 tier 声明按项目缺省走`);
+    const needPlanCheck = planTiers.filter((x) => x.tier !== "L2").map((x) => x.pf);
+    if (needPlanCheck.length)
+      for (const m of checkPlanCheckArtifacts({ dir: base, plans: needPlanCheck, summaries: artifactInfo.summaries, frontmatter, supersededPhases }))
         err(m, "先派一个全新上下文的只读子代理做预审(见 mm-gsd-verify「执行前预审」),产出 .planning/<NN-MM>-PLAN-CHECK.md");
   }
   if (artifactInfo.verification) {

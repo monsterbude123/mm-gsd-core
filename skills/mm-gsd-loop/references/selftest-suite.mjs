@@ -809,8 +809,8 @@ export function runStateDeriveCases({ eqN }) {
   }
   eqN(JSON.stringify(json) === JSON.stringify(baseline), true, "state-baseline-b 夹具输出与基线逐字一致 —— 判据变了这里会红");
   rmSync(fx, { recursive: true, force: true });
-  // ---- tier 按档放行夹具(phase 35 REQ-73):同形工件只差 tier 声明,断言按档放行;
-  // 无 tier 的同形夹具保持现状照红 —— 反例既证按档放行真有判别力,也证缺省路径零放水。
+  // ---- tier 升档制夹具(phase 38 REQ-80):同形工件只差 tier 声明,断言逐票升档放行;
+  // 常规路径(无任何声明)与历史逐字一致 —— 六夹具各锚一条判据,反例证判别力不证放水。
   const runT = (files) => {
     const d = mkdtempSync(join(tmpdir(), "mm-gsd-tier-"));
     const p = join(d, ".planning");
@@ -829,31 +829,43 @@ export function runStateDeriveCases({ eqN }) {
     return j;
   };
   const msgs = (j, k) => (j?.[k] ?? []).map((x) => String(x.message ?? ""));
-  // L1:STATE + PLAN 各一,零 CONTEXT/SUMMARY,声明 shipped —— 缺席错位不拦(免全套工件缺席阻塞)
-  const l1files = (t) => ({
-    "STATE.md": `---\nstatus: shipped\nactive_phase: "97"${t}\n---\n`,
-    "97-01-PLAN.md": `---\nphase: "97"\nplan: "01"${t}\n---\n\n## T1\n`,
+  // 形状一:零工件 + 声明 shipped —— 只为观察 L1 错位豁免(项目级)
+  const l1files = (st, pt) => ({
+    "STATE.md": `---\nstatus: shipped\nactive_phase: "97"${st}\n---\n`,
+    "97-01-PLAN.md": `---\nphase: "97"\nplan: "01"${pt}\n---\n\n## T1\n`,
   });
-  const l1 = runT(l1files("\ntier: L1"));
-  eqN(!!l1, true, "tier-L1-a 检查器在 tier: L1 夹具上跑完并输出 JSON(崩了不算通过)");
-  eqN(msgs(l1, "errors").length, 0, "tier-L1-b L1 免全套工件缺席拦截:零工件 + 声明 shipped 不判错位(按档放行)");
-  eqN(msgs(runT(l1files("")), "errors").some((m) => m.includes("声明")), true, "tier-L1-c 反例:同形夹具无 tier 声明 → 照判错位(缺省路径零放水)");
-  // L2:全套轻量工件 + VERIFICATION passed,无 SHIP、无 PLAN-CHECK —— 免预审收敛门与 SHIP 缺席黄
+  // 形状二:全套轻量工件 + VERIFICATION passed,无 SHIP、无 PLAN-CHECK —— 观察逐票预审豁免与项目 SHIP 豁免
   const CTX96 = "---\nphase: \"96\"\n---\n\n# 96 CONTEXT\n\n<domain>\n\u5939\u5177\n</domain>\n\n<decisions>\n- [D-01] reversible \u2014 \u5939\u5177\n</decisions>\n\n<specifics>\n- \u5939\u5177\n</specifics>\n\n<deferred>\n- \u65e0\n</deferred>\n";
   const VER96 = "---\nstatus: passed\n---\n\n## Observable Truths\n\n| Truth | 判据 | 判定 |\n|---|---|---|\n| T1 夹具 | 夹具行为 | ✓ VERIFIED |\n";
-  const l2files = (t) => ({
-    "STATE.md": `---\nstatus: completed\nactive_phase: "96"${t}\n---\n`,
+  const l2files = (st, pt) => ({
+    "STATE.md": `---\nstatus: completed\nactive_phase: "96"${st}\n---\n`,
     "96-CONTEXT.md": CTX96,
-    "96-01-PLAN.md": `---\nphase: "96"\nplan: "01"${t}\n---\n\n## T1\n`,
+    "96-01-PLAN.md": `---\nphase: "96"\nplan: "01"${pt}\n---\n\n## T1\n`,
     "96-01-SUMMARY.md": "---\nphase: \"96\"\nstatus: complete\ncommits: 1\n---\n\n## One-liner\n\n\u5939\u5177\n",
     "96-VERIFICATION.md": VER96,
   });
-  const l2 = runT(l2files("\ntier: L2"));
-  eqN(!!l2, true, "tier-L2-a 检查器在 tier: L2 夹具上跑完并输出 JSON(崩了不算通过)");
-  eqN(msgs(l2, "errors").length, 0, "tier-L2-b L2 免票级预审收敛门:开工无 PLAN-CHECK 不判红(按档放行)");
-  eqN(msgs(l2, "warnings").length, 0, "tier-L2-c L2 免独立 SHIP 工件阻塞:passed 无 SHIP 无黄条");
-  eqN(l2?.derived, "completed", "tier-L2-d L2 终态仍用既有词表:passed + 无 SHIP → completed(不新增枚举)");
-  const l2n = runT(l2files(""));
-  eqN(msgs(l2n, "errors").some((m) => m.includes("预审结论")), true, "tier-L2-e 反例:无 tier 同形夹具 → 照判缺预审结论(缺省路径零漂移)");
-  eqN(msgs(l2n, "warnings").some((m) => m.includes("SHIP")), true, "tier-L2-f 反例:无 tier 同形夹具 → 照报 SHIP 缺席黄");
+  // F1 升档:STATE L2 + PLAN L3 → 该票按 L3 走全环(预审门照跑),项目级不联动(SHIP 豁免照旧)
+  const up = runT(l2files("\ntier: L2", "\ntier: L3"));
+  eqN(!!up, true, "tier-up-a 检查器在升档夹具上跑完并输出 JSON(崩了不算通过)");
+  eqN(msgs(up, "errors").some((m) => m.includes("预审结论")), true, "tier-up-b 升档生效:STATE L2 + PLAN L3 → 该票按 L3 走全环,预审门不豁免");
+  eqN(msgs(up, "warnings").length, 0, "tier-up-c 项目级不联动:SHIP 免除仍按项目缺省 L2(升档只抬该票,零黄)");
+  eqN(msgs(up, "errors").some((m) => m.includes("降档")), false, "tier-up-d 升档不判红(PLAN 可升)");
+  // F2 降档:STATE L3 + PLAN L2 → 判红,唯一合法通道是改 STATE
+  const down = runT(l2files("\ntier: L3", "\ntier: L2"));
+  eqN(msgs(down, "errors").some((m) => m.includes("降档需改 STATE")), true, "tier-down-a 降档判红:STATE 已锁 L3,PLAN L2 不生效并指向改 STATE");
+  // F3 项目缺省:STATE L2 + PLAN 无声明 → 该票按项目缺省 L2 免预审,零红零黄
+  const stOnly = runT(l2files("\ntier: L2", ""));
+  eqN(msgs(stOnly, "errors").length, 0, "tier-st-a 项目缺省生效:STATE L2 + PLAN 无声明 → 该票按 L2 免预审(零红)");
+  eqN(msgs(stOnly, "warnings").length, 0, "tier-st-b SHIP 免除按项目缺省档照旧(零黄)");
+  // F4 无锁放行:STATE 无 tier + PLAN L1 → PLAN 任意生效(无锁不存在降档)
+  const p1 = runT(l1files("", "\ntier: L1"));
+  eqN(msgs(p1, "errors").length, 0, "tier-p1-a STATE 无 tier → PLAN L1 任意生效:错位拦截豁免(零红)");
+  // F5 非法值 fail-closed:STATE L2 + PLAN L9 → 按 L3 走全环,不静默落 L2、不判降档红
+  const bad = runT(l2files("\ntier: L2", "\ntier: L9"));
+  eqN(msgs(bad, "errors").some((m) => m.includes("预审结论")), true, "tier-bad-a 非法值 fail-closed:STATE L2 + PLAN L9 → 按 L3 走全环(不静默落 L2)");
+  eqN(msgs(bad, "errors").some((m) => m.includes("降档")), false, "tier-bad-b 非法值不是降档:fail-closed 而非判红");
+  // F6 无声明零漂移锚:任何 tier 都没有 → L3 全环,预审门与 SHIP 黄条与历史逐字一致
+  const none = runT(l2files("", ""));
+  eqN(msgs(none, "errors").some((m) => m.includes("预审结论")), true, "tier-none-a 无声明 → L3:预审门照跑(缺省路径零漂移)");
+  eqN(msgs(none, "warnings").some((m) => m.includes("SHIP")), true, "tier-none-b 无声明 → L3:SHIP 缺席黄照报(缺省路径零漂移)");
 }
