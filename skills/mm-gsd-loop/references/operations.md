@@ -57,6 +57,8 @@ npx mm-gsd-core report "<一句话说清什么坏了>" --evidence "<你跑了什
 
 建议档位(编程消费):`suggestTier({ files, risk })`(references/agent-routing.mjs,阈值与 `ROUTE_TIERS` 的 `when` 字段同源)——规模未知/超 5 文件/高风险一律 L3(fail-closed)。它是建议不是开关:改放行判据只能改 state-derive.mjs,改建议阈值只能改 `when` 字段,两处别混。
 
+**L2 验证形态(REQ-81,与 SKILL.md 分级路由/派活纪律同源)**:L2 的验证 = 门禁转绿(batch_verify/--selfcheck/health)+ 主循环逐 REQ 对证据;独立冷 verify agent 仅 L3 或用户点名 —— 判据不放松,只是不派冷 agent 重探全仓。派活两条同源:同 phase 同模块的连续票优先 resume 前票 Worker(跨模块/跨 phase 才新开);预审与 verify 派工必附 `<interfaces>` 摘要或 file:line 锚点清单,禁开放式调查(被派方只审点名面)。
+
 ### 跨波红窗(守卫跨波变红,计划期承载)
 
 红窗写进票面 frontmatter 的 `red_windows` 列表(`- <守卫或测试路径> | wave <N> | ticket <NN-MM> | close <判据>`,缺兑现票计划门判红,防永久豁免)。放行通道唯一:`mm-gsd commit --ticket` —— 先正常提交,失败项全落该票清单才 `--no-verify` 重试并标注受控放行,清单外失败 exit 2 停下(细节 `node skills/mm-gsd-exec/scripts/mm-gsd-commit.mjs --help`)。phase 收尾逐条核对清单里 `close` 判据是否兑现 —— 计划期声明的红窗机器可读,收尾对账不再人工整理。
